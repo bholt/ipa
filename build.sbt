@@ -19,9 +19,10 @@ resolvers ++= Seq(
   "Twitter Repository"               at "http://maven.twttr.com"
 )
 
+
 libraryDependencies ++= {
 
-  val phantomV = "1.17.4"
+  val phantomV = "1.17.5-SNAPSHOT"
 
   Seq(
     "com.websudos"        %%  "phantom-dsl"               % phantomV,

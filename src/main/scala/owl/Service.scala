@@ -31,17 +31,13 @@ class Service {
 case class User(id: UUID, username: String, name: String, created: DateTime)
 
 class Users extends CassandraTable[Users, User] {
-
   object id extends UUIDColumn(this) with PartitionKey[UUID]
   object username extends StringColumn(this)
   object name extends StringColumn(this)
   object created extends DateTimeColumn(this)
 
+  override val tableName = "users"
   override def fromRow(r: Row) = User(id(r), username(r), name(r), created(r))
-
-  object model extends Users {
-    override val tableName = "users"
-  }
 }
 
 trait OwlService extends Connector {
@@ -54,7 +50,7 @@ trait OwlService extends Connector {
     val LAST_NAMES = Vector("Dent", "Prefect", "McMillan", "Beeblebrox")
 
     def createTables(): Future[ResultSet] = {
-      users.model.create.ifNotExists().future()
+      users.create.ifNotExists().future()
     }
 
     def cleanupTables() = {
@@ -67,7 +63,7 @@ trait OwlService extends Connector {
     }
 
     def store(user: User): Future[ResultSet] = {
-      users.model.insert
+      users.insert
           .value(_.id, user.id)
           .value(_.username, user.username)
           .value(_.name, user.name)
@@ -77,11 +73,11 @@ trait OwlService extends Connector {
     }
 
     def getUserById(id: UUID): Future[Option[User]] = {
-      users.model.select.where(_ => users.id eqs id).one()
+      users.select.where(_ => users.id eqs id).one()
     }
 
     def delete(user: User): Future[ResultSet] = {
-      users.model.delete
+      users.delete
           .where(_ => users.id eqs user.id)
           .statement
           .runWith(ConsistencyLevel.Any)

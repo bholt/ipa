@@ -1,4 +1,4 @@
-package casper
+package owl
 
 import java.util.UUID
 
@@ -61,7 +61,7 @@ trait CasperService extends Connector {
 
     def randomUser: User = {
       val id = UUIDs.timeBased()
-      User(id, "u" + id, s"${FIRST_NAMES.sample} ${LAST_NAMES.sample}", DateTime.now())
+      User(id, s"u${id.hashCode()}", s"${FIRST_NAMES.sample} ${LAST_NAMES.sample}", DateTime.now())
     }
 
     def store(user: User): Future[ResultSet] = {
@@ -70,8 +70,12 @@ trait CasperService extends Connector {
           .value(_.username, user.username)
           .value(_.name, user.name)
           .value(_.created, user.created)
-          .statement
-          .runWith(ConsistencyLevel.ALL)
+          .consistencyLevel_=(ConsistencyLevel.ALL)
+          .future()
+    }
+
+    def getUserById(id: UUID): Future[Option[User]] = {
+      users.model.select.where(_ => users.id eqs id).one()
     }
 
     def delete(user: User): Future[ResultSet] = {

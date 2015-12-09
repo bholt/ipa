@@ -1,4 +1,4 @@
-package casper
+package owl
 
 import com.datastax.driver.core.{ResultSet, Session, ConsistencyLevel, Statement}
 import com.websudos.phantom.dsl._

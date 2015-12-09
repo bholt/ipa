@@ -12,8 +12,10 @@ import org.joda.time.DateTime
 
 import com.websudos.phantom.dsl._
 
+import scala.collection.immutable.IndexedSeq
 import scala.concurrent.{Future, Await}
 import scala.concurrent.duration._
+import scala.util.{Failure, Success, Try}
 
 // for Vector.sample
 import Util._
@@ -42,7 +44,7 @@ class Users extends CassandraTable[Users, User] {
   }
 }
 
-trait CasperService extends Connector {
+trait OwlService extends Connector {
 
   val users = new Users
 
@@ -51,12 +53,12 @@ trait CasperService extends Connector {
     val FIRST_NAMES = Vector("Arthur", "Ford", "Tricia", "Zaphod")
     val LAST_NAMES = Vector("Dent", "Prefect", "McMillan", "Beeblebrox")
 
-    def createTables: Future[ResultSet] = {
-      Await.ready(users.model.create.ifNotExists().future(), 5.seconds)
+    def createTables(): Future[ResultSet] = {
+      users.model.create.ifNotExists().future()
     }
 
-    def cleanupTables: Future[ResultSet] = {
-      users.model.delete().future
+    def cleanupTables() = {
+      session.execute("DROP TABLE users;")
     }
 
     def randomUser: User = {
@@ -85,9 +87,10 @@ trait CasperService extends Connector {
           .runWith(ConsistencyLevel.Any)
     }
 
-    def initUsers() = {
-      for (i <- 1 to 100) {
-        store(randomUser)
+    def initUsers(n: Int): Future[Boolean] = {
+      val stores = (1 to n) map { i => store(randomUser) }
+      Future.sequence(stores) map { rs =>
+        rs.map(_.isExhausted).forall(identity)
       }
     }
   }

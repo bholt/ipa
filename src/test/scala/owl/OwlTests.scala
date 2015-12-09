@@ -4,16 +4,19 @@ import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.{BeforeAndAfterAll, Inspectors, Matchers, FlatSpec}
 import org.scalatest.OptionValues._
 
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
+
 abstract class OwlSpec extends FlatSpec with Matchers with Inspectors with ScalaFutures
 
-class OwlTest extends OwlSpec with CasperService with BeforeAndAfterAll {
+class OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll {
 
   override def beforeAll(): Unit = {
-    service.createTables
+    Await.result(service.createTables(), Duration.Inf)
   }
 
   override def afterAll(): Unit = {
-//     service.cleanupTables
+     service.cleanupTables()
   }
 
   "User table" should "allow inserting and deleting" in {
@@ -46,6 +49,12 @@ class OwlTest extends OwlSpec with CasperService with BeforeAndAfterAll {
     }
     println(s"-- verified ${u.name} was deleted")
 
+  }
+
+  it should "initialize random users" in {
+    whenReady(service.initUsers(100)) { success =>
+      success shouldBe true
+    }
   }
 
 }

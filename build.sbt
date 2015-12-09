@@ -1,4 +1,4 @@
-name := "twitter-phantom"
+name := "owl"
 
 version := "0.1"
 

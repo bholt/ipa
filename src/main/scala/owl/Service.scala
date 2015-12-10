@@ -152,6 +152,19 @@ trait OwlService extends Connector {
       } yield ()
     }
 
+    def unfollow(follower: UUID, followee: UUID): Future[Unit] = {
+      for {
+        r1 <- followers.delete()
+            .where(_.user eqs followee)
+            .and(_.follower eqs follower)
+            .future()
+        r2 <- followees.delete()
+            .where(_.user eqs follower)
+            .and(_.following eqs followee)
+            .future()
+      } yield ()
+    }
+
     def initUsers(nUsers: Int, avgFollowers: Int): Future[Unit] = {
       val nFollows = nUsers * avgFollowers
       val ids = (1 to nUsers) map { _ => store(randomUser) }
@@ -187,9 +200,10 @@ trait OwlService extends Connector {
       followersFuture flatMap { fs =>
         Future.sequence(fs map { f =>
           timelines.insert()
-                   .value(_.user, f)
-                   .value(_.tweet, t.id)
-                   .future()
+              .value(_.user, f)
+              .value(_.tweet, t.id)
+              .consistencyLevel_=(ConsistencyLevel.ALL)
+              .future()
         })
       } map { _ =>
         t.id

@@ -12,6 +12,8 @@ abstract class OwlSpec extends FlatSpec with Matchers with Inspectors with Scala
 
 class OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll {
 
+  implicit override val patienceConfig = PatienceConfig(timeout = 2.seconds, interval = 50.millis)
+
   override def beforeAll(): Unit = {
     Await.result(service.createTables(), Duration.Inf)
   }
@@ -59,7 +61,8 @@ class OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll {
   val ford = User(username = "hastowel", name = "Ford Prefect")
   val zaphod = User(username = "froodyprez", name = "Zaphod Beeblebrox")
 
-  "Followers table" should "allow getting followers of a user" in {
+  "Followers table" should "allow following" in {
+
 
     val stores = Future.sequence(Vector(arthur, ford, zaphod) map service.store)
     whenReady(stores) { ids =>
@@ -72,9 +75,11 @@ class OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll {
       _ <- service.follow(ford.id, zaphod.id)
       _ <- service.follow(ford.id, arthur.id)
     } yield ()
-    follows.futureValue shouldBe ()
+    follows.futureValue shouldBe()
     println("-- set up follows")
+  }
 
+  "Followers table" should "allow getting followers of a user" in {
     service.followersOf(zaphod.id).futureValue.toSet shouldBe Set(ford.id, arthur.id)
   }
 
@@ -110,6 +115,13 @@ class OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll {
       tweets should contain (tweetTea)
     }
 
+  }
+
+  "Followers table" should "support unfollowing" in {
+    service.unfollow(arthur.id, zaphod.id).futureValue shouldBe ()
+
+    // now Zaphod should only have 1 follower (Ford)
+    service.followersOf(zaphod.id).futureValue.toSet shouldBe Set(ford.id)
   }
 
 }

@@ -1,11 +1,14 @@
 package owl
 
+import java.util.UUID
+
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.{BeforeAndAfterAll, Inspectors, Matchers, FlatSpec}
 import org.scalatest.OptionValues._
 
-import scala.concurrent.Await
-import scala.concurrent.duration.Duration
+import scala.concurrent.{Await,Future}
+import scala.concurrent.duration._
+import com.websudos.phantom.dsl._
 
 abstract class OwlSpec extends FlatSpec with Matchers with Inspectors with ScalaFutures
 
@@ -22,9 +25,8 @@ class OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll {
   "User table" should "allow inserting and deleting" in {
     val u = service.randomUser
 
-    whenReady(service.store(u)) { result =>
-      result.isExhausted shouldBe true
-      result.wasApplied shouldBe true
+    whenReady(service.store(u)) { id =>
+      id shouldBe u.id
     }
     println(s"-- stored ${u.name}")
 
@@ -51,10 +53,33 @@ class OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll {
 
   }
 
-  it should "initialize random users" in {
-    whenReady(service.initUsers(100)) { success =>
-      success shouldBe true
+//  it should "initialize random users & followers" in {
+//    Await.ready(service.initUsers(100, 16), 1.minute)
+//  }
+
+  "Followers table" should "allow getting followers of a user" in {
+    val arthur = User(username = "tealuv", name = "Arthur Dent")
+    val ford = User(username = "hastowel", name = "Ford Prefect")
+    val zaphod = User(username = "froodyprez", name = "Zaphod Beeblebrox")
+
+    val stores = Future.sequence(Vector(arthur, ford, zaphod) map service.store)
+    whenReady(stores) { ids =>
+      ids shouldBe Vector(arthur.id, ford.id, zaphod.id)
     }
+    println("-- created Arthur, Ford & Zaphod")
+
+    val follows = for {
+      _ <- service.follow(arthur.id, zaphod.id)
+      _ <- service.follow(ford.id, zaphod.id)
+      _ <- service.follow(zaphod.id, ford.id)
+    } yield ()
+    follows.futureValue shouldBe ()
+    println("-- set up follows")
+
+    whenReady(service.followersOf(zaphod.id)) { followers =>
+      followers.toSet shouldBe Set(ford.id, arthur.id)
+    }
+
   }
 
 }

@@ -4,14 +4,18 @@ import com.datastax.driver.core.{ResultSet, Session, ConsistencyLevel, Statement
 import com.websudos.phantom.dsl._
 
 import scala.concurrent.Future
+import scala.concurrent.duration.Duration
 import scala.util.Random
+import scala.concurrent.Await
 import scala.collection.JavaConverters._
 
 object Util {
 
-  implicit class VectorPlus[T](v: Vector[T]) {
+  implicit class VectorPlus[T](v: IndexedSeq[T]) {
     def sample = v(Random.nextInt(v.length))
   }
+
+  def await[T](f : Future[T]): T = Await.result(f, Duration.Inf)
 
   /**
     * Helper class to handle Cassandra consistency level operations from a statement

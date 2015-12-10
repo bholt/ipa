@@ -16,19 +16,19 @@ import scala.collection.immutable.IndexedSeq
 import scala.concurrent.{Future, Await}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
+import scala.collection.JavaConversions._
 
 // for Vector.sample
 import Util._
 
-class Service {
-
-  // Models
-
-
-}
-
+//////////////////
 // User
-case class User(id: UUID, username: String, name: String, created: DateTime)
+case class User(
+    id: UUID = UUID.randomUUID(),
+    username: String,
+    name: String,
+    created: DateTime = DateTime.now()
+)
 
 class Users extends CassandraTable[Users, User] {
   object id extends UUIDColumn(this) with PartitionKey[UUID]
@@ -40,21 +40,49 @@ class Users extends CassandraTable[Users, User] {
   override def fromRow(r: Row) = User(id(r), username(r), name(r), created(r))
 }
 
+//////////////////
+// Followers
+case class Follower(user: UUID, follower: UUID)
+case class Following(user: UUID, followee: UUID)
+
+class Followers extends CassandraTable[Followers, Follower] {
+  object user extends UUIDColumn(this) with PartitionKey[UUID]
+  object follower extends UUIDColumn(this) with PrimaryKey[UUID]
+  override val tableName = "followers"
+  override def fromRow(r: Row) = Follower(user(r), follower(r))
+}
+
+class Followees extends CassandraTable[Followees, Following] {
+  object user extends UUIDColumn(this) with PartitionKey[UUID]
+  object following extends UUIDColumn(this) with PrimaryKey[UUID]
+  override val tableName = "followees"
+  override def fromRow(r: Row) = Following(user(r), following(r))
+}
+
+
 trait OwlService extends Connector {
 
   val users = new Users
+  val followers = new Followers
+  val followees = new Followees
 
   object service {
 
     val FIRST_NAMES = Vector("Arthur", "Ford", "Tricia", "Zaphod")
     val LAST_NAMES = Vector("Dent", "Prefect", "McMillan", "Beeblebrox")
 
-    def createTables(): Future[ResultSet] = {
-      users.create.ifNotExists().future()
+    def createTables(): Future[Unit] = {
+      for {
+        _ <- users.create.ifNotExists().future()
+        _ <- followers.create.ifNotExists().future()
+        _ <- followees.create.ifNotExists().future()
+      } yield ()
     }
 
-    def cleanupTables() = {
-      session.execute("DROP TABLE users;")
+    def cleanupTables(): Unit = {
+      session.execute(s"DROP TABLE ${users.tableName};")
+      session.execute(s"DROP TABLE ${followers.tableName};")
+      session.execute(s"DROP TABLE ${followees.tableName};")
     }
 
     def randomUser: User = {
@@ -62,14 +90,16 @@ trait OwlService extends Connector {
       User(id, s"u${id.hashCode()}", s"${FIRST_NAMES.sample} ${LAST_NAMES.sample}", DateTime.now())
     }
 
-    def store(user: User): Future[ResultSet] = {
-      users.insert
-          .value(_.id, user.id)
-          .value(_.username, user.username)
-          .value(_.name, user.name)
-          .value(_.created, user.created)
-          .consistencyLevel_=(ConsistencyLevel.ALL)
-          .future()
+    def store(user: User): Future[UUID] = {
+      for {
+        rs <- users.insert()
+                   .value(_.id, user.id)
+                   .value(_.username, user.username)
+                   .value(_.name, user.name)
+                   .value(_.created, user.created)
+                   .consistencyLevel_=(ConsistencyLevel.ALL)
+                   .future()
+      } yield user.id
     }
 
     def getUserById(id: UUID): Future[Option[User]] = {
@@ -83,11 +113,38 @@ trait OwlService extends Connector {
           .runWith(ConsistencyLevel.Any)
     }
 
-    def initUsers(n: Int): Future[Boolean] = {
-      val stores = (1 to n) map { i => store(randomUser) }
-      Future.sequence(stores) map { rs =>
-        rs.map(_.isExhausted).forall(identity)
+    def follow(follower: UUID, followee: UUID): Future[Unit] = {
+      for {
+        r1 <- followers.insert()
+            .value(_.user, followee)
+            .value(_.follower, follower)
+            .future()
+        r2 <- followees.insert()
+            .value(_.user, follower)
+            .value(_.following, followee)
+            .future()
+      } yield ()
+    }
+
+    def initUsers(nUsers: Int, avgFollowers: Int): Future[Unit] = {
+      val nFollows = nUsers * avgFollowers
+      val ids = (1 to nUsers) map { _ => store(randomUser) }
+      Future.sequence(ids) flatMap { ids =>
+        val fs = (1 to nFollows) map { _ => follow(ids.sample, ids.sample) }
+        Future.reduce(fs){ case (_,_) => () }
       }
     }
+
+    def followersOf(user: UUID): Future[Iterator[UUID]] = {
+      followers
+          .select
+          .where(_ => followers.user eqs user)
+          .future() map { results =>
+        for {
+          row <- results.iterator()
+        } yield followers.fromRow(row).follower
+      }
+    }
+
   }
 }

@@ -60,29 +60,55 @@ class Followees extends CassandraTable[Followees, Following] {
 }
 
 
+//////////////////
+// Tweets
+case class Tweet(
+  id: UUID = UUID.randomUUID(),
+  user: UUID,
+  body: String,
+  created: DateTime = DateTime.now()
+)
+
+class Tweets extends CassandraTable[Tweets, Tweet] {
+  object id extends UUIDColumn(this) with PartitionKey[UUID]
+  object user extends UUIDColumn(this)
+  object body extends StringColumn(this)
+  object created extends DateTimeColumn(this)
+  override val tableName = "tweets"
+  override def fromRow(r: Row) = Tweet(id(r), user(r), body(r), created(r))
+}
+
+case class TimelineEntry(user: UUID, tweet: UUID)
+class Timelines extends CassandraTable[Timelines, TimelineEntry] {
+  object user extends UUIDColumn(this) with PartitionKey[UUID]
+  object tweet extends UUIDColumn(this) with PrimaryKey[UUID]
+  override val tableName = "timelines"
+  override def fromRow(r: Row) = TimelineEntry(user(r), tweet(r))
+}
+
 trait OwlService extends Connector {
 
   val users = new Users
   val followers = new Followers
   val followees = new Followees
+  val tweets = new Tweets
+  val timelines = new Timelines
 
   object service {
+
+    val tables = List(users, followers, followees, tweets, timelines)
 
     val FIRST_NAMES = Vector("Arthur", "Ford", "Tricia", "Zaphod")
     val LAST_NAMES = Vector("Dent", "Prefect", "McMillan", "Beeblebrox")
 
     def createTables(): Future[Unit] = {
-      for {
-        _ <- users.create.ifNotExists().future()
-        _ <- followers.create.ifNotExists().future()
-        _ <- followees.create.ifNotExists().future()
-      } yield ()
+      Future.sequence(
+        tables.map(_.create.ifNotExists().future())
+      ).map(_ => ())
     }
 
     def cleanupTables(): Unit = {
-      session.execute(s"DROP TABLE ${users.tableName};")
-      session.execute(s"DROP TABLE ${followers.tableName};")
-      session.execute(s"DROP TABLE ${followees.tableName};")
+      tables.map(_.tableName).foreach(t => session.execute(s"DROP TABLE $t"))
     }
 
     def randomUser: User = {
@@ -103,12 +129,12 @@ trait OwlService extends Connector {
     }
 
     def getUserById(id: UUID): Future[Option[User]] = {
-      users.select.where(_ => users.id eqs id).one()
+      users.select.where(_.id eqs id).one()
     }
 
     def delete(user: User): Future[ResultSet] = {
       users.delete
-          .where(_ => users.id eqs user.id)
+          .where(_.id eqs user.id)
           .statement
           .runWith(ConsistencyLevel.Any)
     }
@@ -138,12 +164,53 @@ trait OwlService extends Connector {
     def followersOf(user: UUID): Future[Iterator[UUID]] = {
       followers
           .select
-          .where(_ => followers.user eqs user)
+          .where(_.user eqs user)
           .future() map { results =>
         for {
           row <- results.iterator()
         } yield followers.fromRow(row).follower
       }
+    }
+
+    def post(t: Tweet): Future[UUID] = {
+      val followersFuture = for {
+        _ <- tweets.insert()
+                   .value(_.id, t.id)
+                   .value(_.user, t.user)
+                   .value(_.body, t.body)
+                   .value(_.created, t.created)
+                   .consistencyLevel_=(ConsistencyLevel.ALL)
+                   .future()
+        followers <- followersOf(t.user)
+      } yield followers
+
+      followersFuture flatMap { fs =>
+        Future.sequence(fs map { f =>
+          timelines.insert()
+                   .value(_.user, f)
+                   .value(_.tweet, t.id)
+                   .future()
+        })
+      } map { _ =>
+        t.id
+      }
+    }
+
+    def getTweet(id: UUID): Future[Option[Tweet]] = {
+      tweets.select.where(_.id eqs id).one()
+    }
+
+    def timeline(user: UUID, limit: Int) = {
+      timelines.select
+          .where(_.user eqs user)
+          .limit(limit)
+          .future()
+          .flatMap { rs =>
+            Future.sequence(rs.iterator()
+                .map(timelines.fromRow(_).tweet)
+                .map(getTweet))
+          }
+          .map(_.flatten)
     }
 
   }

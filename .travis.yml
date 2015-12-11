@@ -10,6 +10,10 @@ notifications:
 jdk:
   - oraclejdk8
 
+install:
+  - git clone https://github.com/bholt/phantom.git /tmp/phantom
+  - cd /tmp/phantom && sbt ++$TRAVIS_SCALA_VERSION publishLocal
+
 script:
   - cqlsh --file=keyspace.cql
   - sbt ++$TRAVIS_SCALA_VERSION test -Dcassandra.host.0=127.0.0.1

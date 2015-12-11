@@ -1,0 +1,17 @@
+machine:
+  java:
+    version: openjdk8
+  scala:
+    version: 0.13.9
+  
+  services:
+    - cassandra
+
+database:
+  override:
+    - cqlsh -f config/keyspace-simple.cql
+
+test:
+  override:
+    - sbt test -Dcassandra.host.0=127.0.0.1
+  

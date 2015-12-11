@@ -120,7 +120,7 @@ class OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll {
   }
 
   "Followers table" should "support unfollowing" in {
-    service.unfollow(arthur.id, zaphod.id).futureValue shouldBe ()
+    service.unfollow(arthur.id, zaphod.id).isReadyWithin(100 millis)
 
     // now Zaphod should only have 1 follower (Ford)
     service.followersOf(zaphod.id).futureValue.toSet shouldBe Set(ford.id)

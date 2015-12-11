@@ -12,7 +12,7 @@ jdk:
 
 install:
   - git clone https://github.com/bholt/phantom.git /tmp/phantom
-  - cd ~/phantom && sbt ++$TRAVIS_SCALA_VERSION publishLocal
+  - cd /tmp/phantom && sbt ++$TRAVIS_SCALA_VERSION publishLocal
 
 before_script: travis_retry sbt ++$TRAVIS_SCALA_VERSION update
 

@@ -4,7 +4,7 @@ import java.util.UUID
 
 import com.datastax.driver.core.Row
 import com.datastax.driver.core.utils.UUIDs
-import com.websudos.phantom.CassandraTable
+import com.websudos.phantom.{dsl, CassandraTable}
 import com.websudos.phantom.column.DateTimeColumn
 import com.websudos.phantom.dsl.{StringColumn, UUIDColumn}
 import com.websudos.phantom.keys.PartitionKey
@@ -66,7 +66,8 @@ case class Tweet(
   id: UUID = UUID.randomUUID(),
   user: UUID,
   body: String,
-  created: DateTime = DateTime.now()
+  created: DateTime = DateTime.now(),
+  retweets: Long = 0
 )
 
 class Tweets extends CassandraTable[Tweets, Tweet] {
@@ -86,6 +87,22 @@ class Timelines extends CassandraTable[Timelines, TimelineEntry] {
   override def fromRow(r: Row) = TimelineEntry(user(r), tweet(r))
 }
 
+case class Retweet(tweet: UUID, retweeter: UUID)
+class Retweets extends CassandraTable[Retweets, Retweet] {
+  object tweet extends UUIDColumn(this) with PartitionKey[UUID]
+  object retweeter extends UUIDColumn(this) with PrimaryKey[UUID]
+  override val tableName = "retweets"
+  override def fromRow(r: Row) = Retweet(tweet(r), retweeter(r))
+}
+
+case class RetweetCount(tweet: UUID, count: Long)
+class RetweetCounts extends CassandraTable[RetweetCounts, RetweetCount] {
+  object tweet extends UUIDColumn(this) with PartitionKey[UUID]
+  object count extends CounterColumn(this)
+  override val tableName = "retweetCounts"
+  override def fromRow(r: Row) = RetweetCount(tweet(r), count(r))
+}
+
 trait OwlService extends Connector {
 
   val users = new Users
@@ -93,10 +110,13 @@ trait OwlService extends Connector {
   val followees = new Followees
   val tweets = new Tweets
   val timelines = new Timelines
+  val retweets = new Retweets
+  val retweetCounts = new RetweetCounts
 
   object service {
 
-    val tables = List(users, followers, followees, tweets, timelines)
+    val tables = List(users, followers, followees, tweets, timelines,
+      retweets, retweetCounts)
 
     val FIRST_NAMES = Vector("Arthur", "Ford", "Tricia", "Zaphod")
     val LAST_NAMES = Vector("Dent", "Prefect", "McMillan", "Beeblebrox")
@@ -185,33 +205,66 @@ trait OwlService extends Connector {
       }
     }
 
-    def post(t: Tweet): Future[UUID] = {
-      val followersFuture = for {
-        _ <- tweets.insert()
-                   .value(_.id, t.id)
-                   .value(_.user, t.user)
-                   .value(_.body, t.body)
-                   .value(_.created, t.created)
-                   .consistencyLevel_=(ConsistencyLevel.ALL)
-                   .future()
-        followers <- followersOf(t.user)
-      } yield followers
-
-      followersFuture flatMap { fs =>
-        Future.sequence(fs map { f =>
+    private def add_to_followers_timelines(tweet: UUID, user: UUID) = {
+      followersOf(user) flatMap { followers =>
+        Future.sequence(followers map { f =>
           timelines.insert()
               .value(_.user, f)
-              .value(_.tweet, t.id)
+              .value(_.tweet, tweet)
               .consistencyLevel_=(ConsistencyLevel.ALL)
               .future()
         })
-      } map { _ =>
-        t.id
       }
     }
 
+    def post(t: Tweet): Future[UUID] = {
+      for {
+        _ <- tweets.insert()
+                .value(_.id, t.id)
+                .value(_.user, t.user)
+                .value(_.body, t.body)
+                .value(_.created, t.created)
+                .consistencyLevel_=(ConsistencyLevel.ALL)
+                .future()
+        _ <- retweetCounts.update()
+                .where(_.tweet eqs t.id)
+                .modify(_.count += 0L) // force initialization (to 0)
+                .future()
+        _ <- add_to_followers_timelines(t.id, t.user)
+      } yield t.id
+    }
+
+    def retweet(tweet: UUID, retweeter: UUID): Future[UUID] = {
+      for {
+        _ <- retweetCounts.update()
+                .where(_.tweet eqs tweet)
+                .modify(_.count += 1)
+                .consistencyLevel_=(ConsistencyLevel.ALL)
+                .future()
+        _ <- retweets.insert()
+                .value(_.tweet, tweet)
+                .value(_.retweeter, retweeter)
+                .consistencyLevel_=(ConsistencyLevel.ALL)
+                .future()
+        _ <- add_to_followers_timelines(tweet, retweeter)
+      } yield tweet
+    }
+
+    def getRetweetCount(tweet: UUID): Future[Option[Long]] = {
+      retweetCounts.select(_.count).where(_.tweet eqs tweet).one()
+    }
+
     def getTweet(id: UUID): Future[Option[Tweet]] = {
-      tweets.select.where(_.id eqs id).one()
+      tweets.select.where(_.id eqs id).one() flatMap {
+        case Some(tweet) =>
+          retweetCounts
+              .select(_.count)
+              .where(_.tweet eqs id)
+              .one()
+              .map(ctOpt => ctOpt.map(ct => tweet.copy(retweets = ct)))
+        case None =>
+          Future { None }
+      }
     }
 
     def timeline(user: UUID, limit: Int) = {

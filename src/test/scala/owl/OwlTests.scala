@@ -12,7 +12,8 @@ abstract class OwlSpec extends FlatSpec with Matchers with Inspectors with Scala
 
 class OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll {
 
-  implicit override val patienceConfig = PatienceConfig(timeout = 2.seconds, interval = 50.millis)
+  implicit override val patienceConfig =
+    PatienceConfig(timeout = 500.millis, interval = 10.millis)
 
   override def beforeAll(): Unit = {
     Await.result(service.createTables(), Duration.Inf)
@@ -75,7 +76,7 @@ class OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll {
       _ <- service.follow(ford.id, zaphod.id)
       _ <- service.follow(ford.id, arthur.id)
     } yield ()
-    follows.futureValue shouldBe()
+    follows.isReadyWithin(100 millis)
     println("-- set up follows")
   }
 
@@ -95,6 +96,7 @@ class OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll {
   "Tweets" should "be posted" in {
     service.post(tweetTea).futureValue shouldBe tweetTea.id
     service.post(tweetEgo).futureValue shouldBe tweetEgo.id
+    println("-- tweeted")
   }
 
   "Tweets" should "show up on timelines" in {
@@ -124,4 +126,22 @@ class OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll {
     service.followersOf(zaphod.id).futureValue.toSet shouldBe Set(ford.id)
   }
 
+  "Retweets" should "be counted" in {
+    service.retweet(tweetEgo.id, ford.id).futureValue shouldBe tweetEgo.id
+
+    service.getRetweetCount(tweetEgo.id).futureValue shouldBe Some(1)
+
+    service.retweet(tweetEgo.id, arthur.id).futureValue shouldBe tweetEgo.id
+
+    whenReady(service.getTweet(tweetEgo.id)) { opt =>
+      opt.value.retweets shouldBe 2
+      opt.value.body shouldBe tweetEgo.body
+    }
+  }
+
+  "Retweets" should "not be duplicated" in {
+    service.getRetweetCount(tweetEgo.id).futureValue shouldBe Some(2)
+    service.retweet(tweetEgo.id, ford.id).futureValue shouldBe tweetEgo.id
+    service.getRetweetCount(tweetEgo.id).futureValue shouldBe Some(2)
+  }
 }

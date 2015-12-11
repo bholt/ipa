@@ -1,7 +1,7 @@
 machine:
 
   java:
-    version: oraclejdk8
+    version: oraclejdk7
   
   services:
     - cassandra

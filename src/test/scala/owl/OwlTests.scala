@@ -1,5 +1,6 @@
 package owl
 
+import com.datastax.driver.core.ProtocolVersion
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.{BeforeAndAfterAll, Inspectors, Matchers, FlatSpec}
 import org.scalatest.OptionValues._
@@ -21,6 +22,12 @@ class OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll {
 
   override def afterAll(): Unit = {
      service.cleanupTables()
+  }
+
+  "Connector" should "have valid protocol version" in {
+    val protocolVersion = implicitly[Session].getCluster.getConfiguration.getProtocolOptions.getProtocolVersion
+    println(s"protocol version: $protocolVersion")
+    assert(protocolVersion.compareTo(ProtocolVersion.V1) > 0)
   }
 
   "User table" should "allow inserting and deleting" in {

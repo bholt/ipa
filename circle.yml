@@ -23,7 +23,3 @@ database:
   override:
     - cqlsh -f config/keyspace-simple.cql
 
-test:
-  override:
-    - sbt test
-  

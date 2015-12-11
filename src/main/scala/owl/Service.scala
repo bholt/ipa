@@ -234,20 +234,33 @@ trait OwlService extends Connector {
       } yield t.id
     }
 
-    def retweet(tweet: UUID, retweeter: UUID): Future[UUID] = {
-      for {
-        _ <- retweetCounts.update()
+    private def hasRetweeted(tweet: UUID, user: UUID): Future[Boolean] = {
+      retweets.select(_.retweeter)
+          .where(_.tweet eqs tweet)
+          .and(_.retweeter eqs user)
+          .one()
+          .map(_.isDefined)
+    }
+
+    def retweet(tweet: UUID, retweeter: UUID): Future[Option[UUID]] = {
+      hasRetweeted(tweet, retweeter) flatMap { dup =>
+        if (dup) Future { None }
+        else {
+          for {
+            _ <- retweetCounts.update()
                 .where(_.tweet eqs tweet)
                 .modify(_.count += 1)
                 .consistencyLevel_=(ConsistencyLevel.ALL)
                 .future()
-        _ <- retweets.insert()
+            _ <- retweets.insert()
                 .value(_.tweet, tweet)
                 .value(_.retweeter, retweeter)
                 .consistencyLevel_=(ConsistencyLevel.ALL)
                 .future()
-        _ <- add_to_followers_timelines(tweet, retweeter)
-      } yield tweet
+            _ <- add_to_followers_timelines(tweet, retweeter)
+          } yield Some(tweet)
+        }
+      }
     }
 
     def getRetweetCount(tweet: UUID): Future[Option[Long]] = {

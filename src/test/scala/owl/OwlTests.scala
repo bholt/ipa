@@ -134,11 +134,11 @@ class OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll {
   }
 
   "Retweets" should "be counted" in {
-    service.retweet(tweetEgo.id, ford.id).futureValue shouldBe tweetEgo.id
+    service.retweet(tweetEgo.id, ford.id).futureValue shouldBe Some(tweetEgo.id)
 
     service.getRetweetCount(tweetEgo.id).futureValue shouldBe Some(1)
 
-    service.retweet(tweetEgo.id, arthur.id).futureValue shouldBe tweetEgo.id
+    service.retweet(tweetEgo.id, arthur.id).futureValue shouldBe Some(tweetEgo.id)
 
     whenReady(service.getTweet(tweetEgo.id)) { opt =>
       opt.value.retweets shouldBe 2
@@ -148,7 +148,7 @@ class OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll {
 
   "Retweets" should "not be duplicated" in {
     service.getRetweetCount(tweetEgo.id).futureValue shouldBe Some(2)
-    service.retweet(tweetEgo.id, ford.id).futureValue shouldBe tweetEgo.id
+    service.retweet(tweetEgo.id, ford.id).futureValue shouldBe None
     service.getRetweetCount(tweetEgo.id).futureValue shouldBe Some(2)
   }
 }

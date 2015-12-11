@@ -18,7 +18,5 @@ await(service.follow(arthur.id, zaphod.id))
 await(service.follow(ford.id, zaphod.id))
 await(service.follow(ford.id, arthur.id))
 
-val t1 = Tweet(user = arthur.id, body = "Nutri-matic drinks are the worst. #fml")
-val t2 = Tweet(user = zaphod.id, body = "Things more important than my ego: none")
 await(service.post(t1))
 await(service.post(t2))

@@ -18,5 +18,5 @@ before_script: travis_retry sbt ++$TRAVIS_SCALA_VERSION update
 
 script:
   - cd $TRAVIS_BUILD_DIR
-  - cqlsh --file=keyspace-simple.cql
+  - cqlsh --file=config/keyspace-simple.cql
   - sbt ++$TRAVIS_SCALA_VERSION test -Dcassandra.host.0=127.0.0.1

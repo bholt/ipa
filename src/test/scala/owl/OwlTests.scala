@@ -8,6 +8,7 @@ import org.scalatest.OptionValues._
 import scala.concurrent.{Await,Future}
 import scala.concurrent.duration._
 import com.websudos.phantom.dsl._
+import scala.language.postfixOps
 
 abstract class OwlSpec extends FlatSpec with Matchers with Inspectors with ScalaFutures
 

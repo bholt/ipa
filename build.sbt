@@ -4,7 +4,7 @@ version := "0.1"
 
 scalaVersion := "2.11.7"
 
-scalacOptions ++= Seq("-unchecked", "-deprecation")
+scalacOptions ++= Seq("-unchecked", "-deprecation", "-feature")
 
 resolvers ++= Seq(
   Resolver.sonatypeRepo("releases"),

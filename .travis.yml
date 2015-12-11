@@ -6,6 +6,12 @@ scala:
 
 notifications:
   slack: uw-cse:NkMpzlqTOyAGlT6jMIfgZ8w3
+    on_success: change
+    on_failure: always
+  
+  email:
+    on_success: change
+    on_failure: change
 
 jdk:
   - oraclejdk8

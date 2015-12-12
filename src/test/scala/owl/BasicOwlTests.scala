@@ -10,20 +10,10 @@ import scala.concurrent.duration._
 import com.websudos.phantom.dsl._
 import scala.language.postfixOps
 
-abstract class OwlSpec extends FlatSpec with Matchers with Inspectors with ScalaFutures
-
-class OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll {
+class BasicOwlTests extends OwlTest {
 
   implicit override val patienceConfig =
     PatienceConfig(timeout = 500.millis, interval = 10.millis)
-
-  override def beforeAll(): Unit = {
-    Await.result(service.createTables(), Duration.Inf)
-  }
-
-  override def afterAll(): Unit = {
-     service.cleanupTables()
-  }
 
   "Connector" should "have valid protocol version" in {
     val protocolVersion = implicitly[Session].getCluster.getConfiguration.getProtocolOptions.getProtocolVersion
@@ -32,7 +22,7 @@ class OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll {
   }
 
   "User table" should "allow inserting and deleting" in {
-    val u = service.randomUser
+    val u = service.randomUser()
 
     whenReady(service.store(u)) { id =>
       id shouldBe u.id

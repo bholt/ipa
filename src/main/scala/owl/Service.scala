@@ -18,6 +18,8 @@ import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 import scala.collection.JavaConversions._
 
+import org.apache.commons.math3.distribution.ZipfDistribution
+
 // for Vector.sample
 import Util._
 
@@ -131,9 +133,14 @@ trait OwlService extends Connector {
       tables.map(_.tableName).foreach(t => session.execute(s"DROP TABLE $t"))
     }
 
-    def randomUser: User = {
-      val id = UUIDs.timeBased()
-      User(id, s"u${id.hashCode()}", s"${FIRST_NAMES.sample} ${LAST_NAMES.sample}", DateTime.now())
+    def randomUser(
+      id: UUID = UUIDs.timeBased(),
+      username: String = "",
+      name: String = s"${FIRST_NAMES.sample} ${LAST_NAMES.sample}",
+      time: DateTime = DateTime.now()
+    ): User = {
+      val uname = if (username.isEmpty) s"${id.hashCode()}" else username
+      User(id, uname, name, time)
     }
 
     def store(user: User): Future[UUID] = {
@@ -185,13 +192,25 @@ trait OwlService extends Connector {
       } yield ()
     }
 
-    def initUsers(nUsers: Int, avgFollowers: Int): Future[Unit] = {
+    def userUUID(i: Int) = UUID.nameUUIDFromBytes(BigInt(i).toByteArray)
+
+    def initSocialGraph(nUsers: Int, avgFollowers: Int, zipf: Double = 1.0): Future[Unit] = {
+      val rnd = new ZipfDistribution(nUsers, zipf)
+
+      // create users with UUIDs generated from numbers: 1..nUsers
+      val users = (1 to nUsers) map { i => store(randomUser(id = userUUID(i))) }
+
+      // follows (can run concurrently with users if needed
       val nFollows = nUsers * avgFollowers
-      val ids = (1 to nUsers) map { _ => store(randomUser) }
-      Future.sequence(ids) flatMap { ids =>
-        val fs = (1 to nFollows) map { _ => follow(ids.sample, ids.sample) }
-        Future.reduce(fs){ case (_,_) => () }
+      val follows = (1 to nFollows) map { _ =>
+        val ids = rnd.sample(2).map(userUUID)
+        follow(ids(0), ids(1))
       }
+
+      Future.sequence(Seq(
+        Future.sequence(users),
+        Future.sequence(follows)
+      )).map(_ => ())
     }
 
     def followersOf(user: UUID): Future[Iterator[UUID]] = {

@@ -31,6 +31,7 @@ libraryDependencies ++= {
     "com.websudos"        %%  "phantom-testkit"           % phantomV,
     "com.websudos"        %%  "phantom-connectors"        % phantomV,
     "org.scalatest"       %%  "scalatest"                 % "2.2.4"     % "test",
-    "com.typesafe"        %   "config"                    % "1.3.0"
+    "com.typesafe"        %   "config"                    % "1.3.0",
+    "org.apache.commons"  %   "commons-math3"             % "3.5"
   )
 }

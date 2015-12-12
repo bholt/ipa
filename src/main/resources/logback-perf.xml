@@ -1,0 +1,27 @@
+<configuration>
+  <!-- Logging settings for running performance experiments. -->
+  <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+    <file>/tmp/owl.client.log</file>
+    <encoder>
+      <pattern>%date %level %logger - %msg%n"</pattern>
+    </encoder>
+  </appender>
+
+  <logger name="com.datastax.driver.core.Connection" additivity="false">
+    <appender-ref ref="FILE" />
+  </logger>
+  
+  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+    <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+      <level>WARN</level>
+    </filter>
+    <encoder>
+      <pattern>%gray(%-5level %date{HH:mm:ss.SSS}) %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <root name="ERROR">
+    <appender-ref ref="STDOUT" />
+    <appender-ref ref="FILE" />
+  </root>
+</configuration>

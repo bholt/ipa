@@ -19,10 +19,6 @@ dependencies:
     - "~/.ivy2"
     - "~/.sbt"
 
-database:
-  override:
-    - cqlsh -f config/keyspace-simple.cql
-
 test:
   post:
     - mkdir -p $CIRCLE_TEST_REPORTS/junit/

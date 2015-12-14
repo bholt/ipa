@@ -23,3 +23,7 @@ database:
   override:
     - cqlsh -f config/keyspace-simple.cql
 
+test:
+  post:
+    - mkdir -p $CIRCLE_TEST_REPORTS/junit/
+    - cp target/test-reports/* $CIRCLE_TEST_REPORTS/junit

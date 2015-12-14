@@ -69,8 +69,20 @@ case class Tweet(
   user: UUID,
   body: String,
   created: DateTime = DateTime.now(),
-  retweets: Long = 0
-)
+  retweets: Long = 0,
+  name: Option[String] = None
+) {
+  override def toString = {
+    s"${name.getOrElse(user)}: $body [$created]"
+  }
+}
+
+/** For displaying tweets (includes user's name, etc). */
+case class DisplayTweet(tweet: Tweet, user: User) {
+  override def toString = {
+    s"${user.name}: ${tweet.body} [${tweet.created}]"
+  }
+}
 
 class Tweets extends CassandraTable[Tweets, Tweet] {
   object id extends UUIDColumn(this) with PartitionKey[UUID]
@@ -289,11 +301,18 @@ trait OwlService extends Connector {
     def getTweet(id: UUID): Future[Option[Tweet]] = {
       tweets.select.where(_.id eqs id).one() flatMap {
         case Some(tweet) =>
-          retweetCounts
-              .select(_.count)
-              .where(_.tweet eqs id)
-              .one()
-              .map(ctOpt => ctOpt.map(ct => tweet.copy(retweets = ct)))
+          for {
+            userOpt <- users.select.where(_.id eqs tweet.user).one()
+            ctOpt <- retweetCounts
+                .select(_.count)
+                .where(_.tweet eqs id)
+                .one()
+          } yield for {
+            u <- userOpt
+            ct <- ctOpt
+          } yield {
+            tweet.copy(retweets = ct, name = Some(u.name))
+          }
         case None =>
           Future { None }
       }

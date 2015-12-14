@@ -162,8 +162,8 @@ trait OwlService extends Connector {
     def delete(user: User): Future[ResultSet] = {
       users.delete
           .where(_.id eqs user.id)
-          .statement
-          .runWith(ConsistencyLevel.Any)
+          .consistencyLevel_=(ConsistencyLevel.ALL)
+          .future()
     }
 
     def follow(follower: UUID, followee: UUID): Future[Unit] = {

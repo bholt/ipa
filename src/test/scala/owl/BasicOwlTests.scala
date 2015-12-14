@@ -81,7 +81,7 @@ class BasicOwlTests extends OwlTest {
     println("-- set up follows")
   }
 
-  "Followers table" should "allow getting followers of a user" in {
+  it should "allow getting followers of a user" in {
     service.followersOf(zaphod.id).futureValue.toSet shouldBe Set(ford.id, arthur.id)
   }
 
@@ -100,7 +100,7 @@ class BasicOwlTests extends OwlTest {
     println("-- tweeted")
   }
 
-  "Tweets" should "show up on timelines" in {
+  it should "show up on timelines" in {
 
     whenReady(service.timeline(arthur.id, 10)) { iter =>
       val tweets = iter.toVector
@@ -140,7 +140,7 @@ class BasicOwlTests extends OwlTest {
     }
   }
 
-  "Retweets" should "not be duplicated" in {
+  it should "not be duplicated" in {
     service.getRetweetCount(tweetEgo.id).futureValue shouldBe Some(2)
     service.retweet(tweetEgo.id, ford.id).futureValue shouldBe None
     service.getRetweetCount(tweetEgo.id).futureValue shouldBe Some(2)

@@ -16,8 +16,8 @@ dependencies:
     - git clone https://github.com/bholt/phantom.git ~/phantom
     - cd ~/phantom && sbt publishLocal
   cache_directories:
-    - ~/.ivy2
-    - ~/.sbt
+    - "~/.ivy2"
+    - "~/.sbt"
 
 database:
   override:

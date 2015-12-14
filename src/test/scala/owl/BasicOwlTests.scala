@@ -1,16 +1,19 @@
 package owl
 
 import com.datastax.driver.core.ProtocolVersion
-import org.scalatest.concurrent.ScalaFutures
-import org.scalatest.{BeforeAndAfterAll, Inspectors, Matchers, FlatSpec}
 import org.scalatest.OptionValues._
 
-import scala.concurrent.{Await,Future}
+import scala.concurrent.Future
 import scala.concurrent.duration._
 import com.websudos.phantom.dsl._
+import com.websudos.phantom.connectors.KeySpace
+
 import scala.language.postfixOps
 
+
 class BasicOwlTests extends OwlTest {
+
+  override implicit val space = KeySpace("owl_basic")
 
   implicit override val patienceConfig =
     PatienceConfig(timeout = 500.millis, interval = 10.millis)

@@ -1,12 +1,13 @@
 package owl
 
-import com.typesafe.config.ConfigFactory
+import com.websudos.phantom.connectors.KeySpace
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
 class OwlRetwis extends OwlTest {
+  override implicit val space = KeySpace("owl_retwis")
 
   val nUsers = config.getInt("retwis.users")
   val avgFollowers = config.getInt("retwis.followers")

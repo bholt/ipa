@@ -229,11 +229,12 @@ trait OwlService extends Connector {
       followers
           .select
           .where(_.user eqs user)
-          .future() map { results =>
-        for {
-          row <- results.iterator()
-        } yield followers.fromRow(row).follower
-      }
+          .future()
+          .map { results =>
+            results.iterator() map { row =>
+              followers.fromRow(row).follower
+            }
+          }
     }
 
     private def add_to_followers_timelines(tweet: UUID, user: UUID) = {

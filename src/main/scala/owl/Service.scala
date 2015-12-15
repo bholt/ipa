@@ -2,7 +2,7 @@ package owl
 
 import java.util.UUID
 
-import com.datastax.driver.core.Row
+import com.datastax.driver.core.{ConsistencyLevel, Row}
 import com.datastax.driver.core.utils.UUIDs
 import com.websudos.phantom.{dsl, CassandraTable}
 import com.websudos.phantom.column.DateTimeColumn
@@ -155,49 +155,56 @@ trait OwlService extends Connector {
       User(id, uname, name, time)
     }
 
-    def store(user: User): Future[UUID] = {
+    def store(user: User)(implicit consistency: ConsistencyLevel): Future[UUID] = {
       for {
         rs <- users.insert()
+                   .consistencyLevel_=(consistency)
                    .value(_.id, user.id)
                    .value(_.username, user.username)
                    .value(_.name, user.name)
                    .value(_.created, user.created)
-                   .consistencyLevel_=(ConsistencyLevel.ALL)
                    .future()
       } yield user.id
     }
 
-    def getUserById(id: UUID): Future[Option[User]] = {
-      users.select.where(_.id eqs id).one()
+    def getUserById(id: UUID)(implicit consistency: ConsistencyLevel): Future[Option[User]] = {
+      users.select
+          .consistencyLevel_=(consistency)
+          .where(_.id eqs id)
+          .one()
     }
 
-    def delete(user: User): Future[ResultSet] = {
+    def delete(user: User)(implicit consistency: ConsistencyLevel): Future[ResultSet] = {
       users.delete
+          .consistencyLevel_=(consistency)
           .where(_.id eqs user.id)
-          .consistencyLevel_=(ConsistencyLevel.ALL)
           .future()
     }
 
-    def follow(follower: UUID, followee: UUID): Future[Unit] = {
+    def follow(follower: UUID, followee: UUID)(implicit consistency: ConsistencyLevel): Future[Unit] = {
       for {
         r1 <- followers.insert()
+            .consistencyLevel_=(consistency)
             .value(_.user, followee)
             .value(_.follower, follower)
             .future()
         r2 <- followees.insert()
+            .consistencyLevel_=(consistency)
             .value(_.user, follower)
             .value(_.following, followee)
             .future()
       } yield ()
     }
 
-    def unfollow(follower: UUID, followee: UUID): Future[Unit] = {
+    def unfollow(follower: UUID, followee: UUID)(implicit consistency: ConsistencyLevel): Future[Unit] = {
       for {
         r1 <- followers.delete()
+            .consistencyLevel_=(consistency)
             .where(_.user eqs followee)
             .and(_.follower eqs follower)
             .future()
         r2 <- followees.delete()
+            .consistencyLevel_=(consistency)
             .where(_.user eqs follower)
             .and(_.following eqs followee)
             .future()
@@ -206,7 +213,7 @@ trait OwlService extends Connector {
 
     def userUUID(i: Int) = UUID.nameUUIDFromBytes(BigInt(i).toByteArray)
 
-    def initSocialGraph(nUsers: Int, avgFollowers: Int, zipf: Double = 1.0): Future[Unit] = {
+    def initSocialGraph(nUsers: Int, avgFollowers: Int, zipf: Double = 1.0)(implicit consistency: ConsistencyLevel): Future[Unit] = {
       val rnd = new ZipfDistribution(nUsers, zipf)
 
       // create users with UUIDs generated from numbers: 1..nUsers
@@ -225,9 +232,10 @@ trait OwlService extends Connector {
       )).map(_ => ())
     }
 
-    def followersOf(user: UUID): Future[Iterator[UUID]] = {
+    def followersOf(user: UUID)(implicit consistency: ConsistencyLevel): Future[Iterator[UUID]] = {
       followers
           .select
+          .consistencyLevel_=(consistency)
           .where(_.user eqs user)
           .future()
           .map { results =>
@@ -237,28 +245,29 @@ trait OwlService extends Connector {
           }
     }
 
-    private def add_to_followers_timelines(tweet: UUID, user: UUID) = {
+    private def add_to_followers_timelines(tweet: UUID, user: UUID)(implicit consistency: ConsistencyLevel) = {
       followersOf(user) flatMap { followers =>
         Future.sequence(followers map { f =>
           timelines.insert()
+              .consistencyLevel_=(consistency)
               .value(_.user, f)
               .value(_.tweet, tweet)
-              .consistencyLevel_=(ConsistencyLevel.ALL)
               .future()
         })
       }
     }
 
-    def post(t: Tweet): Future[UUID] = {
+    def post(t: Tweet)(implicit consistency: ConsistencyLevel): Future[UUID] = {
       for {
         _ <- tweets.insert()
+                .consistencyLevel_=(consistency)
                 .value(_.id, t.id)
                 .value(_.user, t.user)
                 .value(_.body, t.body)
                 .value(_.created, t.created)
-                .consistencyLevel_=(ConsistencyLevel.ALL)
                 .future()
         _ <- retweetCounts.update()
+                .consistencyLevel_=(consistency)
                 .where(_.tweet eqs t.id)
                 .modify(_.count += 0L) // force initialization (to 0)
                 .future()
@@ -266,46 +275,54 @@ trait OwlService extends Connector {
       } yield t.id
     }
 
-    private def hasRetweeted(tweet: UUID, user: UUID): Future[Boolean] = {
+    private def hasRetweeted(tweet: UUID, user: UUID)(implicit consistency: ConsistencyLevel): Future[Boolean] = {
       retweets.select(_.retweeter)
+          .consistencyLevel_=(consistency)
           .where(_.tweet eqs tweet)
           .and(_.retweeter eqs user)
           .one()
           .map(_.isDefined)
     }
 
-    def retweet(tweet: UUID, retweeter: UUID): Future[Option[UUID]] = {
+    def retweet(tweet: UUID, retweeter: UUID)(implicit consistency: ConsistencyLevel): Future[Option[UUID]] = {
       hasRetweeted(tweet, retweeter) flatMap { dup =>
         if (dup) Future { None }
         else {
           for {
             _ <- retweetCounts.update()
-                .where(_.tweet eqs tweet)
-                .modify(_.count += 1)
-                .consistencyLevel_=(ConsistencyLevel.ALL)
-                .future()
+                    .consistencyLevel_=(consistency)
+                    .where(_.tweet eqs tweet)
+                    .modify(_.count += 1)
+                    .future()
             _ <- retweets.insert()
-                .value(_.tweet, tweet)
-                .value(_.retweeter, retweeter)
-                .consistencyLevel_=(ConsistencyLevel.ALL)
-                .future()
+                    .consistencyLevel_=(consistency)
+                    .value(_.tweet, tweet)
+                    .value(_.retweeter, retweeter)
+                    .future()
             _ <- add_to_followers_timelines(tweet, retweeter)
           } yield Some(tweet)
         }
       }
     }
 
-    def getRetweetCount(tweet: UUID): Future[Option[Long]] = {
-      retweetCounts.select(_.count).where(_.tweet eqs tweet).one()
+    def getRetweetCount(tweet: UUID)(implicit consistency: ConsistencyLevel): Future[Option[Long]] = {
+      retweetCounts.select(_.count)
+          .consistencyLevel_=(consistency)
+          .where(_.tweet eqs tweet)
+          .one()
     }
 
-    def getTweet(id: UUID): Future[Option[Tweet]] = {
+    def getTweet(id: UUID)(implicit consistency: ConsistencyLevel): Future[Option[Tweet]] = {
       tweets.select.where(_.id eqs id).one() flatMap {
         case Some(tweet) =>
           for {
-            userOpt <- users.select.where(_.id eqs tweet.user).one()
+            userOpt <- users.select
+                .consistencyLevel_=(consistency)
+                .where(_.id eqs tweet.user)
+                .one()
             ctOpt <- retweetCounts
                 .select(_.count)
+                .consistencyLevel_=(consistency)
                 .where(_.tweet eqs id)
                 .one()
           } yield for {
@@ -319,8 +336,9 @@ trait OwlService extends Connector {
       }
     }
 
-    def timeline(user: UUID, limit: Int) = {
+    def timeline(user: UUID, limit: Int)(implicit consistency: ConsistencyLevel) = {
       timelines.select
+          .consistencyLevel_=(consistency)
           .where(_.user eqs user)
           .limit(limit)
           .future()

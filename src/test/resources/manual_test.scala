@@ -12,6 +12,9 @@ val t1 = Tweet(user = arthur.id, body = "Nutri-matic drinks are the worst. #fml"
 val t2 = Tweet(user = zaphod.id, body = "Things more important than my ego: none")
 
 await(service.createTables)
+
+implicit val consistency = ConsistencyLevel.ALL
+
 await(Future.sequence(List(arthur, ford, zaphod) map (service.store(_))))
 
 await(service.follow(arthur.id, zaphod.id))

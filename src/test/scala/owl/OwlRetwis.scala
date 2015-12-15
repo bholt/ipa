@@ -11,6 +11,7 @@ import Util._
 
 class OwlRetwis extends OwlTest {
   override implicit val space = KeySpace("owl_retwis")
+  implicit val consistency = ConsistencyLevel.ALL
 
   val nUsers = config.getInt("retwis.initial.users")
   val avgFollowers = config.getInt("retwis.initial.followers")
@@ -49,4 +50,7 @@ class OwlRetwis extends OwlTest {
     ts.length shouldBe 1
   }
 
+  it should "run workload" in {
+
+  }
 }

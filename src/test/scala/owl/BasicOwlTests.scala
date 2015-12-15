@@ -12,8 +12,8 @@ import scala.language.postfixOps
 
 
 class BasicOwlTests extends OwlTest {
-
   override implicit val space = KeySpace("owl_basic")
+  implicit val consistency = ConsistencyLevel.ALL
 
   implicit override val patienceConfig =
     PatienceConfig(timeout = 500.millis, interval = 10.millis)

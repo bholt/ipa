@@ -106,8 +106,8 @@ class BasicOwlTests extends OwlTest {
       val tweets = iter.toVector
       tweets.length shouldBe 1
 
-      tweets(0) shouldBe tweetEgo
-      tweets(0).user shouldBe zaphod.id
+      tweets(0) shouldEqual tweetEgo
+      tweets(0).user shouldEqual zaphod.id
     }
 
     whenReady(service.timeline(ford.id, 10)) { iter =>

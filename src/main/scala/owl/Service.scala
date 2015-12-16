@@ -32,6 +32,10 @@ case class User(
     created: DateTime = DateTime.now()
 )
 
+object User {
+  def id(i: Int) = UUID.nameUUIDFromBytes(BigInt(i).toByteArray)
+}
+
 class Users extends CassandraTable[Users, User] {
   object id extends UUIDColumn(this) with PartitionKey[UUID]
   object username extends StringColumn(this)
@@ -211,38 +215,19 @@ trait OwlService extends Connector {
       } yield ()
     }
 
-    def userUUID(i: Int) = UUID.nameUUIDFromBytes(BigInt(i).toByteArray)
-
-    def initSocialGraph(nUsers: Int, avgFollowers: Int, zipf: Double = 1.0)(implicit consistency: ConsistencyLevel): Future[Unit] = {
-      val rnd = new ZipfDistribution(nUsers, zipf)
-
-      // create users with UUIDs generated from numbers: 1..nUsers
-      val users = (1 to nUsers) map { i => store(randomUser(id = userUUID(i))) }
-
-      // follows (can run concurrently with users if needed
-      val nFollows = nUsers * avgFollowers
-      val follows = (1 to nFollows) map { _ =>
-        val ids = rnd.sample(2).map(userUUID)
-        follow(ids(0), ids(1))
-      }
-
-      Future.sequence(Seq(
-        Future.sequence(users),
-        Future.sequence(follows)
-      )).map(_ => ())
-    }
-
-    def followersOf(user: UUID)(implicit consistency: ConsistencyLevel): Future[Iterator[UUID]] = {
-      followers
+    def followersOf(user: UUID, limit: Int = 0)(implicit consistency: ConsistencyLevel): Future[Iterator[UUID]] = {
+      val q = followers
           .select
           .consistencyLevel_=(consistency)
           .where(_.user eqs user)
-          .future()
-          .map { results =>
-            results.iterator() map { row =>
-              followers.fromRow(row).follower
-            }
-          }
+
+      val ql = if (limit > 0) q.limit(limit) else q
+
+      ql.future().map { results =>
+        results.iterator() map { row =>
+          followers.fromRow(row).follower
+        }
+      }
     }
 
     private def add_to_followers_timelines(tweet: UUID, user: UUID)(implicit consistency: ConsistencyLevel) = {

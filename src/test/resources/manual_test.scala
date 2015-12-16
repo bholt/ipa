@@ -23,3 +23,5 @@ await(service.follow(ford.id, arthur.id))
 
 await(service.post(t1))
 await(service.post(t2))
+
+object Choices

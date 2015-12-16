@@ -1,5 +1,9 @@
 package owl
 
+import com.codahale.metrics.MetricRegistry
+import com.websudos.phantom.builder.query.ExecutableStatement
+import nl.grons.metrics.scala.Timer
+
 import scala.concurrent.{ExecutionContext, Future, Await}
 import scala.concurrent.duration.Duration
 import scala.util.Random
@@ -12,6 +16,14 @@ object Util {
 
   implicit class FutureSeqPlus[T](v: Iterator[Future[T]]) {
     def bundle(implicit ec: ExecutionContext) = Future.sequence(v)
+  }
+
+  implicit class InstrumentedFuture[T](f: Future[T])(implicit ec: ExecutionContext) {
+    def instrument(timer: Timer) = {
+      val ctx = timer.timerContext()
+      f.onComplete(_ => ctx.stop())
+      f
+    }
   }
 
   /**

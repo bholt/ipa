@@ -2,18 +2,20 @@ package owl
 
 import java.util.UUID
 
+import com.codahale.metrics.MetricRegistry
 import com.datastax.driver.core.{ConsistencyLevel, Row}
 import com.datastax.driver.core.utils.UUIDs
 import com.websudos.phantom.{dsl, CassandraTable}
 import com.websudos.phantom.column.DateTimeColumn
 import com.websudos.phantom.dsl.{StringColumn, UUIDColumn}
 import com.websudos.phantom.keys.PartitionKey
+import nl.grons.metrics.scala.{Timer, FutureMetrics, InstrumentedBuilder}
 import org.joda.time.DateTime
 
 import com.websudos.phantom.dsl._
 
 import scala.collection.immutable.IndexedSeq
-import scala.concurrent.{Future, Await}
+import scala.concurrent.{ExecutionContext, Future, Await}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 import scala.collection.JavaConversions._
@@ -121,7 +123,20 @@ class RetweetCounts extends CassandraTable[RetweetCounts, RetweetCount] {
   override def fromRow(r: Row) = RetweetCount(tweet(r), count(r))
 }
 
-trait OwlService extends Connector {
+trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
+
+  override val metricRegistry = new MetricRegistry
+
+  object metric {
+    val cassandraOpLatency = metrics.timer("cassandraOpLatency")
+  }
+  implicit class InstrumentedFuture[T](f: Future[T]) {
+    def instrument(): Future[T] = {
+      val ctx = metric.cassandraOpLatency.timerContext()
+      f.onComplete(_ => ctx.stop())
+      f
+    }
+  }
 
   val users = new Users
   val followers = new Followers
@@ -168,6 +183,7 @@ trait OwlService extends Connector {
                    .value(_.name, user.name)
                    .value(_.created, user.created)
                    .future()
+                   .instrument()
       } yield user.id
     }
 
@@ -176,6 +192,7 @@ trait OwlService extends Connector {
           .consistencyLevel_=(consistency)
           .where(_.id eqs id)
           .one()
+          .instrument()
     }
 
     def delete(user: User)(implicit consistency: ConsistencyLevel): Future[ResultSet] = {
@@ -183,6 +200,7 @@ trait OwlService extends Connector {
           .consistencyLevel_=(consistency)
           .where(_.id eqs user.id)
           .future()
+          .instrument()
     }
 
     def follow(follower: UUID, followee: UUID)(implicit consistency: ConsistencyLevel): Future[Unit] = {
@@ -192,26 +210,30 @@ trait OwlService extends Connector {
             .value(_.user, followee)
             .value(_.follower, follower)
             .future()
+            .instrument()
         r2 <- followees.insert()
             .consistencyLevel_=(consistency)
             .value(_.user, follower)
             .value(_.following, followee)
             .future()
+            .instrument()
       } yield ()
     }
 
     def unfollow(follower: UUID, followee: UUID)(implicit consistency: ConsistencyLevel): Future[Unit] = {
       for {
-        r1 <- followers.delete()
+        _ <- followers.delete()
             .consistencyLevel_=(consistency)
             .where(_.user eqs followee)
             .and(_.follower eqs follower)
             .future()
-        r2 <- followees.delete()
+            .instrument()
+        _ <- followees.delete()
             .consistencyLevel_=(consistency)
             .where(_.user eqs follower)
             .and(_.following eqs followee)
             .future()
+            .instrument()
       } yield ()
     }
 
@@ -223,7 +245,7 @@ trait OwlService extends Connector {
 
       val ql = if (limit > 0) q.limit(limit) else q
 
-      ql.future().map { results =>
+      ql.future().instrument().map { results =>
         results.iterator() map { row =>
           followers.fromRow(row).follower
         }
@@ -238,6 +260,7 @@ trait OwlService extends Connector {
               .value(_.user, f)
               .value(_.tweet, tweet)
               .future()
+              .instrument()
         })
       }
     }
@@ -251,11 +274,13 @@ trait OwlService extends Connector {
                 .value(_.body, t.body)
                 .value(_.created, t.created)
                 .future()
+                .instrument()
         _ <- retweetCounts.update()
                 .consistencyLevel_=(consistency)
                 .where(_.tweet eqs t.id)
                 .modify(_.count += 0L) // force initialization (to 0)
                 .future()
+                .instrument()
         _ <- add_to_followers_timelines(t.id, t.user)
       } yield t.id
     }
@@ -266,6 +291,7 @@ trait OwlService extends Connector {
           .where(_.tweet eqs tweet)
           .and(_.retweeter eqs user)
           .one()
+          .instrument()
           .map(_.isDefined)
     }
 
@@ -279,11 +305,13 @@ trait OwlService extends Connector {
                     .where(_.tweet eqs tweet)
                     .modify(_.count += 1)
                     .future()
+                    .instrument()
             _ <- retweets.insert()
                     .consistencyLevel_=(consistency)
                     .value(_.tweet, tweet)
                     .value(_.retweeter, retweeter)
                     .future()
+                    .instrument()
             _ <- add_to_followers_timelines(tweet, retweeter)
           } yield Some(tweet)
         }
@@ -295,6 +323,7 @@ trait OwlService extends Connector {
           .consistencyLevel_=(consistency)
           .where(_.tweet eqs tweet)
           .one()
+          .instrument()
     }
 
     def getTweet(id: UUID)(implicit consistency: ConsistencyLevel): Future[Option[Tweet]] = {
@@ -305,11 +334,13 @@ trait OwlService extends Connector {
                 .consistencyLevel_=(consistency)
                 .where(_.id eqs tweet.user)
                 .one()
+                .instrument()
             ctOpt <- retweetCounts
                 .select(_.count)
                 .consistencyLevel_=(consistency)
                 .where(_.tweet eqs id)
                 .one()
+                .instrument()
           } yield for {
             u <- userOpt
             ct <- ctOpt
@@ -327,10 +358,12 @@ trait OwlService extends Connector {
           .where(_.user eqs user)
           .limit(limit)
           .future()
+          .instrument()
           .flatMap { rs =>
-            Future.sequence(rs.iterator()
+            rs.iterator()
                 .map(timelines.fromRow(_).tweet)
-                .map(getTweet))
+                .map(getTweet)
+                .bundle
           }
           .map(_.flatten)
     }

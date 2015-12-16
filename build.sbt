@@ -27,11 +27,12 @@ libraryDependencies ++= {
   val phantomV = "1.17.7"
 
   Seq(
-    "com.websudos"        %%  "phantom-dsl"               % phantomV,
-    "com.websudos"        %%  "phantom-testkit"           % phantomV,
-    "com.websudos"        %%  "phantom-connectors"        % phantomV,
-    "org.scalatest"       %%  "scalatest"                 % "2.2.4"     % "test",
-    "com.typesafe"        %   "config"                    % "1.3.0",
-    "org.apache.commons"  %   "commons-math3"             % "3.5"
+    "com.websudos"        %% "phantom-dsl"                % phantomV,
+    "com.websudos"        %% "phantom-testkit"            % phantomV,
+    "com.websudos"        %% "phantom-connectors"         % phantomV,
+    "org.scalatest"       %% "scalatest"                  % "2.2.4"     % "test",
+    "com.typesafe"        %  "config"                     % "1.3.0",
+    "org.apache.commons"  %  "commons-math3"              % "3.5",
+    "nl.grons"            %% "metrics-scala"              % "3.5.2"
   )
 }

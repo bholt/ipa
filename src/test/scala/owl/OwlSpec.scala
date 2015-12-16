@@ -1,5 +1,8 @@
 package owl
 
+import java.util.concurrent.TimeUnit
+
+import com.codahale.metrics.{ConsoleReporter, MetricRegistry}
 import org.scalactic.Equality
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.{BeforeAndAfterAll, Inspectors, Matchers, FlatSpec}
@@ -32,6 +35,13 @@ trait OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll  {
   }
 
   override def afterAll(): Unit = {
+    println("---- Metrics")
+    ConsoleReporter.forRegistry(metricRegistry)
+        .convertRatesTo(TimeUnit.MILLISECONDS)
+        .build()
+        .report()
+    println("----")
+
     super.afterAll()
     service.cleanupTables()
   }

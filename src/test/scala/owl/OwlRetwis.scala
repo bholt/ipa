@@ -1,9 +1,11 @@
 package owl
 
+import java.util.concurrent.{ThreadPoolExecutor, TimeUnit, ArrayBlockingQueue}
+
 import com.datastax.driver.core.ConsistencyLevel
 import org.apache.commons.math3.distribution.ZipfDistribution
 
-import scala.concurrent.{Future, Await}
+import scala.concurrent.{ExecutionContext, Future, Await}
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.Random
@@ -15,6 +17,8 @@ import Util._
 class OwlRetwis extends OwlTest {
   override implicit val space = KeySpace("owl_retwis")
   implicit val consistency = ConsistencyLevel.ALL
+
+  val parallelCap = config.getInt("owl.cap")
 
   val nUsers = config.getInt("retwis.initial.users")
   val avgFollowers = config.getInt("retwis.initial.followers")
@@ -53,8 +57,8 @@ class OwlRetwis extends OwlTest {
 
 
   "The app" should "initialize social graph" in {
+    println(s"-- initializing social graph ($nUsers users, ${nUsers*avgFollowers} follows)")
     Await.result(initSocialGraph(nUsers, avgFollowers, zipf), Duration.Inf)
-    println(s"-- social graph initialized ($nUsers users, ${nUsers*avgFollowers} follows)")
 
     // spot checks
     val u1 = User.id(1)
@@ -109,8 +113,6 @@ class OwlRetwis extends OwlTest {
       def apply = body()
     }
 
-
-
     case object NewUser extends Task(() =>
       service.store(service.randomUser()) map { _ => () }
     )
@@ -147,19 +149,19 @@ class OwlRetwis extends OwlTest {
 
   it should "run each work once" in {
     import Workload._
-    println("-- NewUser")
+    println("### NewUser")
     NewUser()
 
-    println("-- Follow")
+    println("### Follow")
     Follow()
 
-    println("-- Unfollow")
+    println("### Unfollow")
     Unfollow()
 
-    println("-- Tweet")
+    println("### Tweet")
     Tweet()
 
-    println("-- Timeline")
+    println("### Timeline")
     Timeline()
 
   }
@@ -175,7 +177,20 @@ class OwlRetwis extends OwlTest {
       Timeline -> 0.70
     )
 
-    val fut = weightedSample(mix)()
-    await(fut)
+    implicit val ec = boundedQueueExecutionContext(capacity = parallelCap)
+
+    val duration = 10.seconds
+    println(s"# running workload for $duration, with $parallelCap at a time")
+    val deadline = duration.fromNow
+
+    val all =
+      Stream from 1 map { i =>
+        weightedSample(mix)()
+      } takeWhile { _ =>
+        deadline.hasTimeLeft
+      } bundle
+
+    await(all)
+    println("# done running workload")
   }
 }

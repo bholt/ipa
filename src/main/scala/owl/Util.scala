@@ -1,12 +1,15 @@
 package owl
 
-import com.codahale.metrics.MetricRegistry
-import com.websudos.phantom.builder.query.ExecutableStatement
+import java.util.concurrent.{ArrayBlockingQueue, TimeUnit, ThreadPoolExecutor}
+
 import nl.grons.metrics.scala.Timer
 
+import scala.collection.generic.CanBuildFrom
 import scala.concurrent.{ExecutionContext, Future, Await}
 import scala.concurrent.duration.Duration
 import scala.util.Random
+
+import scala.language.higherKinds
 
 object Util {
 
@@ -14,8 +17,11 @@ object Util {
     def sample = v(Random.nextInt(v.length))
   }
 
-  implicit class FutureSeqPlus[T](v: Iterator[Future[T]]) {
-    def bundle(implicit ec: ExecutionContext) = Future.sequence(v)
+  implicit class FutureSeqPlus[A, M[X] <: TraversableOnce[X]](v: M[Future[A]]) {
+    /**
+      * Bundle up a bunch of futures into a single future using `Future.sequence`
+      */
+    def bundle(implicit cbf: CanBuildFrom[M[Future[A]], A, M[A]], executor: ExecutionContext): Future[M[A]] = Future.sequence(v)
   }
 
   implicit class InstrumentedFuture[T](f: Future[T])(implicit ec: ExecutionContext) {
@@ -25,6 +31,44 @@ object Util {
       f
     }
   }
+
+  /** from scala.concurrent.impl.ExecutionContextImpl */
+  def desiredParallelism = {
+    def getInt(name: String, default: String) = (try System.getProperty(name, default) catch {
+      case e: SecurityException => default
+    }) match {
+      case s if s.charAt(0) == 'x' => (Runtime.getRuntime.availableProcessors * s.substring(1).toDouble).ceil.toInt
+      case other => other.toInt
+    }
+
+    def range(floor: Int, desired: Int, ceiling: Int) = scala.math.min(scala.math.max(floor, desired), ceiling)
+
+    range(
+      getInt("scala.concurrent.context.minThreads", "1"),
+      getInt("scala.concurrent.context.numThreads", "x1"),
+      getInt("scala.concurrent.context.maxThreads", "x1")
+    )
+  }
+
+  /**
+    * Execution context that throttles creation of futures by blocking threads generating futures once a queue reaches capacity.
+    * http://quantifind.com/blog/2015/06/throttling-instantiations-of-scala-futures-1/
+    */
+  def boundedQueueExecutionContext(
+    workers: Int = desiredParallelism,
+    capacity: Int = desiredParallelism * 10
+  ) = ExecutionContext.fromExecutorService(
+    new ThreadPoolExecutor(
+      workers, workers,
+      0L, TimeUnit.SECONDS,
+      new ArrayBlockingQueue[Runnable](capacity) {
+        override def offer(e: Runnable) = {
+          put(e); // may block if waiting for empty room
+          true
+        }
+      }
+    )
+  )
 
   /**
     * Weighted random sample keys from map.

@@ -17,6 +17,10 @@ object Util {
     def sample = v(Random.nextInt(v.length))
   }
 
+  implicit class FuturePlus[T](f: Future[T]) {
+    def await(): T = Await.result(f, Duration.Inf)
+  }
+
   implicit class FutureSeqPlus[A, M[X] <: TraversableOnce[X]](v: M[Future[A]]) {
     /**
       * Bundle up a bunch of futures into a single future using `Future.sequence`
@@ -98,6 +102,17 @@ object Util {
     */
   def dlog(text: String) {
     println(s"${Console.BLACK}$text${Console.RESET}")
+  }
+
+  implicit class ColoredString(s: String) {
+    def color(c: String) = c + s + Console.RESET
+
+    def green  = color(Console.GREEN)
+    def gray   = color(Console.BLACK)
+    def yellow = color(Console.YELLOW)
+    def red    = color(Console.RED)
+    def purple = color(Console.MAGENTA)
+    def cyan   = color(Console.CYAN)
   }
 
 }

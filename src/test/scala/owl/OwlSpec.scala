@@ -37,7 +37,7 @@ trait OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll  {
   override def afterAll(): Unit = {
     println("---- Metrics")
     ConsoleReporter.forRegistry(metricRegistry)
-        .convertRatesTo(TimeUnit.MILLISECONDS)
+        .convertRatesTo(TimeUnit.SECONDS)
         .build()
         .report()
     println("----")

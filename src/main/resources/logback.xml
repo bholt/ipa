@@ -1,4 +1,5 @@
 <configuration>
+  <!-- Logging settings for running performance experiments. -->
   <appender name="FILE" class="ch.qos.logback.core.FileAppender">
     <file>/tmp/owl.client.log</file>
     <encoder>
@@ -12,14 +13,14 @@
   
   <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
     <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
-      <level>DEBUG</level>
+      <level>WARN</level>
     </filter>
     <encoder>
       <pattern>%gray(%-5level %date{HH:mm:ss.SSS}) %msg%n</pattern>
     </encoder>
   </appender>
 
-  <root name="DEBUG">
+  <root name="ERROR">
     <appender-ref ref="STDOUT" />
     <appender-ref ref="FILE" />
   </root>

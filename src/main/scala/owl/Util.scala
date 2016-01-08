@@ -92,4 +92,12 @@ object Util {
     */
   def await[T](f : Future[T]): T = Await.result(f, Duration.Inf)
 
+
+  /**
+    * Like 'println' but for debug output (colored)
+    */
+  def dlog(text: String) {
+    println(s"${Console.BLACK}$text${Console.RESET}")
+  }
+
 }

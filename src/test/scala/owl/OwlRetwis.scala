@@ -113,7 +113,7 @@ class OwlRetwis extends OwlTest {
     sealed abstract class Task(
       val body: () => Future[Unit]
     ) extends (() => Future[Unit]) {
-      def apply = body()
+      def apply = body() map { _ => metric.retwisOps.mark() }
     }
 
     case object NewUser extends Task(() =>

@@ -129,11 +129,12 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
 
   object metric {
     val cassandraOpLatency = metrics.timer("cassandraOpLatency")
+    val retwisOps = metrics.meter("retwisOps")
   }
   implicit class InstrumentedFuture[T](f: Future[T]) {
     def instrument(): Future[T] = {
       val ctx = metric.cassandraOpLatency.timerContext()
-      f.onComplete(_ => ctx.stop())
+      f onComplete { _ => ctx.stop() }
       f
     }
   }

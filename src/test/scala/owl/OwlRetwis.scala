@@ -26,11 +26,12 @@ class OwlRetwis extends OwlTest {
 
   val parallelCap = config.getInt("owl.cap")
 
+  val duration = config.getInt("retwis.duration").seconds
+  val zipf = config.getDouble("retwis.zipf")
+
   val nUsers = config.getInt("retwis.initial.users")
   val avgFollowers = config.getInt("retwis.initial.followers")
   val tweetsPerUser = config.getInt("retwis.initial.tweets")
-
-  val zipf = config.getDouble("retwis.zipf")
 
   object Zipf {
     val zipfUser = new ZipfDistribution(nUsers, zipf)
@@ -42,7 +43,6 @@ class OwlRetwis extends OwlTest {
   }
 
   def initSocialGraph(nUsers: Int, avgFollowers: Int, zipf: Double = 1.0)(implicit consistency: ConsistencyLevel): Future[Unit] = {
-    val rnd = new ZipfDistribution(nUsers, zipf)
 
     // create users with UUIDs generated from numbers: 1..nUsers
     val users = (1 to nUsers) map { i =>
@@ -55,10 +55,7 @@ class OwlRetwis extends OwlTest {
       service.follow(Uniform.user(), Zipf.user())
     }
 
-    Future.sequence(Seq(
-      Future.sequence(users),
-      Future.sequence(follows)
-    )).map(_ => ())
+    Seq(users.bundle, follows.bundle).bundle.map(_ => ())
   }
 
 
@@ -185,7 +182,6 @@ class OwlRetwis extends OwlTest {
 
     implicit val ec = boundedQueueExecutionContext(capacity = parallelCap)
 
-    val duration = 10.seconds
     println(s"# running workload for $duration, with $parallelCap at a time")
     val deadline = duration.fromNow
 

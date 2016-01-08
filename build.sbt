@@ -12,6 +12,9 @@ fork in run := true
 // send output to the build's standard output and error (when forked)
 outputStrategy := Some(StdoutOutput)
 
+// set main class for 'sbt run'
+mainClass in (Compile, run) := Some("owl.All")
+
 resolvers ++= Seq(
   Resolver.sonatypeRepo("releases"),
   Resolver.sonatypeRepo("snapshots"),

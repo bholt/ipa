@@ -16,7 +16,13 @@ import Util._
 
 class OwlRetwis extends OwlTest {
   override implicit val space = KeySpace("owl_retwis")
-  implicit val consistency = ConsistencyLevel.ALL
+
+  implicit val consistency =
+    config.getString("owl.consistency") match {
+      case "strong" => ConsistencyLevel.ALL
+      case "weak" => ConsistencyLevel.ONE
+      case c => throw new RuntimeException(s"invalid consistency in config: $c")
+    }
 
   val parallelCap = config.getInt("owl.cap")
 

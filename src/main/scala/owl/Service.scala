@@ -162,7 +162,8 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
     }
 
     def cleanupTables(): Unit = {
-      tables.map(_.tableName).foreach(t => session.execute(s"DROP TABLE $t"))
+      tables.map(_.tableName)
+          .foreach(t => session.execute(s"DROP TABLE IF EXISTS $t"))
     }
 
     def randomUser(

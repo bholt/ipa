@@ -10,8 +10,8 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.Random
 
-import com.websudos.phantom.dsl._
 import com.websudos.phantom.connectors.KeySpace
+import com.websudos.phantom.dsl.context
 import Util._
 
 class OwlRetwis extends OwlTest {

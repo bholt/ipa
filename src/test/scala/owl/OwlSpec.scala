@@ -31,7 +31,7 @@ trait OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll  {
 
   override def beforeAll(): Unit = {
     super.beforeAll()
-    Await.result(service.createTables(), Duration.Inf)
+    service.createTables()
   }
 
   override def afterAll(): Unit = {

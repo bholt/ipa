@@ -155,10 +155,10 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
     val FIRST_NAMES = Vector("Arthur", "Ford", "Tricia", "Zaphod")
     val LAST_NAMES = Vector("Dent", "Prefect", "McMillan", "Beeblebrox")
 
-    def createTables(): Future[Unit] = {
+    def createTables(): Unit = {
       Future.sequence(
         tables.map(_.create.ifNotExists().future())
-      ).map(_ => ())
+      ).await()
     }
 
     def cleanupTables(): Unit = {

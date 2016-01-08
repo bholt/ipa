@@ -6,6 +6,12 @@ scalaVersion := "2.11.7"
 
 scalacOptions ++= Seq("-unchecked", "-deprecation", "-feature")
 
+// fork for these so we can explicitly `exit` and kill all our threads
+fork in run := true
+
+// send output to the build's standard output and error (when forked)
+outputStrategy := Some(StdoutOutput)
+
 resolvers ++= Seq(
   Resolver.sonatypeRepo("releases"),
   Resolver.sonatypeRepo("snapshots"),

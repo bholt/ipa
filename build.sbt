@@ -9,6 +9,15 @@ scalacOptions ++= Seq("-unchecked", "-deprecation", "-feature")
 // fork for these so we can explicitly `exit` and kill all our threads
 fork in run := true
 
+// pass all System properties to forked JVM
+import scala.collection.JavaConversions._
+javaOptions in run ++= {
+  val props = System.getProperties
+  props.stringPropertyNames
+       .map { k => s"-D$k=${props.getProperty(k)}" }
+       .toSeq
+}
+
 // send output to the build's standard output and error (when forked)
 outputStrategy := Some(StdoutOutput)
 

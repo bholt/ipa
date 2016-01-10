@@ -152,7 +152,7 @@ object Workload extends Retwis {
 
   def main(args: Array[String]): Unit = {
     apply()
-    sys.exit(0)
+    sys.exit()
   }
 
 }
@@ -197,7 +197,7 @@ object Init extends Retwis {
 
   def main(args: Array[String]) {
     apply()
-    sys.exit(0) // because we have extra threads sitting around...
+    sys.exit() // because we have extra threads sitting around...
   }
 
 }
@@ -206,6 +206,6 @@ object All {
   def main(args: Array[String]) {
     Init()
     Workload()
-    sys.exit(0)
+    sys.exit()
   }
 }

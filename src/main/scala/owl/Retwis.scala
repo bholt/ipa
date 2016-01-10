@@ -7,7 +7,7 @@ import com.websudos.phantom.connectors.KeySpace
 import org.apache.commons.math3.distribution.ZipfDistribution
 
 import com.websudos.phantom.dsl._
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{ExecutionContextExecutorService, ExecutionContext, Future}
 import scala.concurrent.duration._
 import scala.util.Random
 import Util._
@@ -160,8 +160,8 @@ object Workload extends Retwis {
 object Init extends Retwis {
 
   def apply() {
-    println("#> Cleaning up any existing tables.")
-    service.cleanupTables()
+    println("#> Resetting keyspace.")
+    service.resetKeyspace()
 
     println("#> Creating tables.")
     service.createTables()

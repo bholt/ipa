@@ -21,12 +21,21 @@ trait Connector extends SessionProvider {
   implicit val space = Connector.keyspace
   override implicit lazy val session = {
     val tmpSession = blocking { cluster.connect() }
-    val replication = config.getString("cassandra.replication.command")
+    createKeyspace(tmpSession)
     blocking {
-      tmpSession.execute(s"CREATE KEYSPACE IF NOT EXISTS ${space.name} WITH replication = $replication;")
+      val rs = tmpSession.execute(s"SELECT strategy_options FROM system.schema_keyspaces WHERE keyspace_name = '${space.name}'")
+      val keyspace_options = rs.one().getString(0)
+      println(s"# (keyspace options: $keyspace_options)")
     }
     blocking {
       cluster.connect(space.name)
+    }
+  }
+
+  def createKeyspace(s: Session): Unit = {
+    val r = config.getInt("cassandra.replication.factor")
+    blocking {
+      s.execute(s"CREATE KEYSPACE IF NOT EXISTS ${space.name} WITH replication = {'class': 'SimpleStrategy', 'replication_factor': $r};")
     }
   }
 }

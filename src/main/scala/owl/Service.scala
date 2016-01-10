@@ -15,7 +15,7 @@ import org.joda.time.DateTime
 import com.websudos.phantom.dsl._
 
 import scala.collection.immutable.IndexedSeq
-import scala.concurrent.{ExecutionContext, Future, Await}
+import scala.concurrent.{Future, blocking}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 import scala.collection.JavaConversions._
@@ -162,8 +162,14 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
     }
 
     def cleanupTables(): Unit = {
-      tables.map(_.tableName)
-          .foreach(t => session.execute(s"DROP TABLE IF EXISTS $t"))
+       tables.map(_.tableName)
+             .foreach(t => session.execute(s"DROP TABLE IF EXISTS $t"))
+    }
+
+    def resetKeyspace(): Unit = {
+      val tmpSession = blocking { cluster.connect() }
+      blocking { tmpSession.execute(s"DROP KEYSPACE IF EXISTS ${space.name}") }
+      createKeyspace(tmpSession)
     }
 
     def randomUser(

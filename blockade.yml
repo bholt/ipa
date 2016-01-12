@@ -1,0 +1,15 @@
+containers:
+  c1:
+    image: cassandra:2.2.4
+    command: cassandra -f
+    ports: [7000]
+  
+  c2:
+    image: cassandra:2.2.4
+    command: cassandra -f
+    links: ["c1"]
+  
+  c3:
+    image: cassandra:2.2.4
+    command: cassandra -f
+    links: ["c1"]

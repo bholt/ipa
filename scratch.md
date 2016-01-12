@@ -1,3 +1,7 @@
+# Scratch notes
+
+### Manual commands to paste into Scala console
+~~~scala
 import owl._
 import Util._
 import com.websudos.phantom.dsl._
@@ -23,6 +27,11 @@ await(service.follow(ford.id, arthur.id))
 
 await(service.post(t1))
 await(service.post(t2))
+~~~
 
-// CREATE KEYSPACE IF NOT EXISTS owl WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 2};
-// CREATE TABLE ...
+### SQL commands
+~~~sql
+CREATE KEYSPACE IF NOT EXISTS owl WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 3};
+CREATE TABLE users (id int PRIMARY KEY, username text, name text);
+INSERT INTO users(id,username,name) VALUES (42, 'tealover42', 'Arthur Dent');
+~~~

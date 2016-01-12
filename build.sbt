@@ -6,6 +6,18 @@ scalaVersion := "2.11.7"
 
 scalacOptions ++= Seq("-unchecked", "-deprecation", "-feature")
 
+// allow packaging using docker
+enablePlugins(DockerPlugin)
+enablePlugins(JavaAppPackaging)
+
+dockerRepository := Some("bholt")
+version in Docker := "latest"
+
+mainClass in Compile := Some("owl.All") // set main for docker
+
+import com.typesafe.sbt.packager.docker._
+dockerCommands += Cmd("ENV", "CASSANDRA_HOST", "cassandra")
+
 // fork for these so we can explicitly `exit` and kill all our threads
 fork in run := true
 

@@ -35,3 +35,15 @@ CREATE KEYSPACE IF NOT EXISTS owl WITH replication = {'class': 'SimpleStrategy',
 CREATE TABLE users (id int PRIMARY KEY, username text, name text);
 INSERT INTO users(id,username,name) VALUES (42, 'tealover42', 'Arthur Dent');
 ~~~
+
+### Docker
+~~~bash
+# Launch cassandra cluster via blockade
+> sudo blockade up
+
+# Build docker image
+> sudo sbt docker:publishLocal
+
+# Run via docker image (and pass arguments!)
+> sudo docker run -ti --link owl_c1:cassandra --rm bholt/owl -Dcassandra.replication.factor=3
+~~~

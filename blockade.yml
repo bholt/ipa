@@ -21,4 +21,4 @@ containers:
       JVM_OPTS: -Dcassandra.consistent.rangemovement=false
 
 network:
-  slow: 10ms 50ms distribution normal
+  slow: 10ms 15ms 50% distribution normal

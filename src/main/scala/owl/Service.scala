@@ -147,6 +147,57 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
   val retweets = new Retweets
   val retweetCounts = new RetweetCounts
 
+  class RetweetSet(tweet: UUID)(implicit consistency: ConsistencyLevel) {
+
+    def contains(user: UUID): Future[Boolean] = {
+      retweets.select(_.retweeter)
+          .consistencyLevel_=(consistency)
+          .where(_.tweet eqs tweet)
+          .and(_.retweeter eqs user)
+          .one()
+          .instrument()
+          .map(_.isDefined)
+    }
+
+    def add(retweeter: UUID): Future[Boolean] = {
+      this.contains(retweeter) flatMap { dup =>
+        if (dup) Future { false }
+        else {
+          for {
+            _ <- retweetCounts.update()
+                .consistencyLevel_=(consistency)
+                .where(_.tweet eqs tweet)
+                .modify(_.count += 1)
+                .future()
+                .instrument()
+            _ <- retweets.insert()
+                .consistencyLevel_=(consistency)
+                .value(_.tweet, tweet)
+                .value(_.retweeter, retweeter)
+                .future()
+                .instrument()
+          } yield true
+        }
+      }
+    }
+
+    def size(): Future[Long] = {
+      retweetCounts.select(_.count)
+          .consistencyLevel_=(consistency)
+          .where(_.tweet eqs tweet)
+          .one()
+          .map(opt => opt.getOrElse(0l))
+          .instrument()
+    }
+  }
+
+  object RetweetSet {
+    implicit val consistency = configConsistency()
+
+    def apply(tweet: UUID) = new RetweetSet(tweet)
+  }
+
+
   object service {
 
     val tables = List(users, followers, followees, tweets, timelines,
@@ -283,55 +334,20 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
                 .value(_.created, t.created)
                 .future()
                 .instrument()
-        _ <- retweetCounts.update()
-                .consistencyLevel_=(consistency)
-                .where(_.tweet eqs t.id)
-                .modify(_.count += 0L) // force initialization (to 0)
-                .future()
-                .instrument()
         _ <- add_to_followers_timelines(t.id, t.user)
       } yield t.id
     }
 
-    private def hasRetweeted(tweet: UUID, user: UUID)(implicit consistency: ConsistencyLevel): Future[Boolean] = {
-      retweets.select(_.retweeter)
-          .consistencyLevel_=(consistency)
-          .where(_.tweet eqs tweet)
-          .and(_.retweeter eqs user)
-          .one()
-          .instrument()
-          .map(_.isDefined)
-    }
-
     def retweet(tweet: UUID, retweeter: UUID)(implicit consistency: ConsistencyLevel): Future[Option[UUID]] = {
-      hasRetweeted(tweet, retweeter) flatMap { dup =>
-        if (dup) Future { None }
-        else {
-          for {
-            _ <- retweetCounts.update()
-                    .consistencyLevel_=(consistency)
-                    .where(_.tweet eqs tweet)
-                    .modify(_.count += 1)
-                    .future()
-                    .instrument()
-            _ <- retweets.insert()
-                    .consistencyLevel_=(consistency)
-                    .value(_.tweet, tweet)
-                    .value(_.retweeter, retweeter)
-                    .future()
-                    .instrument()
-            _ <- add_to_followers_timelines(tweet, retweeter)
-          } yield Some(tweet)
-        }
-      }
-    }
-
-    def getRetweetCount(tweet: UUID)(implicit consistency: ConsistencyLevel): Future[Option[Long]] = {
-      retweetCounts.select(_.count)
-          .consistencyLevel_=(consistency)
-          .where(_.tweet eqs tweet)
-          .one()
-          .instrument()
+      // equivalent to:
+      // if (Retweets(tweet).add(retweeter)):
+      //   for f in Followers(retweeter):
+      //     Timeline(f).add(tweet)
+      for {
+        added <- RetweetSet(tweet).add(retweeter)
+        if added
+        _ <- add_to_followers_timelines(tweet, retweeter)
+      } yield Some(tweet)
     }
 
     def getTweet(id: UUID)(implicit consistency: ConsistencyLevel): Future[Option[Tweet]] = {

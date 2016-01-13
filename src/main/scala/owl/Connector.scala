@@ -5,6 +5,7 @@ import java.net.InetAddress
 import com.datastax.driver.core.{Session, Cluster}
 import com.typesafe.config.ConfigFactory
 import com.websudos.phantom.connectors.{SessionProvider, KeySpace}
+import com.websudos.phantom.dsl.ConsistencyLevel
 import scala.collection.JavaConversions._
 import scala.concurrent.blocking
 
@@ -38,4 +39,11 @@ trait Connector extends SessionProvider {
       s.execute(s"CREATE KEYSPACE IF NOT EXISTS ${space.name} WITH replication = {'class': 'SimpleStrategy', 'replication_factor': $r};")
     }
   }
+
+  def configConsistency() =
+    config.getString("owl.consistency") match {
+      case "strong" => ConsistencyLevel.ALL
+      case "weak" => ConsistencyLevel.ONE
+      case c => throw new RuntimeException(s"invalid consistency in config: $c")
+    }
 }

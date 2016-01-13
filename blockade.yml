@@ -3,13 +3,22 @@ containers:
     image: cassandra:2.2.4
     command: cassandra -f
     ports: [7000]
-  
+    environment:
+      JVM_OPTS: -Dcassandra.consistent.rangemovement=false
+
   c2:
     image: cassandra:2.2.4
     command: cassandra -f
-    links: ["c1"]
-  
+    links: {c1: cassandra}
+    environment:
+      JVM_OPTS: -Dcassandra.consistent.rangemovement=false
+
   c3:
     image: cassandra:2.2.4
     command: cassandra -f
-    links: ["c1"]
+    links: {c1: cassandra}
+    environment:
+      JVM_OPTS: -Dcassandra.consistent.rangemovement=false
+
+network:
+  slow: 10ms 50ms distribution normal

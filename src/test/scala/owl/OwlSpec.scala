@@ -31,7 +31,7 @@ trait OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll  {
 
   override def beforeAll(): Unit = {
     super.beforeAll()
-    service.createTables()
+    service.resetKeyspace()
   }
 
   override def afterAll(): Unit = {
@@ -43,7 +43,6 @@ trait OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll  {
     println("----")
 
     super.afterAll()
-    service.cleanupTables()
   }
 
 }

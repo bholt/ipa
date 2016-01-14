@@ -160,11 +160,8 @@ object Workload extends Retwis {
 object Init extends Retwis {
 
   def apply() {
-    println("#> Resetting keyspace.")
+    println("#> Resetting keyspace & creating tables.")
     service.resetKeyspace()
-
-    println("#> Creating tables.")
-    service.createTables()
 
     println(s"#> Initializing social graph ($nUsers users, $avgFollowers avg followers)")
     initSocialGraph(nUsers, avgFollowers, zipf).await()

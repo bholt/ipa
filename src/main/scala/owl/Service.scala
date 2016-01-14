@@ -140,15 +140,8 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
     }
   }
 
-  val users = new Users
-  val followers = new Followers
-  val followees = new Followees
-  val tweets = new Tweets
-  val timelines = new Timelines
-  val retweets = new Retweets
-  val retweetCounts = new RetweetCounts
-
-  class IPASet[K, V](name: String)(implicit evK: Primitive[K], evV: Primitive[V]) {
+  class IPASet[K, V](name: String, consistency: ConsistencyLevel)
+      (implicit evK: Primitive[K], evV: Primitive[V]) {
 
     case class Entry(key: K, value: V)
     class EntryTable extends CassandraTable[EntryTable, Entry] {
@@ -169,7 +162,9 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
     val entryTable = new EntryTable
     val countTable = new CountTable
 
-    class Handle(key: K)(implicit consistency: ConsistencyLevel) {
+    val tables = List(entryTable, countTable)
+
+    class Handle(key: K) {
 
       def contains(value: V): Future[Boolean] = {
         entryTable.select(_.evalue)
@@ -213,89 +208,41 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
       }
     }
 
-//    def apply()
+    def apply(key: K) = new Handle(key)
   }
 
   object IPASet {
-    def apply[K, V](name: String)(implicit evK: Primitive[K], evV: Primitive[V]) = {
-      new IPASet[K, V](name)
+    def apply[K, V](name: String, consistency: ConsistencyLevel)
+                   (implicit evK: Primitive[K], evV: Primitive[V]) = {
+      new IPASet[K, V](name, consistency)
     }
   }
 
-  class RetweetSet(tweet: UUID)(implicit consistency: ConsistencyLevel) {
+  ///////////////////////
+  // Other tables
+  ///////////////////////
+  val users = new Users
+  val followers = new Followers
+  val followees = new Followees
+  val tweets = new Tweets
+  val timelines = new Timelines
 
-    def contains(user: UUID): Future[Boolean] = {
-      retweets.select(_.retweeter)
-          .consistencyLevel_=(consistency)
-          .where(_.tweet eqs tweet)
-          .and(_.retweeter eqs user)
-          .one()
-          .instrument()
-          .map(_.isDefined)
-    }
-
-    def add(retweeter: UUID): Future[Boolean] = {
-      this.contains(retweeter) flatMap { dup =>
-        if (dup) Future { false }
-        else {
-          for {
-            _ <- retweetCounts.update()
-                .consistencyLevel_=(consistency)
-                .where(_.tweet eqs tweet)
-                .modify(_.count += 1)
-                .future()
-                .instrument()
-            _ <- retweets.insert()
-                .consistencyLevel_=(consistency)
-                .value(_.tweet, tweet)
-                .value(_.retweeter, retweeter)
-                .future()
-                .instrument()
-          } yield true
-        }
-      }
-    }
-
-    def size(): Future[Long] = {
-      retweetCounts.select(_.count)
-          .consistencyLevel_=(consistency)
-          .where(_.tweet eqs tweet)
-          .one()
-          .map(opt => opt.getOrElse(0l))
-          .instrument()
-    }
-  }
-
-  object RetweetSet {
-    implicit val consistency = configConsistency()
-
-    def apply(tweet: UUID) = new RetweetSet(tweet)
-  }
-
+  val retweets = IPASet[UUID, UUID]("retweets", configConsistency())
 
   object service {
 
-    val tables = List(users, followers, followees, tweets, timelines,
-      retweets, retweetCounts)
+    val tables = List(users, followers, followees, tweets, timelines)
 
     val FIRST_NAMES = Vector("Arthur", "Ford", "Tricia", "Zaphod")
     val LAST_NAMES = Vector("Dent", "Prefect", "McMillan", "Beeblebrox")
-
-    def createTables(): Unit = {
-      Future.sequence(
-        tables.map(_.create.ifNotExists().future())
-      ).await()
-    }
-
-    def cleanupTables(): Unit = {
-       tables.map(_.tableName)
-             .foreach(t => session.execute(s"DROP TABLE IF EXISTS $t"))
-    }
 
     def resetKeyspace(): Unit = {
       val tmpSession = blocking { cluster.connect() }
       blocking { tmpSession.execute(s"DROP KEYSPACE IF EXISTS ${space.name}") }
       createKeyspace(tmpSession)
+
+      tables.map(_.create.ifNotExists().future()).bundle.await()
+      retweets.tables.map(_.create.ifNotExists().future()).bundle.await()
     }
 
     def randomUser(
@@ -419,7 +366,7 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
       //   for f in Followers(retweeter):
       //     Timeline(f).add(tweet)
       val f = for {
-        added <- RetweetSet(tweet).add(retweeter)
+        added <- retweets(tweet).add(retweeter)
         if added
         _ <- add_to_followers_timelines(tweet, retweeter)
       } yield {
@@ -437,7 +384,7 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
                 .where(_.id eqs tweet.user)
                 .one()
                 .instrument()
-            ct <- RetweetSet(id).size()
+            ct <- retweets(id).size()
           } yield for {
             u <- userOpt
           } yield {

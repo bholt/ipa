@@ -5,6 +5,7 @@ import java.util.UUID
 import com.codahale.metrics.MetricRegistry
 import com.datastax.driver.core.{ConsistencyLevel, Row}
 import com.datastax.driver.core.utils.UUIDs
+import com.websudos.phantom.builder.primitives.Primitive
 import com.websudos.phantom.{dsl, CassandraTable}
 import com.websudos.phantom.column.DateTimeColumn
 import com.websudos.phantom.dsl.{StringColumn, UUIDColumn}
@@ -146,6 +147,80 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
   val timelines = new Timelines
   val retweets = new Retweets
   val retweetCounts = new RetweetCounts
+
+  class IPASet[K, V](name: String)(implicit evK: Primitive[K], evV: Primitive[V]) {
+
+    case class Entry(key: K, value: V)
+    class EntryTable extends CassandraTable[EntryTable, Entry] {
+      object ekey extends PrimitiveColumn[EntryTable, Entry, K](this) with PartitionKey[K]
+      object evalue extends PrimitiveColumn[EntryTable, Entry, V](this) with PrimaryKey[V]
+      override val tableName = name
+      override def fromRow(r: Row) = Entry(ekey(r), evalue(r))
+    }
+
+    case class Count(key: K, count: Long)
+    class CountTable extends CassandraTable[CountTable, Count] {
+      object ekey extends PrimitiveColumn[CountTable, Count, K](this) with PartitionKey[K]
+      object ecount extends CounterColumn(this)
+      override val tableName = name + "Count"
+      override def fromRow(r: Row) = Count(ekey(r), ecount(r))
+    }
+
+    val entryTable = new EntryTable
+    val countTable = new CountTable
+
+    class Handle(key: K)(implicit consistency: ConsistencyLevel) {
+
+      def contains(value: V): Future[Boolean] = {
+        entryTable.select(_.evalue)
+            .consistencyLevel_=(consistency)
+            .where(_.ekey eqs key)
+            .and(_.evalue eqs value)
+            .one()
+            .instrument()
+            .map(_.isDefined)
+      }
+
+      def add(value: V): Future[Boolean] = {
+        this.contains(value) flatMap { dup =>
+          if (dup) Future { false }
+          else {
+            for {
+              _ <- countTable.update()
+                  .consistencyLevel_=(consistency)
+                  .where(_.ekey eqs key)
+                  .modify(_.ecount += 1)
+                  .future()
+                  .instrument()
+              _ <- entryTable.insert()
+                  .consistencyLevel_=(consistency)
+                  .value(_.ekey, key)
+                  .value(_.evalue, value)
+                  .future()
+                  .instrument()
+            } yield true
+          }
+        }
+      }
+
+      def size(): Future[Long] = {
+        countTable.select(_.ecount)
+            .consistencyLevel_=(consistency)
+            .where(_.ekey eqs key)
+            .one()
+            .map(opt => opt.getOrElse(0l))
+            .instrument()
+      }
+    }
+
+//    def apply()
+  }
+
+  object IPASet {
+    def apply[K, V](name: String)(implicit evK: Primitive[K], evV: Primitive[V]) = {
+      new IPASet[K, V](name)
+    }
+  }
 
   class RetweetSet(tweet: UUID)(implicit consistency: ConsistencyLevel) {
 

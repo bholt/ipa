@@ -166,10 +166,10 @@ object Init extends Retwis {
     println("#> Creating tables.")
     service.createTables()
 
-    println("#> Initializing social graph.")
+    println(s"#> Initializing social graph ($nUsers users, $avgFollowers avg followers)")
     initSocialGraph(nUsers, avgFollowers, zipf).await()
 
-    println("#> Initializing tweets.")
+    println(s"#> Initializing tweets ($tweetsPerUser per user)")
     var tweetsBy1 = false
     val nTweets = tweetsPerUser * nUsers
     val user1id = User.id(1)
@@ -179,6 +179,7 @@ object Init extends Retwis {
       service.post(t)
     }
     fTweets.bundle.await()
+    println(s"#> tweetsBy1? $tweetsBy1")
 
     val ts = service.followersOf(user1id)
         .flatMap { fs =>

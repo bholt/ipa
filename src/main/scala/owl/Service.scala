@@ -334,12 +334,6 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
                 .value(_.created, t.created)
                 .future()
                 .instrument()
-        _ <- retweetCounts.update()
-                .consistencyLevel_=(consistency)
-                .where(_.tweet eqs t.id)
-                .modify(_.count += 0L) // force initialization (to 0)
-                .future()
-                .instrument()
         _ <- add_to_followers_timelines(t.id, t.user)
       } yield t.id
     }
@@ -368,15 +362,9 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
                 .where(_.id eqs tweet.user)
                 .one()
                 .instrument()
-            ctOpt <- retweetCounts
-                .select(_.count)
-                .consistencyLevel_=(consistency)
-                .where(_.tweet eqs id)
-                .one()
-                .instrument()
+            ct <- RetweetSet(id).size()
           } yield for {
             u <- userOpt
-            ct <- ctOpt
           } yield {
             tweet.copy(retweets = ct, name = Some(u.name))
           }

@@ -5,10 +5,13 @@ import Util._
 
 class RetwisTest extends OwlTest with Retwis {
 
-  Init()
-
   it should "initialize social graph" in {
 
+    println(">>> before init")
+    generate()
+    println(">>> after init")
+
+    println(">>> checking if social graph was initialized")
     // spot checks
     val u1 = User.id(1)
     service.getUserById(u1).futureValue shouldBe defined
@@ -52,6 +55,6 @@ class RetwisTest extends OwlTest with Retwis {
   }
 
   it should "run workload" in {
-    Workload()
+    workload()
   }
 }

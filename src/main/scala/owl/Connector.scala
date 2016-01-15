@@ -26,7 +26,7 @@ trait Connector extends SessionProvider {
     blocking {
       val rs = tmpSession.execute(s"SELECT strategy_options FROM system.schema_keyspaces WHERE keyspace_name = '${space.name}'")
       val keyspace_options = rs.one().getString(0)
-      println(s"# (keyspace options: $keyspace_options)")
+      println(s"# keyspace '${space.name}' options: $keyspace_options")
     }
     blocking {
       cluster.connect(space.name)

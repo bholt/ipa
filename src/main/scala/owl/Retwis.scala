@@ -111,58 +111,7 @@ trait Retwis extends OwlService {
 
   }
 
-
-}
-
-object Workload extends Retwis {
-
-  def apply() {
-    println(s"# Running workload for $duration, with $parallelCap at a time.")
-
-    import Tasks._
-    val mix = Map(
-      NewUser -> 0.02,
-      Follow -> 0.05,
-      Unfollow -> 0.03,
-      Tweet -> 0.20,
-      Timeline -> 0.70
-    )
-
-    // only generate tasks as needed
-    implicit val ec = boundedQueueExecutionContext(capacity = parallelCap)
-
-    val deadline = duration.fromNow
-    val all =
-      Stream from 1 map { i =>
-        weightedSample(mix)()
-      } takeWhile { _ =>
-        deadline.hasTimeLeft
-      } bundle
-
-    await(all)
-
-    println("#> Workload complete.")
-    println("#### Metrics")
-    ConsoleReporter.forRegistry(metricRegistry)
-        .convertRatesTo(TimeUnit.SECONDS)
-        .build()
-        .report()
-    println("####")
-  }
-
-  def main(args: Array[String]): Unit = {
-    apply()
-    sys.exit()
-  }
-
-}
-
-object Init extends Retwis {
-
-  def apply() {
-    println("#> Resetting keyspace & creating tables.")
-    service.resetKeyspace()
-
+  def generate(): Unit = {
     println(s"#> Initializing social graph ($nUsers users, $avgFollowers avg followers)")
     initSocialGraph(nUsers, avgFollowers, zipf).await()
 
@@ -193,17 +142,62 @@ object Init extends Retwis {
     println("#> Init complete.")
   }
 
-  def main(args: Array[String]) {
-    apply()
-    sys.exit() // because we have extra threads sitting around...
+  def workload(): Unit = {
+    println(s"# Running workload for $duration, with $parallelCap at a time.")
+
+    import Tasks._
+    val mix = Map(
+      NewUser -> 0.02,
+      Follow -> 0.05,
+      Unfollow -> 0.03,
+      Tweet -> 0.20,
+      Timeline -> 0.70
+    )
+
+    // only generate tasks as needed
+    implicit val ec = boundedQueueExecutionContext(capacity = parallelCap)
+
+    val deadline = duration.fromNow
+    val all =
+      Stream from 1 map { i =>
+        weightedSample(mix)()
+      } takeWhile { _ =>
+        deadline.hasTimeLeft
+      } bundle
+
+    await(all)
+
+    println("#> Workload complete.")
+    println("#### Metrics ##################")
+    ConsoleReporter.forRegistry(metricRegistry)
+        .convertRatesTo(TimeUnit.SECONDS)
+        .build()
+        .report()
+    println("###############################")
   }
 
 }
 
-object All {
+object Workload extends Retwis {
+  def main(args: Array[String]): Unit = {
+    workload()
+    sys.exit()
+  }
+}
+
+object Init extends Retwis {
   def main(args: Array[String]) {
-    Init()
-    Workload()
+    service.resetKeyspace()
+    generate()
+    sys.exit() // because we have extra threads sitting around...
+  }
+}
+
+object All extends Retwis {
+  def main(args: Array[String]) {
+    service.resetKeyspace()
+    generate()
+    workload()
     sys.exit()
   }
 }

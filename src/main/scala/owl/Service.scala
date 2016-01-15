@@ -237,6 +237,7 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
     val LAST_NAMES = Vector("Dent", "Prefect", "McMillan", "Beeblebrox")
 
     def resetKeyspace(): Unit = {
+      println(s"# resetting keyspace '${space.name}'")
       val tmpSession = blocking { cluster.connect() }
       blocking { tmpSession.execute(s"DROP KEYSPACE IF EXISTS ${space.name}") }
       createKeyspace(tmpSession)

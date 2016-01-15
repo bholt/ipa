@@ -1,14 +1,8 @@
 package owl
 
-import java.util.concurrent.TimeUnit
-
-import com.codahale.metrics.{ConsoleReporter, MetricRegistry}
 import org.scalactic.Equality
 import org.scalatest.concurrent.ScalaFutures
-import org.scalatest.{BeforeAndAfterAll, Inspectors, Matchers, FlatSpec}
-
-import scala.concurrent.Await
-import scala.concurrent.duration.Duration
+import org.scalatest.{BeforeAndAfterAll, FlatSpec, Inspectors, Matchers}
 
 abstract class OwlSpec extends FlatSpec with Matchers with Inspectors with ScalaFutures
 

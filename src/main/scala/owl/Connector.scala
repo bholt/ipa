@@ -2,10 +2,11 @@ package owl
 
 import java.net.InetAddress
 
-import com.datastax.driver.core.{Session, Cluster}
+import com.datastax.driver.core.{Cluster, Session}
 import com.typesafe.config.ConfigFactory
-import com.websudos.phantom.connectors.{SessionProvider, KeySpace}
+import com.websudos.phantom.connectors.{KeySpace, SessionProvider}
 import com.websudos.phantom.dsl.ConsistencyLevel
+
 import scala.collection.JavaConversions._
 import scala.concurrent.blocking
 

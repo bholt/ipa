@@ -1,7 +1,7 @@
 package owl
 
 import com.websudos.phantom.dsl._
-import Util._
+import owl.Util._
 
 class RetwisTest extends OwlTest with Retwis {
 

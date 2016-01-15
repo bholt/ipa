@@ -4,15 +4,14 @@ import java.util.concurrent.TimeUnit
 
 import com.codahale.metrics.ConsoleReporter
 import com.websudos.phantom.connectors.KeySpace
-import org.apache.commons.math3.distribution.ZipfDistribution
-
 import com.websudos.phantom.dsl._
-import scala.concurrent.{ExecutionContextExecutorService, ExecutionContext, Future}
-import scala.concurrent.duration._
-import scala.util.Random
-import Util._
+import org.apache.commons.math3.distribution.ZipfDistribution
+import owl.Util._
 
+import scala.concurrent.Future
+import scala.concurrent.duration._
 import scala.language.postfixOps
+import scala.util.Random
 
 trait Retwis extends OwlService {
 

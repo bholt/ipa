@@ -1,15 +1,14 @@
 package owl
 
-import java.util.concurrent.{ArrayBlockingQueue, TimeUnit, ThreadPoolExecutor}
+import java.util.concurrent.{ArrayBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
 import nl.grons.metrics.scala.Timer
 
 import scala.collection.generic.CanBuildFrom
-import scala.concurrent.{ExecutionContext, Future, Await}
 import scala.concurrent.duration.Duration
-import scala.util.Random
-
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.language.higherKinds
+import scala.util.Random
 
 object Util {
 

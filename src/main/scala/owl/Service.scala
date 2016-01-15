@@ -3,28 +3,21 @@ package owl
 import java.util.UUID
 
 import com.codahale.metrics.MetricRegistry
-import com.datastax.driver.core.{ConsistencyLevel, Row}
 import com.datastax.driver.core.utils.UUIDs
+import com.datastax.driver.core.{ConsistencyLevel, Row}
+import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.builder.primitives.Primitive
-import com.websudos.phantom.{dsl, CassandraTable}
 import com.websudos.phantom.column.DateTimeColumn
-import com.websudos.phantom.dsl.{StringColumn, UUIDColumn}
+import com.websudos.phantom.dsl.{StringColumn, UUIDColumn, _}
 import com.websudos.phantom.keys.PartitionKey
-import nl.grons.metrics.scala.{Timer, FutureMetrics, InstrumentedBuilder}
+import nl.grons.metrics.scala.{FutureMetrics, InstrumentedBuilder}
 import org.joda.time.DateTime
 
-import com.websudos.phantom.dsl._
-
-import scala.collection.immutable.IndexedSeq
-import scala.concurrent.{Future, blocking}
-import scala.concurrent.duration._
-import scala.util.{Failure, Success, Try}
 import scala.collection.JavaConversions._
-
-import org.apache.commons.math3.distribution.ZipfDistribution
+import scala.concurrent.{Future, blocking}
 
 // for Vector.sample
-import Util._
+import owl.Util._
 
 //////////////////
 // User

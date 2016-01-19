@@ -133,8 +133,12 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
     }
   }
 
+  trait TableGenerator {
+    def createTables(): Future[Unit]
+  }
+
   class IPASet[K, V](name: String, consistency: ConsistencyLevel)
-      (implicit evK: Primitive[K], evV: Primitive[V]) {
+      (implicit evK: Primitive[K], evV: Primitive[V]) extends TableGenerator {
 
     case class Entry(key: K, value: V)
     class EntryTable extends CassandraTable[EntryTable, Entry] {
@@ -155,8 +159,14 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
     val entryTable = new EntryTable
     val countTable = new CountTable
 
-    val tables = List(entryTable, countTable)
+    def createTables(): Future[Unit] = {
+      Seq(entryTable, countTable).map(_.create.ifNotExists.future()).bundle.unit
+    }
 
+    /**
+      * Local handle to a Set in storage; can be used like a Set.
+      * @param key  identifier of this Set instance in storage
+      */
     class Handle(key: K) {
 
       def contains(value: V): Future[Boolean] = {
@@ -167,6 +177,21 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
             .one()
             .instrument()
             .map(_.isDefined)
+      }
+
+      def get(limit: Int = 0)(implicit consistency: ConsistencyLevel): Future[Iterator[V]] = {
+        val q = entryTable
+            .select
+            .consistencyLevel_=(consistency)
+            .where(_.ekey eqs key)
+
+        val qlim = if (limit > 0) q.limit(limit) else q
+
+        qlim.future().instrument().map { results =>
+          results.iterator() map { row =>
+            entryTable.fromRow(row).value
+          }
+        }
       }
 
       def add(value: V): Future[Boolean] = {
@@ -191,6 +216,29 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
         }
       }
 
+      def remove(value: V): Future[Boolean] = {
+        {
+          for {
+            removed <- contains(value)
+            _ <- entryTable.delete()
+                .consistencyLevel_=(consistency)
+                .where(_.ekey eqs key)
+                .and(_.evalue eqs value)
+                .future()
+                .instrument()
+            if removed
+            _ <- countTable.update()
+                .consistencyLevel_=(consistency)
+                .where(_.ekey eqs key)
+                .modify(_.ecount -= 1)
+                .future()
+                .instrument()
+          } yield true
+        } recover {
+          case _ => false
+        }
+      }
+
       def size(): Future[Long] = {
         countTable.select(_.ecount)
             .consistencyLevel_=(consistency)
@@ -204,27 +252,22 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
     def apply(key: K) = new Handle(key)
   }
 
-  object IPASet {
-    def apply[K, V](name: String, consistency: ConsistencyLevel)
-                   (implicit evK: Primitive[K], evV: Primitive[V]) = {
-      new IPASet[K, V](name, consistency)
-    }
-  }
+
 
   ///////////////////////
   // Other tables
   ///////////////////////
   val users = new Users
-  val followers = new Followers
-  val followees = new Followees
   val tweets = new Tweets
   val timelines = new Timelines
 
-  val retweets = IPASet[UUID, UUID]("retweets", configConsistency())
+  val retweets = new IPASet[UUID, UUID]("retweets", configConsistency())
+  val followers = new IPASet[UUID, UUID]("followers", configConsistency())
+  val followees = new IPASet[UUID, UUID]("followees", configConsistency())
 
   object service {
 
-    val tables = List(users, followers, followees, tweets, timelines)
+    val tables = List(users, tweets, timelines)
 
     val FIRST_NAMES = Vector("Arthur", "Ford", "Tricia", "Zaphod")
     val LAST_NAMES = Vector("Dent", "Prefect", "McMillan", "Beeblebrox")
@@ -236,7 +279,7 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
       createKeyspace(tmpSession)
 
       tables.map(_.create.ifNotExists().future()).bundle.await()
-      retweets.tables.map(_.create.ifNotExists().future()).bundle.await()
+      Seq(retweets, followers, followees).map(_.createTables()).bundle.await()
     }
 
     def randomUser(
@@ -280,51 +323,20 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
 
     def follow(follower: UUID, followee: UUID)(implicit consistency: ConsistencyLevel): Future[Unit] = {
       for {
-        r1 <- followers.insert()
-            .consistencyLevel_=(consistency)
-            .value(_.user, followee)
-            .value(_.follower, follower)
-            .future()
-            .instrument()
-        r2 <- followees.insert()
-            .consistencyLevel_=(consistency)
-            .value(_.user, follower)
-            .value(_.following, followee)
-            .future()
-            .instrument()
+        _ <- followers(followee).add(follower)
+        _ <- followees(follower).add(followee)
       } yield ()
     }
 
     def unfollow(follower: UUID, followee: UUID)(implicit consistency: ConsistencyLevel): Future[Unit] = {
       for {
-        _ <- followers.delete()
-            .consistencyLevel_=(consistency)
-            .where(_.user eqs followee)
-            .and(_.follower eqs follower)
-            .future()
-            .instrument()
-        _ <- followees.delete()
-            .consistencyLevel_=(consistency)
-            .where(_.user eqs follower)
-            .and(_.following eqs followee)
-            .future()
-            .instrument()
+        _ <- followers(followee).remove(follower)
+        _ <- followees(follower).remove(followee)
       } yield ()
     }
 
     def followersOf(user: UUID, limit: Int = 0)(implicit consistency: ConsistencyLevel): Future[Iterator[UUID]] = {
-      val q = followers
-          .select
-          .consistencyLevel_=(consistency)
-          .where(_.user eqs user)
-
-      val ql = if (limit > 0) q.limit(limit) else q
-
-      ql.future().instrument().map { results =>
-        results.iterator() map { row =>
-          followers.fromRow(row).follower
-        }
-      }
+      followers(user).get(limit)
     }
 
     private def add_to_followers_timelines(tweet: UUID, user: UUID)(implicit consistency: ConsistencyLevel): Future[Unit] = {

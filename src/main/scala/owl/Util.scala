@@ -18,6 +18,7 @@ object Util {
 
   implicit class FuturePlus[T](f: Future[T]) {
     def await(): T = Await.result(f, Duration.Inf)
+    def unit(implicit ec: ExecutionContext): Future[Unit] = f.map(_ => ())
   }
 
   implicit class FutureSeqPlus[A, M[X] <: TraversableOnce[X]](v: M[Future[A]]) {

@@ -17,7 +17,7 @@ class RetwisTest extends OwlTest with Retwis {
     service.getUserById(u1).futureValue shouldBe defined
     val u1nfollowers = service.followersOf(u1).futureValue.length
     println(s"-- user[1] num followers = $u1nfollowers")
-    u1nfollowers should be > avgFollowers/2
+    u1nfollowers should be > config.avgFollowers/2
   }
 
   it should "initialize tweets" in {

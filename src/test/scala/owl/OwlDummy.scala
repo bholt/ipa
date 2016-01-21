@@ -11,11 +11,10 @@ import Util._
 class OwlDummy extends OwlTest {
 
   "Dummy" should "run" in {
-    val cap = config.getInt("owl.cap")
-    implicit val ec = boundedQueueExecutionContext(capacity = cap)
+    implicit val ec = boundedQueueExecutionContext(capacity = config.cap)
 
     val duration = 10.seconds
-    println(s"# running workload for $duration, with $cap at a time")
+    println(s"# running workload for $duration, with ${config.cap} at a time")
     val deadline = duration.fromNow
 
     val stream =

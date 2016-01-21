@@ -3,6 +3,7 @@ package owl
 import java.util.concurrent.TimeUnit
 
 import com.codahale.metrics.ConsoleReporter
+import com.typesafe.config.{ConfigRenderOptions, ConfigFactory}
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
 import org.apache.commons.math3.distribution.ZipfDistribution
@@ -17,24 +18,10 @@ trait Retwis extends OwlService {
 
   override implicit val space = KeySpace("owl_retwis")
 
-  implicit val consistency =
-    config.getString("owl.consistency") match {
-      case "strong" => ConsistencyLevel.ALL
-      case "weak" => ConsistencyLevel.ONE
-      case c => throw new RuntimeException(s"invalid consistency in config: $c")
-    }
-
-  val zipf = config.getDouble("retwis.zipf")
-
-  val nUsers = config.getInt("retwis.initial.users")
-  val avgFollowers = config.getInt("retwis.initial.followers")
-  val tweetsPerUser = config.getInt("retwis.initial.tweets")
-
-  val parallelCap = config.getInt("owl.cap")
-  val duration = config.getInt("retwis.duration").seconds
+  implicit val consistency = config.consistency
 
   object Zipf {
-    val zipfUser = new ZipfDistribution(nUsers, zipf)
+    val zipfUser = new ZipfDistribution(config.nUsers, config.zipf)
 
     def user() = User.id(zipfUser.sample())
   }
@@ -111,12 +98,12 @@ trait Retwis extends OwlService {
   }
 
   def generate(): Unit = {
-    println(s"#> Initializing social graph ($nUsers users, $avgFollowers avg followers)")
-    initSocialGraph(nUsers, avgFollowers, zipf).await()
+    println(s"#> Initializing social graph (${config.nUsers} users, ${config.avgFollowers} avg followers)")
+    initSocialGraph(config.nUsers, config.avgFollowers, config.zipf).await()
 
-    println(s"#> Initializing tweets ($tweetsPerUser per user)")
+    println(s"#> Initializing tweets (${config.tweetsPerUser} per user)")
     var tweetsBy1 = false
-    val nTweets = tweetsPerUser * nUsers
+    val nTweets = config.tweetsPerUser * config.nUsers
     val user1id = User.id(1)
     val fTweets = (0 to nTweets) map { _ =>
       val t = randomTweet()
@@ -142,7 +129,7 @@ trait Retwis extends OwlService {
   }
 
   def workload(): Unit = {
-    println(s"# Running workload for $duration, with $parallelCap at a time.")
+    println(s"# Running workload for ${config.duration}, with ${config.cap} at a time.")
 
     import Tasks._
     val mix = Map(
@@ -154,9 +141,9 @@ trait Retwis extends OwlService {
     )
 
     // only generate tasks as needed
-    implicit val ec = boundedQueueExecutionContext(capacity = parallelCap)
+    implicit val ec = boundedQueueExecutionContext(capacity = config.cap)
 
-    val deadline = duration.fromNow
+    val deadline = config.duration.fromNow
     val all =
       Stream from 1 map { i =>
         weightedSample(mix)()
@@ -194,6 +181,7 @@ object Init extends Retwis {
 
 object All extends Retwis {
   def main(args: Array[String]) {
+    println(config.toJSON)
     service.resetKeyspace()
     generate()
     workload()

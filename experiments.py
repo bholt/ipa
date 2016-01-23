@@ -4,50 +4,55 @@ import dataset
 import sys
 import itertools as it
 import os
-from collections import defaultdict
 import re
 import socket
-import ipdb
 import time
 import json
 
 from os.path import abspath, dirname, realpath
 from os import environ as env
-import signal
-import yaml
-from glob import glob
 
 #########################
 # External dependencies
-from pyhocon import ConfigFactory
-from pyhocon.tool import HOCONConverter
-import colors # ansicolors
-def color(o, **args):
-    return colors.color(str(o), **args)
-def heading(text):
-    return color(text, fg='black', style='underline+bold')
-def note(text):
-    return color(text, fg='black')
-
+import colors  # ansicolors
 import sh
-LIVE = {'_out': sys.stdout, '_err': sys.stderr}
-
 import pygments
 from pygments.lexers import JsonLexer
 from pygments.formatters import TerminalFormatter
+
+
+def color(o, **args):
+    return colors.color(str(o), **args)
+
+
+def heading(text):
+    return color(text, fg='black', style='underline+bold')
+
+
+def note(text):
+    return color(text, fg='black')
+
+
+LIVE = {'_out': sys.stdout, '_err': sys.stderr}
+
+
 def pretty_json(value):
     return pygments.highlight(unicode(json.dumps(value, indent=2, sort_keys=True), 'UTF-8'), JsonLexer(), TerminalFormatter(bg="dark"))
 
 #########################
 
-interpolation_matcher = re.compile(r"{(.*?)}")
+RE_INTERPOLATOR = re.compile(r"{(.*?)}")
+
+
 def fmt(s):
-    return interpolation_matcher.sub(lambda m: str(eval(m.group(1))), str(s))
+    return RE_INTERPOLATOR.sub(lambda m: str(eval(m.group(1))), str(s))
+
 
 class FormatStream(object):
     def __init__(self, stream, color = None):
         self.stream = stream
         self.color = color
+
     def fmt(self, s, **colorargs):
         if self.color and 'fg' not in colorargs:
             colorargs['fg'] = self.color
@@ -68,9 +73,10 @@ def on_sampa_cluster():
 def slurm_nodes():
     return [
         n.replace('n', 'i') for n in
-        sp.check_output(['scontrol', 'show', 'hostname', env['SLURM_NODELIST']]).split()
+        sh.scontrol.show.hostname(env['SLURM_NODELIST']).split()
     ]
-    
+
+
 def flatten_json(y):
     out = {}
 
@@ -90,10 +96,9 @@ def flatten_json(y):
     return out
 
 
-DB = dataset.connect(fmt("mysql:///ipa?read_default_file={env['HOME']}/.my.cnf"))
-
-
-def count_records(table, ignore=[], valid='total_time is not null', **params):
+def count_records(table, ignore=None, valid='total_time is not null', **params):
+    if ignore is None:
+        ignore = []
     ignore.append('sqltable')
     remain = {k: params[k] for k in params if k not in ignore}
 
@@ -108,9 +113,9 @@ def count_records(table, ignore=[], valid='total_time is not null', **params):
             return "({0} = '' or {0} is null)".format(k)
         else:
             return "{0} = '{1}'".format(k, v)
-    
+
     cond = ' and '.join([cmp(k, v) for k, v in remain.items()])
-    
+
     try:
         tname = table.table.name
         r = query('SELECT count(*) as ct FROM %s WHERE %s and %s' % (tname, valid, cond))
@@ -127,19 +132,19 @@ def cartesian(**params):
 #################################################################################
 
 # Tasks to run before running any jobs
-def beforeAll():
-    
+def before_all():
+
     print note("> creating up-to-date docker image")
     sh.sbt("docker:publishLocal", **LIVE)
-    
+
     print note("> initializing blockade")
     sh.sudo.blockade("destroy", **LIVE)
     sh.sudo.blockade("up", **LIVE)
     time.sleep(5) # make sure Cassandra has finished initializing
     sh.sudo.blockade("status", **LIVE)
-    
 
-def run(table, logfile, *args, **flags):    
+
+def run(table, logfile, *args, **flags):
     # convert ipa_* flags to java properties & add to args
     # ipa_retwis_initial_users -> ipa.retwis.initial.users
     args = list(args)
@@ -151,20 +156,20 @@ def run(table, logfile, *args, **flags):
     try:
         cmd = sh.docker("exec", "owl_c1", "bin/owl", *args, _timeout=60*5, _iter=True)
         print ">", color(' '.join(cmd.cmd), fg='blue')
-        for o in cmd:        
+        for o in cmd:
             logfile.write(o)
             print o, # w/o extra newline
-        
+
         # flatten & clean up metrics a bit
         metrics = {
-            k.replace('owl.All.',''): v 
+            k.replace('owl.All.',''): v
             for k, v in flatten_json(json.loads(cmd.stderr)).items()
         }
-        
+
         a.update(metrics)
         print pretty_json(a)
         table.insert(a)
-        
+
     except (KeyboardInterrupt, sh.TimeoutException) as e:
         out.fmt("job cancelled")
 
@@ -185,7 +190,7 @@ if __name__ == '__main__':
     else:
         opt = parser.parse_args()
         manual = None
-    
+
     SRC = abspath(dirname(realpath(__file__)))
     os.chdir(SRC)
     out.fmt(">>> changing to {SRC}", fg='magenta')
@@ -199,20 +204,21 @@ if __name__ == '__main__':
 
     if manual:
         run(sys.stdout, ' '.join(manual),
-            machines = ','.join(MACHINES),
-            nshards = opt.nshards)
+            machines=','.join(MACHINES),
+            nshards=opt.nshards)
         exit(0)
     else:
         # startup
-        # beforeAll()
-        print note('skipping beforeAll()')
-        
+        # before_all()
+        print note('skipping before_all()')
+
     log = open(SRC + '/experiments.log', 'w')
-    
+
     tag = sh.git.describe().stdout
     version = re.match(r"(\w+)(-.*)?", tag).group(1)
     machines = hostname()
-    
+
+    DB = dataset.connect(fmt("mysql:///ipa?read_default_file={env['HOME']}/.my.cnf"))
     table = DB[opt.mode]
 
     for trial in range(1, opt.target+1):
@@ -220,9 +226,9 @@ if __name__ == '__main__':
         for a in cartesian(
             ipa_version               = [version],
             ipa_output_json           = ['true'],
-            
+
             ipa_replication_factor    = [3],
-            
+
             ipa_retwis_duration       = [5],
             ipa_retwis_initial_users  = [100],
             ipa_retwis_initial_tweets = [10],

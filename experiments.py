@@ -131,6 +131,8 @@ def cartesian(**params):
 
 #################################################################################
 
+blockade = sh.sudo.blockade
+
 # Tasks to run before running any jobs
 def before_all():
 
@@ -138,10 +140,22 @@ def before_all():
     sh.sbt("docker:publishLocal", **LIVE)
 
     print note("> initializing blockade")
-    sh.sudo.blockade("destroy", **LIVE)
-    sh.sudo.blockade("up", **LIVE)
+    blockade.destroy(_ok_code=[0,1], **LIVE)
+    blockade.up(**LIVE)
+
+    def check(container):
+        o = sh.grep(sh.docker.logs(container, _piped=True), "listening for CQL clients", _ok_code=[0,1])
+        return len(o) > 0
+
+    sys.stdout.write("Waiting for Cassandra to finish launching")
+    while not check("owl_s3"):
+        sys.stdout.write(".")
+        sys.stdout.flush()
+        time.sleep(1)
+    print "done"
+
     time.sleep(5) # make sure Cassandra has finished initializing
-    sh.sudo.blockade("status", **LIVE)
+    blockade.status(**LIVE)
 
 
 def run(table, logfile, *args, **flags):
@@ -162,7 +176,7 @@ def run(table, logfile, *args, **flags):
 
         # flatten & clean up metrics a bit
         metrics = {
-            k.replace('owl.All.',''): v
+            re.sub(r"owl\.\w+\.", "", k): v
             for k, v in flatten_json(json.loads(cmd.stderr)).items()
         }
 
@@ -193,7 +207,6 @@ if __name__ == '__main__':
 
     SRC = abspath(dirname(realpath(__file__)))
     os.chdir(SRC)
-    out.fmt(">>> changing to {SRC}", fg='magenta')
 
     if on_sampa_cluster():
         MACHINES = slurm_nodes()
@@ -209,8 +222,8 @@ if __name__ == '__main__':
         exit(0)
     else:
         # startup
-        # before_all()
-        print note('skipping before_all()')
+        before_all()
+        # print note('skipping before_all()')
 
     log = open(SRC + '/experiments.log', 'w')
 
@@ -226,13 +239,16 @@ if __name__ == '__main__':
         for a in cartesian(
             ipa_version               = [version],
             ipa_output_json           = ['true'],
-
+            
             ipa_replication_factor    = [3],
+            ipa_reset                 = ['false'],
+            ipa_retwis_generate       = ['true'],
 
-            ipa_retwis_duration       = [5],
+            ipa_retwis_duration       = [60],
             ipa_retwis_initial_users  = [100],
             ipa_retwis_initial_tweets = [10],
-            ipa_retwis_zipf           = ['1.0']
+            ipa_retwis_zipf           = ['1.0'],
+            ipa_concurrent_requests   = [16, 128, 512, 2048, 8192]
         ):
             ct = count_records(table, ignore=[], **a)
             out.fmt("→ {color('count:',fg='cyan')} {color(ct,fg='yellow')}", fg='black')

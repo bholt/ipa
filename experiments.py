@@ -30,6 +30,13 @@ def note(text):
     return color(text, fg='black')
 
 import sh
+LIVE = {'_out': sys.stdout, '_err': sys.stderr}
+
+import pygments
+from pygments.lexers import JsonLexer
+from pygments.formatters import TerminalFormatter
+def pretty_json(value):
+    return pygments.highlight(unicode(json.dumps(value, indent=2, sort_keys=True), 'UTF-8'), JsonLexer(), TerminalFormatter(bg="dark"))
 
 #########################
 
@@ -63,18 +70,36 @@ def slurm_nodes():
         n.replace('n', 'i') for n in
         sp.check_output(['scontrol', 'show', 'hostname', env['SLURM_NODELIST']]).split()
     ]
+    
+def flatten_json(y):
+    out = {}
+
+    def flatten(x, name=''):
+        if type(x) is dict:
+            for a in x:
+                flatten(x[a], name + a + '_')
+        elif type(x) is list:
+            i = 0
+            for a in x:
+                flatten(a, name + str(i) + '_')
+                i += 1
+        else:
+            out[str(name[:-1])] = str(x)
+
+    flatten(y)
+    return out
 
 
 DB = dataset.connect(fmt("mysql:///ipa?read_default_file={env['HOME']}/.my.cnf"))
-
-def query(q):
-    print '#>', q
-    return [dict(x) for x in DB.query(q)]
 
 
 def count_records(table, ignore=[], valid='total_time is not null', **params):
     ignore.append('sqltable')
     remain = {k: params[k] for k in params if k not in ignore}
+
+    def query(q):
+        print '#>', q
+        return [dict(x) for x in DB.query(q)]
 
     def cmp(k, v):
         if type(v) == float:
@@ -87,7 +112,8 @@ def count_records(table, ignore=[], valid='total_time is not null', **params):
     cond = ' and '.join([cmp(k, v) for k, v in remain.items()])
     
     try:
-        r = query('SELECT count(*) as ct FROM %s WHERE %s and %s' % (table, valid, cond))
+        tname = table.table.name
+        r = query('SELECT count(*) as ct FROM %s WHERE %s and %s' % (tname, valid, cond))
         return r[0]['ct']
     except Exception as e:
         err.fmt("error with query: " + str(e))
@@ -104,16 +130,16 @@ def cartesian(**params):
 def beforeAll():
     
     print note("> creating up-to-date docker image")
-    sh.sbt("docker:publishLocal")
+    sh.sbt("docker:publishLocal", **LIVE)
     
     print note("> initializing blockade")
-    sh.blockade("destroy")
-    sh.blockade("up")
+    sh.sudo.blockade("destroy", **LIVE)
+    sh.sudo.blockade("up", **LIVE)
     time.sleep(5) # make sure Cassandra has finished initializing
-    sh.blockade("status")
+    sh.sudo.blockade("status", **LIVE)
     
 
-def run(logfile, *args, **flags):    
+def run(table, logfile, *args, **flags):    
     # convert ipa_* flags to java properties & add to args
     # ipa_retwis_initial_users -> ipa.retwis.initial.users
     args = list(args)
@@ -129,8 +155,15 @@ def run(logfile, *args, **flags):
             logfile.write(o)
             print o, # w/o extra newline
         
-        metrics = json.loads(cmd.stderr)
-        print color(metrics, fg='cyan')
+        # flatten & clean up metrics a bit
+        metrics = {
+            k.replace('owl.All.',''): v 
+            for k, v in flatten_json(json.loads(cmd.stderr)).items()
+        }
+        
+        a.update(metrics)
+        print pretty_json(a)
+        table.insert(a)
         
     except (KeyboardInterrupt, sh.TimeoutException) as e:
         out.fmt("job cancelled")
@@ -172,19 +205,20 @@ if __name__ == '__main__':
     else:
         # startup
         # beforeAll()
-        pass
+        print note('skipping beforeAll()')
         
     log = open(SRC + '/experiments.log', 'w')
     
     tag = sh.git.describe().stdout
     version = re.match(r"(\w+)(-.*)?", tag).group(1)
     machines = hostname()
+    
+    table = DB[opt.mode]
 
     for trial in range(1, opt.target+1):
         print '---------------------------------\n# starting trial', trial
         for a in cartesian(
-            version               = [version],
-            
+            ipa_version               = [version],
             ipa_output_json           = ['true'],
             
             ipa_replication_factor    = [3],
@@ -194,8 +228,8 @@ if __name__ == '__main__':
             ipa_retwis_initial_tweets = [10],
             ipa_retwis_zipf           = ['1.0']
         ):
-            ct = count_records(opt.mode, ignore=[], **a)
+            ct = count_records(table, ignore=[], **a)
             out.fmt("→ {color('count:',fg='cyan')} {color(ct,fg='yellow')}", fg='black')
             if ct < trial:
-                run(log, **a)
+                run(table, log, **a)
 

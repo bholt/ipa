@@ -4,3 +4,4 @@ sh
 ansicolors
 mysql
 ipdb
+pygments

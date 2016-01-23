@@ -127,8 +127,8 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
 
   object metric {
 
-    val cassandraOpLatency = metrics.timer("cassandraOpLatency")
-    val retwisOps = metrics.meter("retwisOps")
+    val cassandraOpLatency = metrics.timer("cass_op_latency")
+    val retwisOps = metrics.meter("retwis_op")
 
     private val jsonMapper = new ObjectMapper().registerModule(
       new MetricsModule(TimeUnit.SECONDS, TimeUnit.MILLISECONDS, false)

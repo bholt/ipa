@@ -7,11 +7,9 @@ import os
 from collections import defaultdict
 import re
 import socket
-from uuid import uuid1 as uuid
 import ipdb
 import time
 import json
-from StringIO import StringIO
 
 from os.path import abspath, dirname, realpath
 from os import environ as env
@@ -32,11 +30,6 @@ def note(text):
     return color(text, fg='black')
 
 import sh
-
-
-# Run a little REST server to receive data from running jobs
-from flask import Flask, request
-from flask_restful import Resource, Api
 
 #########################
 
@@ -94,7 +87,7 @@ def count_records(table, ignore=[], valid='total_time is not null', **params):
     cond = ' and '.join([cmp(k, v) for k, v in remain.items()])
     
     try:
-        r = query('select count(*) as ct from %s where %s and %s' % (table, valid, cond))
+        r = query('SELECT count(*) as ct FROM %s WHERE %s and %s' % (table, valid, cond))
         return r[0]['ct']
     except Exception as e:
         err.fmt("error with query: " + str(e))
@@ -106,16 +99,6 @@ def cartesian(**params):
 
 
 #################################################################################
-
-JOBS = defaultdict(dict)
-
-class Metrics(Resource):
-    def post(self, id):
-        JOBS[id]['metrics'] = request.json
-
-app = Flask(__name__)
-api = Api(app)
-api.add_resource(Metrics, '/metrics/<string:id>')
 
 # Tasks to run before running any jobs
 def beforeAll():
@@ -139,16 +122,13 @@ def run(logfile, *args, **flags):
         for k in flags if k.startswith('ipa_')
     ])
 
-    jobid = uuid()
-
     try:
-        print heading("Job " + str(jobid))
         cmd = sh.docker("exec", "owl_c1", "bin/owl", *args, _timeout=60*5, _iter=True)
         print ">", color(' '.join(cmd.cmd), fg='blue')
         for o in cmd:        
             logfile.write(o)
             print o, # w/o extra newline
-            
+        
         metrics = json.loads(cmd.stderr)
         print color(metrics, fg='cyan')
         
@@ -214,8 +194,8 @@ if __name__ == '__main__':
             ipa_retwis_initial_tweets = [10],
             ipa_retwis_zipf           = ['1.0']
         ):
-            ct = count_records(opt.mode, ignore=['loaddir'], **a)
-            out.fmt("{a} → {color('count:',fg='cyan')} {color(ct,fg='yellow')}", fg='black')
+            ct = count_records(opt.mode, ignore=[], **a)
+            out.fmt("→ {color('count:',fg='cyan')} {color(ct,fg='yellow')}", fg='black')
             if ct < trial:
                 run(log, **a)
 

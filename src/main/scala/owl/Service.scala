@@ -122,7 +122,7 @@ class RetweetCounts extends CassandraTable[RetweetCounts, RetweetCount] {
 }
 
 trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
-
+  lazy implicit val isession = Connector.cluster.connect(space.name)
   override val metricRegistry = new MetricRegistry
 
   object metric {
@@ -296,7 +296,7 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
     def resetKeyspace(): Unit = {
       val tmpSession = blocking { cluster.connect() }
       if (config.do_reset) {
-        println(s"# resetting keyspace '${space.name}'")
+        println(s"# Resetting keyspace '${space.name}'")
         blocking {
           tmpSession.execute(s"DROP KEYSPACE IF EXISTS ${space.name}")
         }
@@ -307,9 +307,9 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
       Seq(retweets, followers, followees).map(_.createTables()).bundle.await()
 
       if (!config.do_reset) {
-        println("# skipped keyspace reset")
+        println("# Skipped keyspace reset")
         if (config.do_generate) {
-          println("# truncating tables before generate")
+          println("# Truncating tables before generate")
           tables.map(_.truncate().future()).bundle.await()
           Seq(retweets, followers, followees).map(_.truncateTables()).bundle.await()
         }

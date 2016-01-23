@@ -54,9 +54,8 @@ trait Retwis extends OwlService {
 
   object Tasks {
 
-    sealed abstract class Task(
-      val body: () => Future[Unit]
-    ) extends (() => Future[Unit]) {
+    sealed abstract class Task(body: () => Future[Unit])
+        extends (() => Future[Unit]) {
       def apply = body() map { _ => metric.retwisOps.mark() }
     }
 
@@ -113,7 +112,7 @@ trait Retwis extends OwlService {
     val nTweets = config.tweetsPerUser * config.nUsers
     val fTweets = (0 to nTweets) map { _ => service.post(randomTweet()) }
     fTweets.bundle.await()
-    println("#> Init complete.")
+    println("# Init complete.")
   }
 
   def workload(): Unit = {
@@ -159,26 +158,30 @@ trait Retwis extends OwlService {
 }
 
 object Workload extends Retwis {
+  override implicit lazy val isession = Connector.throttledCluster.connect(space.name)
+  def apply() = workload()
   def main(args: Array[String]): Unit = {
-    workload()
+    apply()
     sys.exit()
   }
 }
 
 object Init extends Retwis {
-  def main(args: Array[String]) {
+  def apply() = {
+    println(config.toJSON)
     service.resetKeyspace()
     generate()
+  }
+  def main(args: Array[String]) {
+    apply()
     sys.exit() // because we have extra threads sitting around...
   }
 }
 
-object All extends Retwis {
+object All {
   def main(args: Array[String]) {
-    println(config.toJSON)
-    service.resetKeyspace()
-    generate()
-    workload()
+    Init()
+    Workload()
     sys.exit()
   }
 }

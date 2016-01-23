@@ -2,7 +2,7 @@ package owl
 
 import java.net.InetAddress
 
-import com.datastax.driver.core.{Cluster, Session}
+import com.datastax.driver.core.{HostDistance, PoolingOptions, Cluster, Session}
 import com.typesafe.config.{ConfigRenderOptions, ConfigFactory}
 import com.websudos.phantom.connectors.{KeySpace, SessionProvider}
 import com.websudos.phantom.dsl.ConsistencyLevel
@@ -32,6 +32,7 @@ object Connector {
 
     def nthreads = c.getInt("ipa.nthreads")
     def cap    = c.getInt("ipa.cap")
+    def concurrent_reqs = c.getInt("ipa.concurrent.requests")
 
     def do_generate   = c.getBoolean("ipa.retwis.generate")
     def zipf          = c.getDouble("ipa.retwis.zipf")
@@ -46,7 +47,18 @@ object Connector {
       c.root().get("ipa").render(ConfigRenderOptions.concise().setFormatted(true))
     }
   }
-  val cluster = Cluster.builder().addContactPoints(config.hosts).build()
+
+  val throttledCluster = Cluster.builder()
+      .addContactPoints(config.hosts)
+      .withPoolingOptions(new PoolingOptions()
+          .setMaxRequestsPerConnection(HostDistance.LOCAL, config.concurrent_reqs)
+          .setMaxRequestsPerConnection(HostDistance.REMOTE, config.concurrent_reqs))
+      .build()
+
+  val cluster = Cluster.builder()
+      .addContactPoints(config.hosts)
+      .build()
+
   val keyspace = KeySpace(config.keyspace)
 }
 
@@ -54,7 +66,7 @@ trait Connector extends SessionProvider {
   val config = Connector.config
   val cluster = Connector.cluster
   implicit val space = Connector.keyspace
-  override implicit lazy val session = {
+  override lazy val session = {
     val tmpSession = blocking { cluster.connect() }
     createKeyspace(tmpSession)
     blocking {

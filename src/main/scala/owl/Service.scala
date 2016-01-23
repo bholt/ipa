@@ -150,6 +150,7 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
 
   trait TableGenerator {
     def createTables(): Future[Unit]
+    def truncateTables(): Future[Unit]
   }
 
   class IPASet[K, V](name: String, consistency: ConsistencyLevel)
@@ -176,6 +177,10 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
 
     def createTables(): Future[Unit] = {
       Seq(entryTable, countTable).map(_.create.ifNotExists.future()).bundle.unit
+    }
+
+    def truncateTables(): Future[Unit] = {
+      Seq(entryTable, countTable).map(_.truncate().future()).bundle.unit
     }
 
     /**
@@ -289,13 +294,26 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
     val LAST_NAMES = Vector("Dent", "Prefect", "McMillan", "Beeblebrox")
 
     def resetKeyspace(): Unit = {
-      println(s"# resetting keyspace '${space.name}'")
       val tmpSession = blocking { cluster.connect() }
-      blocking { tmpSession.execute(s"DROP KEYSPACE IF EXISTS ${space.name}") }
-      createKeyspace(tmpSession)
+      if (config.do_reset) {
+        println(s"# resetting keyspace '${space.name}'")
+        blocking {
+          tmpSession.execute(s"DROP KEYSPACE IF EXISTS ${space.name}")
+        }
+      }
 
+      createKeyspace(tmpSession)
       tables.map(_.create.ifNotExists().future()).bundle.await()
       Seq(retweets, followers, followees).map(_.createTables()).bundle.await()
+
+      if (!config.do_reset) {
+        println("# skipped keyspace reset")
+        if (config.do_generate) {
+          println("# truncating tables before generate")
+          tables.map(_.truncate().future()).bundle.await()
+          Seq(retweets, followers, followees).map(_.truncateTables()).bundle.await()
+        }
+      }
     }
 
     def randomUser(

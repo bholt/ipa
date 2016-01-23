@@ -18,7 +18,10 @@ object Connector {
 
     val hosts = c.getStringList("ipa.cassandra.host").map(InetAddress.getByName)
     def keyspace = c.getString("ipa.cassandra.keyspace")
+
+    def do_reset = c.getBoolean("ipa.reset")
     def replication_factor = c.getInt("ipa.replication.factor")
+
     def consistency = {
       c.getString("ipa.consistency") match {
         case "strong" => ConsistencyLevel.ALL
@@ -29,6 +32,7 @@ object Connector {
 
     def cap    = c.getInt("ipa.cap")
 
+    def do_generate   = c.getBoolean("ipa.retwis.generate")
     def zipf          = c.getDouble("ipa.retwis.zipf")
     def nUsers        = c.getInt("ipa.retwis.initial.users")
     def avgFollowers  = c.getInt("ipa.retwis.initial.followers")

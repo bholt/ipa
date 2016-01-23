@@ -96,10 +96,20 @@ trait Retwis extends OwlService {
   }
 
   def generate(): Unit = {
-    println(s"#> Initializing social graph (${config.nUsers} users, ${config.avgFollowers} avg followers)")
+    if (!config.do_generate) {
+      println("# Skipping data generation.")
+      return
+    }
+    if (!config.do_reset) {
+      // if we didn't do reset but are generating data,
+      // we should drop existing records
+
+    }
+
+    println(s"# Initializing social graph (${config.nUsers} users, ${config.avgFollowers} avg followers)")
     initSocialGraph(config.nUsers, config.avgFollowers, config.zipf).await()
 
-    println(s"#> Initializing tweets (${config.tweetsPerUser} per user)")
+    println(s"# Initializing tweets (${config.tweetsPerUser} per user)")
     var tweetsBy1 = false
     val nTweets = config.tweetsPerUser * config.nUsers
     val user1id = User.id(1)

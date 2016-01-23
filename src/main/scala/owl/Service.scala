@@ -402,9 +402,9 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
 
     def retweet(tweet: UUID, retweeter: UUID)(implicit consistency: ConsistencyLevel): Future[Option[UUID]] = {
       // equivalent to:
-      // if (Retweets(tweet).add(retweeter)):
+      // if (retweets(tweet).add(retweeter)):
       //   for f in Followers(retweeter):
-      //     Timeline(f).add(tweet)
+      //     timeline(f).add(tweet)
       val f = for {
         added <- retweets(tweet).add(retweeter)
         if added

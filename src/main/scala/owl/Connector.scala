@@ -30,6 +30,7 @@ object Connector {
       }
     }
 
+    def nthreads = c.getInt("ipa.nthreads")
     def cap    = c.getInt("ipa.cap")
 
     def do_generate   = c.getBoolean("ipa.retwis.generate")

@@ -110,29 +110,9 @@ trait Retwis extends OwlService {
     initSocialGraph(config.nUsers, config.avgFollowers, config.zipf).await()
 
     println(s"# Initializing tweets (${config.tweetsPerUser} per user)")
-    var tweetsBy1 = false
     val nTweets = config.tweetsPerUser * config.nUsers
-    val user1id = User.id(1)
-    val fTweets = (0 to nTweets) map { _ =>
-      val t = randomTweet()
-      if (t.user == user1id) tweetsBy1 = true
-      service.post(t)
-    }
+    val fTweets = (0 to nTweets) map { _ => service.post(randomTweet()) }
     fTweets.bundle.await()
-    println(s"#> tweetsBy1? $tweetsBy1")
-
-    val ts = service.followersOf(user1id)
-        .flatMap { fs =>
-          fs.take(5).map(f => service.timeline(user = f, limit = 1)).bundle
-        }
-        .map {
-          _.flatten
-        }
-        .await()
-        .toSeq
-
-    println(s"[spot-check]\n - ${ts.mkString("\n - ")}".cyan)
-
     println("#> Init complete.")
   }
 
@@ -148,8 +128,11 @@ trait Retwis extends OwlService {
       Timeline -> 0.70
     )
 
-    // only generate tasks as needed
-    implicit val ec = boundedQueueExecutionContext(capacity = config.cap)
+    // only generate tasks as needed, limit parallelism
+    implicit val ec = boundedQueueExecutionContext(
+      workers = config.nthreads,
+      capacity = config.cap
+    )
 
     val deadline = config.duration.fromNow
     val all =
@@ -161,7 +144,7 @@ trait Retwis extends OwlService {
 
     await(all)
 
-    println("#> Workload complete.")
+    println("# Workload complete.")
     println("#### Metrics ##################")
     ConsoleReporter.forRegistry(metricRegistry)
         .convertRatesTo(TimeUnit.SECONDS)

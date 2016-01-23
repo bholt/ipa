@@ -3,16 +3,12 @@ package owl
 import java.util.concurrent.TimeUnit
 
 import com.codahale.metrics.ConsoleReporter
-import com.codahale.metrics.json.MetricsModule
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.typesafe.config.{ConfigRenderOptions, ConfigFactory}
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
 import org.apache.commons.math3.distribution.ZipfDistribution
 import owl.Util._
 
 import scala.concurrent.Future
-import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.Random
 

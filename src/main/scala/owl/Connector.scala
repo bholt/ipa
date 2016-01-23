@@ -27,7 +27,6 @@ object Connector {
       }
     }
 
-    def outdir = c.getString("ipa.outdir")
     def cap    = c.getInt("ipa.cap")
 
     def zipf          = c.getDouble("ipa.retwis.zipf")
@@ -36,8 +35,6 @@ object Connector {
     def tweetsPerUser = c.getInt("ipa.retwis.initial.tweets")
     def duration      = c.getInt("ipa.retwis.duration").seconds
 
-    def posturl = Try(c.getString("ipa.posturl")).toOption
-    def jobid = Try(c.getString("ipa.jobid")).toOption
     def output_json = Try(c.getBoolean("ipa.output.json")).getOrElse(false)
 
     def toJSON = {

@@ -1,6 +1,6 @@
 package owl
 
-import java.io.{StringWriter, OutputStream}
+import java.io.OutputStream
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -15,9 +15,6 @@ import com.websudos.phantom.column.DateTimeColumn
 import com.websudos.phantom.dsl.{StringColumn, UUIDColumn, _}
 import com.websudos.phantom.keys.PartitionKey
 import nl.grons.metrics.scala.{FutureMetrics, InstrumentedBuilder}
-import org.apache.http.client.methods.HttpPost
-import org.apache.http.entity.StringEntity
-import org.apache.http.impl.client.HttpClientBuilder
 import org.joda.time.DateTime
 
 import scala.collection.JavaConversions._
@@ -136,31 +133,12 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
     private val jsonMapper = new ObjectMapper().registerModule(
       new MetricsModule(TimeUnit.SECONDS, TimeUnit.MILLISECONDS, false)
     )
-    private lazy val httpClient = HttpClientBuilder.create().build()
 
     def write(out: OutputStream) = {
       val writer = jsonMapper.writerWithDefaultPrettyPrinter()
       writer.writeValue(out, metricRegistry)
     }
 
-    def post() {
-      for {
-        url <- config.posturl
-        jobid <- config.jobid
-      } yield {
-        val out = new StringWriter
-        jsonMapper.writeValue(out, metricRegistry)
-        val post = new HttpPost(s"$url/metrics/$jobid")
-        post.setHeader("Content-Type", "application/json")
-        post.setEntity(new StringEntity(out.toString))
-        val response = httpClient.execute(post)
-        if (response.getStatusLine.getStatusCode != 200) {
-          Console.err.println(s"Error sending metrics: $response")
-        } else {
-          println(s"Posted metrics to $url".green)
-        }
-      }
-    }
   }
   implicit class InstrumentedFuture[T](f: Future[T]) {
     def instrument(): Future[T] = {

@@ -1,7 +1,5 @@
 dataset
 pyhocon
-flask
-flask_restful
 sh
 ansicolors
 mysql

@@ -72,7 +72,6 @@ libraryDependencies ++= {
     "com.typesafe"        %  "config"                     % "1.3.0",
     "org.apache.commons"  %  "commons-math3"              % "3.5",
     "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.6.3",
-    "org.apache.httpcomponents" % "httpclient" % "4.5.1",
     "com.codahale.metrics"       % "metrics-json"         % "3.0.2",
     "nl.grons"                  %% "metrics-scala"        % "3.5.2"
   )

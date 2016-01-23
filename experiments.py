@@ -1,0 +1,221 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import dataset
+import sys
+import itertools as it
+import os
+from collections import defaultdict
+import re
+import socket
+from uuid import uuid1 as uuid
+import ipdb
+import time
+import json
+from StringIO import StringIO
+
+from os.path import abspath, dirname, realpath
+from os import environ as env
+import signal
+import yaml
+from glob import glob
+
+#########################
+# External dependencies
+from pyhocon import ConfigFactory
+from pyhocon.tool import HOCONConverter
+import colors # ansicolors
+def color(o, **args):
+    return colors.color(str(o), **args)
+def heading(text):
+    return color(text, fg='black', style='underline+bold')
+def note(text):
+    return color(text, fg='black')
+
+import sh
+
+
+# Run a little REST server to receive data from running jobs
+from flask import Flask, request
+from flask_restful import Resource, Api
+
+#########################
+
+interpolation_matcher = re.compile(r"{(.*?)}")
+def fmt(s):
+    return interpolation_matcher.sub(lambda m: str(eval(m.group(1))), str(s))
+
+class FormatStream(object):
+    def __init__(self, stream, color = None):
+        self.stream = stream
+        self.color = color
+    def fmt(self, s, **colorargs):
+        if self.color and 'fg' not in colorargs:
+            colorargs['fg'] = self.color
+        self.stream.write(color(fmt(s)+"\n", **colorargs))
+
+out = FormatStream(sys.stdout)
+err = FormatStream(sys.stderr, 'red')
+
+
+def hostname():
+    return socket.getfqdn()
+
+
+def on_sampa_cluster():
+    return 'sampa' in hostname()
+
+
+def slurm_nodes():
+    return [
+        n.replace('n', 'i') for n in
+        sp.check_output(['scontrol', 'show', 'hostname', env['SLURM_NODELIST']]).split()
+    ]
+
+
+DB = dataset.connect(fmt("mysql:///ipa?read_default_file={env['HOME']}/.my.cnf"))
+
+def query(q):
+    print '#>', q
+    return [dict(x) for x in DB.query(q)]
+
+
+def count_records(table, ignore=[], valid='total_time is not null', **params):
+    ignore.append('sqltable')
+    remain = {k: params[k] for k in params if k not in ignore}
+
+    def cmp(k, v):
+        if type(v) == float:
+            return "ABS({0}-{1})/{1} < 0.0001".format(k, v)
+        elif type(v) == str and len(v) == 0:
+            return "({0} = '' or {0} is null)".format(k)
+        else:
+            return "{0} = '{1}'".format(k, v)
+    
+    cond = ' and '.join([cmp(k, v) for k, v in remain.items()])
+    
+    try:
+        r = query('select count(*) as ct from %s where %s and %s' % (table, valid, cond))
+        return r[0]['ct']
+    except Exception as e:
+        err.fmt("error with query: " + str(e))
+        return 0
+
+
+def cartesian(**params):
+    return [dict(p) for p in it.product(*[zip(it.repeat(k), v) for k, v in params.items()])]
+
+
+#################################################################################
+
+JOBS = defaultdict(dict)
+
+class Metrics(Resource):
+    def post(self, id):
+        JOBS[id]['metrics'] = request.json
+
+app = Flask(__name__)
+api = Api(app)
+api.add_resource(Metrics, '/metrics/<string:id>')
+
+# Tasks to run before running any jobs
+def beforeAll():
+    
+    print note("> creating up-to-date docker image")
+    sh.sbt("docker:publishLocal")
+    
+    print note("> initializing blockade")
+    sh.blockade("destroy")
+    sh.blockade("up")
+    time.sleep(5) # make sure Cassandra has finished initializing
+    sh.blockade("status")
+    
+
+def run(logfile, *args, **flags):    
+    # convert ipa_* flags to java properties & add to args
+    # ipa_retwis_initial_users -> ipa.retwis.initial.users
+    args = list(args)
+    args.extend([
+        "-D{}={}".format(k.replace('_','.'), flags[k])
+        for k in flags if k.startswith('ipa_')
+    ])
+
+    jobid = uuid()
+
+    try:
+        print heading("Job " + str(jobid))
+        cmd = sh.docker("exec", "owl_c1", "bin/owl", *args, _timeout=60*5, _iter=True)
+        print ">", color(' '.join(cmd.cmd), fg='blue')
+        for o in cmd:        
+            logfile.write(o)
+            print o, # w/o extra newline
+            
+        metrics = json.loads(cmd.stderr)
+        print color(metrics, fg='cyan')
+        
+    except (KeyboardInterrupt, sh.TimeoutException) as e:
+        out.fmt("job cancelled")
+
+
+if __name__ == '__main__':
+    from argparse import ArgumentParser
+    parser = ArgumentParser()
+    parser.add_argument('-t', '--target', type=int, default=1)
+    parser.add_argument('-m', '--mode', type=str, default='owl')
+    parser.add_argument('-f', '--failures', type=int, default=0)
+    parser.add_argument('-s', '--nshards', type=int, default=4)
+    parser.add_argument('-n', '--machines', type=str, default="")
+    parser.add_argument('--manual', type=str, default=None)
+    if '--' in sys.argv:
+        args_to_parse = sys.argv[1:sys.argv.index('--')]
+        opt = parser.parse_args(args_to_parse)
+        manual = sys.argv[sys.argv.index('--')+1:]
+    else:
+        opt = parser.parse_args()
+        manual = None
+    
+    SRC = abspath(dirname(realpath(__file__)))
+    os.chdir(SRC)
+    out.fmt(">>> changing to {SRC}", fg='magenta')
+
+    if on_sampa_cluster():
+        MACHINES = slurm_nodes()
+    else:
+        MACHINES = hostname()
+
+    print 'machines:', MACHINES
+
+    if manual:
+        run(sys.stdout, ' '.join(manual),
+            machines = ','.join(MACHINES),
+            nshards = opt.nshards)
+        exit(0)
+    else:
+        # startup
+        # beforeAll()
+        pass
+        
+    log = open(SRC + '/experiments.log', 'w')
+    
+    tag = sh.git.describe().stdout
+    version = re.match(r"(\w+)(-.*)?", tag).group(1)
+    machines = hostname()
+
+    for trial in range(1, opt.target+1):
+        print '---------------------------------\n# starting trial', trial
+        for a in cartesian(
+            version               = [version],
+            
+            ipa_output_json           = ['true'],
+            
+            ipa_replication_factor    = [3],
+            
+            ipa_retwis_duration       = [5],
+            ipa_retwis_initial_users  = [100],
+            ipa_retwis_initial_tweets = [10],
+            ipa_retwis_zipf           = ['1.0']
+        ):
+            ct = count_records(opt.mode, ignore=['loaddir'], **a)
+            out.fmt("{a} → {color('count:',fg='cyan')} {color(ct,fg='yellow')}", fg='black')
+            if ct < trial:
+                run(log, **a)
+

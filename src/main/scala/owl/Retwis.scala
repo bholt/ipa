@@ -3,6 +3,8 @@ package owl
 import java.util.concurrent.TimeUnit
 
 import com.codahale.metrics.ConsoleReporter
+import com.codahale.metrics.json.MetricsModule
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.typesafe.config.{ConfigRenderOptions, ConfigFactory}
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
@@ -159,6 +161,9 @@ trait Retwis extends OwlService {
         .convertRatesTo(TimeUnit.SECONDS)
         .build()
         .report()
+
+    // dump metrics to stderr (for experiments script to parse)
+    if (config.output_json) metric.write(Console.err)
     println("###############################")
   }
 

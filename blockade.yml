@@ -1,20 +1,20 @@
 containers:
   s1:
-    image: cassandra:2.2.4
+    image: bholt/cassandra
     command: cassandra -f
     ports: [7000]
     environment:
       JVM_OPTS: -Dcassandra.consistent.rangemovement=false
 
   s2:
-    image: cassandra:2.2.4
+    image: bholt/cassandra
     command: cassandra -f
     links: {s1: cassandra}
     environment:
       JVM_OPTS: -Dcassandra.consistent.rangemovement=false
 
   s3:
-    image: cassandra:2.2.4
+    image: bholt/cassandra
     command: cassandra -f
     links: {s1: cassandra}
     environment:

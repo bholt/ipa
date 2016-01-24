@@ -200,7 +200,7 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
             .map(_.isDefined)
       }
 
-      def get(limit: Int = 0)(implicit consistency: ConsistencyLevel): Future[Iterator[V]] = {
+      def get(limit: Int = 0): Future[Iterator[V]] = {
         val q = entryTable
             .select
             .consistencyLevel_=(consistency)
@@ -355,21 +355,21 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
           .instrument()
     }
 
-    def follow(follower: UUID, followee: UUID)(implicit consistency: ConsistencyLevel): Future[Unit] = {
+    def follow(follower: UUID, followee: UUID): Future[Unit] = {
       for {
         _ <- followers(followee).add(follower)
         _ <- followees(follower).add(followee)
       } yield ()
     }
 
-    def unfollow(follower: UUID, followee: UUID)(implicit consistency: ConsistencyLevel): Future[Unit] = {
+    def unfollow(follower: UUID, followee: UUID): Future[Unit] = {
       for {
         _ <- followers(followee).remove(follower)
         _ <- followees(follower).remove(followee)
       } yield ()
     }
 
-    def followersOf(user: UUID, limit: Int = 0)(implicit consistency: ConsistencyLevel): Future[Iterator[UUID]] = {
+    def followersOf(user: UUID, limit: Int = 0): Future[Iterator[UUID]] = {
       followers(user).get(limit)
     }
 

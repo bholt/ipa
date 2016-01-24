@@ -167,6 +167,10 @@ def run(table, logfile, *args, **flags):
         for k in flags if k.startswith('ipa_')
     ])
 
+    if 'blockade_mode' in flags:
+        mode = flags['blockade_mode']
+        blockade(mode, "s1", "s2", "s3")
+
     try:
         cmd = sh.docker("exec", "owl_c1", "bin/owl", *args, _timeout=60*5, _iter=True)
         print ">", color(' '.join(cmd.cmd), fg='blue')
@@ -239,7 +243,7 @@ if __name__ == '__main__':
         for a in cartesian(
             ipa_version               = [version],
             ipa_output_json           = ['true'],
-            
+
             ipa_replication_factor    = [3],
             ipa_reset                 = ['false'],
             ipa_retwis_generate       = ['true'],
@@ -248,9 +252,13 @@ if __name__ == '__main__':
             ipa_retwis_initial_users  = [100],
             ipa_retwis_initial_tweets = [10],
             ipa_retwis_zipf           = ['1.0'],
-            ipa_concurrent_requests   = [16, 128, 512, 2048, 8192]
+            ipa_concurrent_requests   = [16, 128, 512, 2048],
+
+            ipa_consistency           = ['strong', 'weak'],
+            blockade_mode             = ['slow', 'fast']
         ):
-            ct = count_records(table, ignore=[], **a)
+            ct = count_records(table, ignore=[],
+                               valid='meters_retwis_op_count is not null', **a)
             out.fmt("→ {color('count:',fg='cyan')} {color(ct,fg='yellow')}", fg='black')
             if ct < trial:
                 run(table, log, **a)

@@ -151,7 +151,9 @@ trait Retwis extends OwlService {
         .report()
 
     // dump metrics to stderr (for experiments script to parse)
-    if (config.output_json) metric.write(Console.err)
+    if (config.output_json) {
+      metric.write(Console.err)
+    }
     println("###############################")
   }
 

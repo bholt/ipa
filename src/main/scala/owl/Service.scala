@@ -9,6 +9,7 @@ import com.codahale.metrics.json.MetricsModule
 import com.datastax.driver.core.utils.UUIDs
 import com.datastax.driver.core.{ConsistencyLevel, Row}
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.builder.primitives.Primitive
 import com.websudos.phantom.column.DateTimeColumn
@@ -130,16 +131,19 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
     val cassandraOpLatency = metrics.timer("cass_op_latency")
     val retwisOps = metrics.meter("retwis_op")
 
-    private val jsonMapper = new ObjectMapper().registerModule(
-      new MetricsModule(TimeUnit.SECONDS, TimeUnit.MILLISECONDS, false)
-    )
+    private val mapper = new ObjectMapper()
+        .registerModule(new MetricsModule(TimeUnit.SECONDS, TimeUnit.MILLISECONDS, false))
+        .registerModule(DefaultScalaModule)
 
     def write(out: OutputStream) = {
-      val writer = jsonMapper.writerWithDefaultPrettyPrinter()
-      writer.writeValue(out, metricRegistry)
+      val mConfig = config.c.root().withOnlyKey("ipa").unwrapped()
+      val mMetrics = mapper.readValue(mapper.writeValueAsString(metricRegistry), classOf[java.util.Map[String,Object]])
+      mapper.writerWithDefaultPrettyPrinter()
+            .writeValue(out, mMetrics ++ mConfig)
     }
 
   }
+
   implicit class InstrumentedFuture[T](f: Future[T]) {
     def instrument(): Future[T] = {
       val ctx = metric.cassandraOpLatency.timerContext()

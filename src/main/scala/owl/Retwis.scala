@@ -168,7 +168,7 @@ object Workload extends Retwis {
 
 object Init extends Retwis {
   def apply() = {
-    println(config.toJSON)
+    // println(config.toJSON)
     service.resetKeyspace()
     generate()
   }

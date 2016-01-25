@@ -101,7 +101,7 @@ object Util {
     * Like 'println' but for debug output (colored)
     */
   def dlog(text: String) {
-    println(s"${Console.BLACK}$text${Console.RESET}")
+    println(s"$text".purple)
   }
 
   implicit class ColoredString(s: String) {

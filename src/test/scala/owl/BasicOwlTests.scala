@@ -7,6 +7,7 @@ import scala.concurrent.Future
 import scala.concurrent.duration._
 import com.websudos.phantom.dsl._
 import com.websudos.phantom.connectors.KeySpace
+import Util._
 
 import scala.language.postfixOps
 
@@ -77,7 +78,7 @@ class BasicOwlTests extends OwlTest {
       _ <- service.follow(ford.id, zaphod.id)
       _ <- service.follow(ford.id, arthur.id)
     } yield ()
-    follows.isReadyWithin(100 millis)
+    assert(follows.isReadyWithin(2 seconds))
     println("-- set up follows")
   }
 
@@ -128,11 +129,11 @@ class BasicOwlTests extends OwlTest {
   }
 
   "Retweets" should "be counted" in {
-    service.retweet(tweetEgo.id, ford.id).futureValue shouldBe Some(tweetEgo.id)
+    service.retweet(tweetEgo, ford.id).futureValue shouldBe Some(tweetEgo.id)
 
     retweets(tweetEgo.id).size().futureValue shouldBe 1
 
-    service.retweet(tweetEgo.id, arthur.id).futureValue shouldBe Some(tweetEgo.id)
+    service.retweet(tweetEgo, arthur.id).futureValue shouldBe Some(tweetEgo.id)
 
     whenReady(service.getTweet(tweetEgo.id)) { opt =>
       opt.value.retweets shouldBe 2
@@ -142,7 +143,7 @@ class BasicOwlTests extends OwlTest {
 
   it should "not be duplicated" in {
     retweets(tweetEgo.id).size().futureValue shouldBe 2
-    service.retweet(tweetEgo.id, ford.id).futureValue shouldBe None
+    service.retweet(tweetEgo, ford.id).futureValue shouldBe None
     retweets(tweetEgo.id).size().futureValue shouldBe 2
   }
 }

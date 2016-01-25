@@ -264,7 +264,7 @@ if __name__ == '__main__':
             ipa_retwis_initial_users  = [100],
             ipa_retwis_initial_tweets = [10],
             ipa_retwis_zipf           = ['1.0'],
-            ipa_concurrent_requests   = [16, 128, 512, 2048, 4096, 8192],
+            ipa_concurrent_requests   = [16, 128, 512, 2*K, 4*K, 8*K, 32*K],
 
             ipa_consistency           = ['strong', 'weak'],
             blockade_mode             = ['slow']  # 'fast'

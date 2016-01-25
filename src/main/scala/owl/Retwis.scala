@@ -86,7 +86,7 @@ trait Retwis extends OwlService {
         _ <- tweets
             .filter(i => Random.nextDouble() > 0.4)
             .map { t =>
-              service.retweet(t.id, user)
+              service.retweet(t, user)
             }
             .bundle
       } yield ()

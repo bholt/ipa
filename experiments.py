@@ -137,7 +137,10 @@ blockade = sh.sudo.blockade
 def before_all():
 
     print note("> creating up-to-date docker image")
-    sh.sbt("docker:publishLocal", **LIVE)
+    # (suppress 'sending build context' messages)
+    for line in sh.sbt("docker:publishLocal", _iter=True):
+        if not re.match(r"^\[info\] Sending build context.*$", line):
+            print line
 
     print note("> initializing blockade")
     blockade.destroy(_ok_code=[0,1], **LIVE)
@@ -176,7 +179,8 @@ def run(table, logfile, *args, **flags):
         print ">", color(' '.join(cmd.cmd), fg='blue')
         for o in cmd:
             logfile.write(o)
-            print o, # w/o extra newline
+            if opt.verbose:
+                print o, # w/o extra newline
 
         # flatten & clean up metrics a bit
         metrics = {
@@ -193,14 +197,17 @@ def run(table, logfile, *args, **flags):
 
 
 if __name__ == '__main__':
+    global opt
     from argparse import ArgumentParser
     parser = ArgumentParser()
     parser.add_argument('-t', '--target', type=int, default=1)
     parser.add_argument('-m', '--mode', type=str, default='owl')
     parser.add_argument('-f', '--failures', type=int, default=0)
-    parser.add_argument('-s', '--nshards', type=int, default=4)
     parser.add_argument('-n', '--machines', type=str, default="")
     parser.add_argument('--manual', type=str, default=None)
+    parser.add_argument('--dry', dest='dry', action='store_true', default=False)
+    parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', default=False)
+
     if '--' in sys.argv:
         args_to_parse = sys.argv[1:sys.argv.index('--')]
         opt = parser.parse_args(args_to_parse)
@@ -219,12 +226,14 @@ if __name__ == '__main__':
 
     print 'machines:', MACHINES
 
+    DB = dataset.connect(fmt("mysql:///ipa?read_default_file={env['HOME']}/.my.cnf"))
+    table = DB[opt.mode]
+
     if manual:
-        run(sys.stdout, ' '.join(manual),
-            machines=','.join(MACHINES),
-            nshards=opt.nshards)
+        run(table, sys.stdout, ' '.join(manual),
+            machines=','.join(MACHINES))
         exit(0)
-    else:
+    elif not opt.dry:
         # startup
         before_all()
         # print note('skipping before_all()')
@@ -235,11 +244,14 @@ if __name__ == '__main__':
     version = re.match(r"(\w+)(-.*)?", tag).group(1)
     machines = hostname()
 
-    DB = dataset.connect(fmt("mysql:///ipa?read_default_file={env['HOME']}/.my.cnf"))
-    table = DB[opt.mode]
+    K= 1024
 
     for trial in range(1, opt.target+1):
-        print '---------------------------------\n# starting trial', trial
+        if not opt.dry:
+            print '---------------------------------\n# starting trial', trial
+        elif opt.dry and trial > 1:
+            # only need to do one 'trial' to get all the counts if doing dry run
+            continue
         for a in cartesian(
             ipa_version               = [version],
             ipa_output_json           = ['true'],
@@ -260,6 +272,8 @@ if __name__ == '__main__':
             ct = count_records(table, ignore=[],
                                valid='meters_retwis_op_count is not null', **a)
             out.fmt("→ {color('count:',fg='cyan')} {color(ct,fg='yellow')}", fg='black')
+            if opt.dry:
+                continue
             if ct < trial:
                 run(table, log, **a)
 

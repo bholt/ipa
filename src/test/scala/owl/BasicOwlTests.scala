@@ -1,5 +1,7 @@
 package owl
 
+import java.util.UUID
+
 import com.datastax.driver.core.ProtocolVersion
 import org.scalatest.OptionValues._
 
@@ -152,6 +154,29 @@ class BasicOwlTests extends OwlTest {
     retweets(tweetEgo.id).size().futureValue shouldBe 2
     whenReady(service.retweet(tweetEgo, ford.id)) { _ =>
       retweets(tweetEgo.id).size().futureValue shouldBe 2
+    }
+  }
+
+  val sPlain = new IPASetImplPlain[UUID, UUID]("sPlain", config.consistency)
+  val sCounter = new IPASetImplWithCounter[UUID, UUID]("sCounter", config.consistency)
+  val sCollect = new IPASetImplCollection[UUID, UUID]("sCollect", config.consistency)
+
+  val sets = Seq(sPlain, sCounter, sCollect)
+
+  "IPASet" should "create tables" in {
+    sets.map(_.create()).bundle.await()
+  }
+
+  val u1 = User.id(1)
+  val u2 = User.id(2)
+
+  it should "support add" in {
+    sets.map(_.add(u1, u2)).bundle.await()
+  }
+
+  it should "support contains" in {
+    for (s <- sets) {
+      s.contains(u1, u2).futureValue shouldBe true
     }
   }
 }

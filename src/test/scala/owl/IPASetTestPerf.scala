@@ -64,7 +64,7 @@ trait IPASetTestGeneric extends OwlTest {
     }.bundle.await()
   }
 
-  def printMetrics(): Unit = {
+  override def afterAll() {
     println(">>> printing metrics")
     metric.dump()
     metric.write(Console.err)
@@ -84,8 +84,6 @@ class IPASetCollectionsPerf extends IPASetTestGeneric {
     performanceTest()
   }
 
-  it should "print metrics" in { printMetrics() }
-
 }
 
 class IPASetCounterPerf extends IPASetTestGeneric {
@@ -101,7 +99,6 @@ class IPASetCounterPerf extends IPASetTestGeneric {
     performanceTest()
   }
 
-  it should "print metrics" in { printMetrics() }
 }
 
 class IPASetPlainPerf extends IPASetTestGeneric {
@@ -117,7 +114,6 @@ class IPASetPlainPerf extends IPASetTestGeneric {
     performanceTest()
   }
 
-  it should "print metrics" in { printMetrics() }
 }
 
 class IPASetPerfSuite extends Sequential(

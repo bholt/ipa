@@ -27,6 +27,15 @@ await(service.follow(ford.id, arthur.id))
 
 await(service.post(t1))
 await(service.post(t2))
+
+import java.util.concurrent.TimeUnit
+import com.fasterxml.jackson.module.scala.DefaultScalaModule
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.codahale.metrics.json.MetricsModule
+import scala.collection.JavaConversions._
+
+val mapper = new ObjectMapper().registerModule(new MetricsModule(TimeUnit.SECONDS, TimeUnit.MILLISECONDS, false)).registerModule(DefaultScalaModule)
+
 ~~~
 
 ### SQL commands

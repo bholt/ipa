@@ -81,6 +81,7 @@ trait Connector extends SessionProvider {
 
   def createKeyspace(s: Session): Unit = {
     val r = config.replication_factor
+    println(s"# Creating keyspace {replication_factor: $r}")
     blocking {
       s.execute(s"CREATE KEYSPACE IF NOT EXISTS ${space.name} WITH replication = {'class': 'SimpleStrategy', 'replication_factor': $r};")
     }

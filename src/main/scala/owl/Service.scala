@@ -29,7 +29,7 @@ import scala.language.postfixOps
 //////////////////
 // User
 case class User(
-    id: UUID = UUID.randomUUID(),
+    id: UUID = UUIDs.random(),
     username: String,
     name: String,
     created: DateTime = DateTime.now()
@@ -72,7 +72,7 @@ class Followees extends CassandraTable[Followees, Following] {
 //////////////////
 // Tweets
 case class Tweet(
-  id: UUID = UUID.randomUUID(),
+  id: UUID = UUIDs.timeBased(),
   user: UUID,
   body: String,
   created: DateTime = DateTime.now(),
@@ -103,8 +103,8 @@ class Tweets extends CassandraTable[Tweets, Tweet] {
 case class TimelineEntry(user: UUID, tweet: UUID, created: DateTime)
 class Timelines extends CassandraTable[Timelines, TimelineEntry] {
   object user extends UUIDColumn(this) with PartitionKey[UUID]
-  object tweet extends UUIDColumn(this)
-  object created extends DateTimeColumn(this) with PrimaryKey[DateTime] with ClusteringOrder[DateTime] with Descending
+  object tweet extends TimeUUIDColumn(this) with PrimaryKey[UUID] with ClusteringOrder[UUID] with Descending
+  object created extends DateTimeColumn(this)
   override val tableName = "timelines"
   override def fromRow(r: Row) = TimelineEntry(user(r), tweet(r), created(r))
 }
@@ -503,19 +503,19 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
       } yield t.id
     }
 
-    def retweet(tweet: Tweet, retweeter: UUID)(implicit consistency: ConsistencyLevel): Future[Option[UUID]] = {
+    def retweet(tweet: Tweet, retweeter: UUID)(implicit consistency: ConsistencyLevel): Future[Unit] = {
       // equivalent to:
       // if (retweets(tweet).add(retweeter)):
       //   for f in Followers(retweeter):
       //     timeline(f).add(tweet)
-      val f = for {
-        added <- retweets(tweet.id).add(retweeter)
-        if added
-        _ <- add_to_followers_timelines(tweet.id, retweeter, tweet.created)
-      } yield {
-        Some(tweet.id)
+      {
+        for {
+          _ <- retweets(tweet.id).add(retweeter)
+          _ <- add_to_followers_timelines(tweet.id, retweeter, tweet.created)
+        } yield ()
+      } recover {
+        case _ => ()
       }
-      f recover { case _ => None }
     }
 
     def getTweet(id: UUID)(implicit consistency: ConsistencyLevel): Future[Option[Tweet]] = {
@@ -542,7 +542,7 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
       timelines.select
           .consistencyLevel_=(consistency)
           .where(_.user eqs user)
-          .orderBy(_.created desc)
+          .orderBy(_.tweet desc)
           .limit(limit)
           .future()
           .instrument()

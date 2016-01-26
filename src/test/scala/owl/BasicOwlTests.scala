@@ -129,11 +129,13 @@ class BasicOwlTests extends OwlTest {
   }
 
   "Retweets" should "be counted" in {
-    service.retweet(tweetEgo, ford.id).futureValue shouldBe Some(tweetEgo.id)
+    whenReady(service.retweet(tweetEgo, ford.id)) { _ =>
+      retweets(tweetEgo.id).size().futureValue shouldBe 1
+    }
 
-    retweets(tweetEgo.id).size().futureValue shouldBe 1
-
-    service.retweet(tweetEgo, arthur.id).futureValue shouldBe Some(tweetEgo.id)
+    whenReady(service.retweet(tweetEgo, arthur.id)) { _ =>
+      retweets(tweetEgo.id).size().futureValue shouldBe 2
+    }
 
     whenReady(service.getTweet(tweetEgo.id)) { opt =>
       opt.value.retweets shouldBe 2
@@ -141,9 +143,15 @@ class BasicOwlTests extends OwlTest {
     }
   }
 
+  it should "contain retweeters" in {
+    retweets(tweetEgo.id).contains(arthur.id).futureValue shouldBe true
+    retweets(tweetEgo.id).contains(ford.id).futureValue shouldBe true
+  }
+
   it should "not be duplicated" in {
     retweets(tweetEgo.id).size().futureValue shouldBe 2
-    service.retweet(tweetEgo, ford.id).futureValue shouldBe None
-    retweets(tweetEgo.id).size().futureValue shouldBe 2
+    whenReady(service.retweet(tweetEgo, ford.id)) { _ =>
+      retweets(tweetEgo.id).size().futureValue shouldBe 2
+    }
   }
 }

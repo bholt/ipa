@@ -4,7 +4,7 @@ import java.io.OutputStream
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-import com.codahale.metrics.MetricRegistry
+import com.codahale.metrics.{ConsoleReporter, MetricRegistry}
 import com.codahale.metrics.json.MetricsModule
 import com.datastax.driver.core.utils.UUIDs
 import com.datastax.driver.core.{ConsistencyLevel, Row}
@@ -15,7 +15,7 @@ import com.websudos.phantom.builder.primitives.Primitive
 import com.websudos.phantom.column.DateTimeColumn
 import com.websudos.phantom.dsl.{StringColumn, UUIDColumn, _}
 import com.websudos.phantom.keys.PartitionKey
-import nl.grons.metrics.scala.{FutureMetrics, InstrumentedBuilder}
+import nl.grons.metrics.scala.{Timer, FutureMetrics, InstrumentedBuilder}
 import org.joda.time.DateTime
 
 import scala.collection.JavaConversions._
@@ -145,11 +145,17 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
             .writeValue(out, mMetrics ++ mConfig)
     }
 
+    def dump() = {
+      ConsoleReporter.forRegistry(metricRegistry)
+          .convertRatesTo(TimeUnit.SECONDS)
+          .build()
+          .report()
+    }
   }
 
   implicit class InstrumentedFuture[T](f: Future[T]) {
-    def instrument(): Future[T] = {
-      val ctx = metric.cassandraOpLatency.timerContext()
+    def instrument(m: Timer = metric.cassandraOpLatency): Future[T] = {
+      val ctx = m.timerContext()
       f onComplete { _ => ctx.stop() }
       f
     }
@@ -261,7 +267,7 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
     override def apply(key: K) = new Handle(key)
   }
 
-  class IPASetImpl[K, V](val name: String, val consistency: ConsistencyLevel)(implicit evK: Primitive[K], evV: Primitive[V]) extends IPASet[K, V] {
+  class IPASetImplWithCounter[K, V](val name: String, val consistency: ConsistencyLevel)(implicit evK: Primitive[K], evV: Primitive[V]) extends IPASet[K, V] {
 
     case class Entry(key: K, value: V)
     class EntryTable extends CassandraTable[EntryTable, Entry] {
@@ -315,7 +321,7 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
     }
 
     override def add(key: K, value: V): Future[Unit] = {
-      dlog(s">>> $name($key).add($value)")
+      // dlog(s">>> $name($key).add($value)")
       this.contains(key, value) flatMap { dup =>
         if (dup) Future { () }
         else {
@@ -371,7 +377,7 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
 
     override def apply(key: K) = new Handle(key) {
       def get(limit: Int = 0): Future[Iterator[V]] =
-        IPASetImpl.this.get(key, limit)
+        IPASetImplWithCounter.this.get(key, limit)
     }
   }
 

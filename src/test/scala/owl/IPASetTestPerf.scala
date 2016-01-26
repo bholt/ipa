@@ -64,10 +64,10 @@ trait IPASetTestGeneric extends OwlTest {
     }.bundle.await()
   }
 
-  override def afterAll() {
+  def printMetrics(): Unit = {
+    println(">>> printing metrics")
     metric.dump()
     metric.write(Console.err)
-    super.afterAll()
   }
 }
 
@@ -84,6 +84,8 @@ class IPASetCollectionsPerf extends IPASetTestGeneric {
     performanceTest()
   }
 
+  it should "print metrics" in { printMetrics() }
+
 }
 
 class IPASetCounterPerf extends IPASetTestGeneric {
@@ -99,9 +101,27 @@ class IPASetCounterPerf extends IPASetTestGeneric {
     performanceTest()
   }
 
+  it should "print metrics" in { printMetrics() }
+}
+
+class IPASetPlainPerf extends IPASetTestGeneric {
+
+  override val set = new IPASetImplPlain[UUID, UUID]("sPlain", config.consistency)
+
+  "Table-based set" should "be created" in {
+    println(">>> creating table-based set")
+    set.create().await()
+  }
+
+  it should "test performance (zipf)" in {
+    performanceTest()
+  }
+
+  it should "print metrics" in { printMetrics() }
 }
 
 class IPASetPerfSuite extends Sequential(
   new IPASetCollectionsPerf,
-  new IPASetCounterPerf
+  new IPASetCounterPerf,
+  new IPASetPlainPerf
 )

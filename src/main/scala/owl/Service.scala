@@ -267,6 +267,83 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
     override def apply(key: K) = new Handle(key)
   }
 
+  class IPASetImplPlain[K, V](val name: String, val consistency: ConsistencyLevel)(implicit evK: Primitive[K], evV: Primitive[V]) extends IPASet[K, V] {
+
+    case class Entry(key: K, value: V)
+    class EntryTable extends CassandraTable[EntryTable, Entry] {
+      object ekey extends PrimitiveColumn[EntryTable, Entry, K](this) with PartitionKey[K]
+      object evalue extends PrimitiveColumn[EntryTable, Entry, V](this) with PrimaryKey[V]
+      override val tableName = name
+      override def fromRow(r: Row) = Entry(ekey(r), evalue(r))
+    }
+
+    val entryTable = new EntryTable
+
+    override def create(): Future[Unit] =
+      entryTable.create.ifNotExists.future().unit
+
+    override def truncate(): Future[Unit] =
+      entryTable.truncate.future().unit
+
+    override def contains(key: K, value: V): Future[Boolean] = {
+      entryTable.select(_.evalue)
+          .consistencyLevel_=(consistency)
+          .where(_.ekey eqs key)
+          .and(_.evalue eqs value)
+          .one()
+          .instrument()
+          .map(_.isDefined)
+    }
+
+    def get(key: K, limit: Int = 0): Future[Iterator[V]] = {
+      val q = entryTable.select
+          .consistencyLevel_=(consistency)
+          .where(_.ekey eqs key)
+
+      val qlim = if (limit > 0) q.limit(limit) else q
+
+      qlim.future().instrument().map { results =>
+        results.iterator() map { row =>
+          entryTable.fromRow(row).value
+        }
+      }
+    }
+
+    override def add(key: K, value: V): Future[Unit] = {
+      entryTable.insert()
+                .consistencyLevel_=(consistency)
+                .value(_.ekey, key)
+                .value(_.evalue, value)
+                .future()
+                .instrument()
+                .unit
+    }
+
+    override def remove(key: K, value: V): Future[Unit] = {
+      entryTable.delete()
+                .consistencyLevel_=(consistency)
+                .where(_.ekey eqs key)
+                .and(_.evalue eqs value)
+                .future()
+                .instrument()
+                .unit
+    }
+
+    override def size(key: K): Future[Int] = {
+      entryTable.select.count()
+          .consistencyLevel_=(consistency)
+          .where(_.ekey eqs key)
+          .one()
+          .map(_.getOrElse(0l).toInt)
+          .instrument()
+    }
+
+    override def apply(key: K) = new Handle(key) {
+      def get(limit: Int = 0): Future[Iterator[V]] =
+        IPASetImplPlain.this.get(key, limit)
+    }
+  }
+
   class IPASetImplWithCounter[K, V](val name: String, val consistency: ConsistencyLevel)(implicit evK: Primitive[K], evV: Primitive[V]) extends IPASet[K, V] {
 
     case class Entry(key: K, value: V)

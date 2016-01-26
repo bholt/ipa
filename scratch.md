@@ -19,7 +19,7 @@ service.resetKeyspace()
 
 implicit val consistency = ConsistencyLevel.ALL
 
-await(Future.sequence(List(arthur, ford, zaphod) map (service.store(_))))
+Seq(arthur, ford, zaphod).map(service.store).bundle.await
 
 await(service.follow(arthur.id, zaphod.id))
 await(service.follow(ford.id, zaphod.id))

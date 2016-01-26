@@ -160,8 +160,108 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
     def truncate(): Future[Unit]
   }
 
-  class IPASet[K, V](name: String, consistency: ConsistencyLevel)
-      (implicit evK: Primitive[K], evV: Primitive[V]) extends TableGenerator {
+  abstract class IPASet[K, V] extends TableGenerator {
+
+    def create(): Future[Unit]
+    def truncate(): Future[Unit]
+    def contains(key: K, value: V): Future[Boolean]
+    def add(key: K, value: V): Future[Unit]
+    def remove(key: K, value: V): Future[Unit]
+    def size(key: K): Future[Int]
+
+    /**
+      * Local handle to a Set in storage; can be used like a Set
+      *
+      * @param key  identifier of this Set instance in storage
+      */
+    class Handle(key: K) {
+      def contains(value: V) = IPASet.this.contains(key, value)
+      def add(value: V) = IPASet.this.add(key, value)
+      def remove(value: V) = IPASet.this.remove(key, value)
+      def size() = IPASet.this.size(key)
+    }
+
+    def apply(key: K) = new Handle(key)
+  }
+
+  /**
+    * IPASet implementation using a Cassandra Set collection column
+    */
+  class IPASetImplCollection[K, V](val name: String, val consistency: ConsistencyLevel)(implicit evK: Primitive[K], evV: Primitive[V]) extends IPASet[K, V] {
+
+    case class Entry(key: K, value: Set[V])
+
+    class EntryTable extends CassandraTable[EntryTable, Entry] {
+      object ekey extends PrimitiveColumn[EntryTable, Entry, K](this) with PartitionKey[K]
+      object evalue extends SetColumn[EntryTable, Entry, V](this) with Index[Set[V]]
+      override val tableName = name
+      override def fromRow(r: Row) = Entry(ekey(r), evalue(r))
+    }
+
+    val entryTable = new EntryTable
+
+    override def create(): Future[Unit] = { entryTable.create.ifNotExists.future().unit }
+    override def truncate(): Future[Unit] = { entryTable.truncate().future().unit }
+
+    override def contains(key: K, value: V): Future[Boolean] = {
+      entryTable.select.count()
+          .consistencyLevel_=(consistency)
+          .where(_.ekey eqs key)
+          .and(_.evalue contains value)
+          .one()
+          .instrument()
+          .map { ctOpt => ctOpt.exists(_ > 0) }
+    }
+
+    override def add(key: K, value: V): Future[Unit] = {
+      entryTable.update()
+          .consistencyLevel_=(consistency)
+          .where(_.ekey eqs key)
+          .modify(_.evalue.add(value))
+          .future()
+          .instrument()
+          .unit
+    }
+
+    override def remove(key: K, value: V): Future[Unit] = {
+      entryTable.update()
+          .consistencyLevel_=(consistency)
+          .where(_.ekey eqs key)
+          .modify(_.evalue.remove(value))
+          .future()
+          .instrument()
+          .unit
+    }
+
+    override def size(key: K): Future[Int] = {
+      entryTable.select(_.evalue)
+          .consistencyLevel_=(consistency)
+          .where(_.ekey eqs key)
+          .one()
+          .instrument()
+          .map { _.map(set => set.size).getOrElse(0) }
+    }
+
+    def get(key: K): Future[Set[V]] = {
+      entryTable.select(_.evalue)
+          .consistencyLevel_=(consistency)
+          .where(_.ekey eqs key)
+          .one()
+          .map(_.getOrElse(Set[V]()))
+    }
+
+    def random(key: K): Future[V] = {
+      get(key).map(_.toIndexedSeq.sample)
+    }
+
+    class Handle(key: K) extends super.Handle(key) {
+      def get() = IPASetImplCollection.this.get(key)
+      def random() = IPASetImplCollection.this.random(key)
+    }
+    override def apply(key: K) = new Handle(key)
+  }
+
+  class IPASetImpl[K, V](val name: String, val consistency: ConsistencyLevel)(implicit evK: Primitive[K], evV: Primitive[V]) extends IPASet[K, V] {
 
     case class Entry(key: K, value: V)
     class EntryTable extends CassandraTable[EntryTable, Entry] {
@@ -190,95 +290,89 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
       Seq(entryTable, countTable).map(_.truncate().future()).bundle.unit
     }
 
-    /**
-      * Local handle to a Set in storage; can be used like a Set
-      *
-      * @param key  identifier of this Set instance in storage
-      */
-    class Handle(key: K) {
+    override def contains(key: K, value: V): Future[Boolean] = {
+      entryTable.select(_.evalue)
+          .consistencyLevel_=(consistency)
+          .where(_.ekey eqs key)
+          .and(_.evalue eqs value)
+          .one()
+          .instrument()
+          .map(_.isDefined)
+    }
 
-      def contains(value: V): Future[Boolean] = {
-        entryTable.select(_.evalue)
-            .consistencyLevel_=(consistency)
-            .where(_.ekey eqs key)
-            .and(_.evalue eqs value)
-            .one()
-            .instrument()
-            .map(_.isDefined)
-      }
-
-      def get(limit: Int = 0): Future[Iterator[V]] = {
-        val q = entryTable
-            .select
+    def get(key: K, limit: Int = 0): Future[Iterator[V]] = {
+      val q = entryTable.select
             .consistencyLevel_=(consistency)
             .where(_.ekey eqs key)
 
-        val qlim = if (limit > 0) q.limit(limit) else q
+      val qlim = if (limit > 0) q.limit(limit) else q
 
-        qlim.future().instrument().map { results =>
-          results.iterator() map { row =>
-            entryTable.fromRow(row).value
-          }
+      qlim.future().instrument().map { results =>
+        results.iterator() map { row =>
+          entryTable.fromRow(row).value
         }
-      }
-
-      def add(value: V): Future[Boolean] = {
-        dlog(s">>> $name($key).add($value)")
-        this.contains(value) flatMap { dup =>
-          if (dup) Future { false }
-          else {
-            for {
-              _ <- countTable.update()
-                  .consistencyLevel_=(consistency)
-                  .where(_.ekey eqs key)
-                  .modify(_.ecount += 1)
-                  .future()
-                  .instrument()
-              _ <- entryTable.insert()
-                  .consistencyLevel_=(consistency)
-                  .value(_.ekey, key)
-                  .value(_.evalue, value)
-                  .future()
-                  .instrument()
-            } yield true
-          }
-        }
-      }
-
-      def remove(value: V): Future[Boolean] = {
-        {
-          for {
-            removed <- contains(value)
-            _ <- entryTable.delete()
-                .consistencyLevel_=(consistency)
-                .where(_.ekey eqs key)
-                .and(_.evalue eqs value)
-                .future()
-                .instrument()
-            if removed
-            _ <- countTable.update()
-                .consistencyLevel_=(consistency)
-                .where(_.ekey eqs key)
-                .modify(_.ecount -= 1)
-                .future()
-                .instrument()
-          } yield true
-        } recover {
-          case _ => false
-        }
-      }
-
-      def size(): Future[Long] = {
-        countTable.select(_.ecount)
-            .consistencyLevel_=(consistency)
-            .where(_.ekey eqs key)
-            .one()
-            .map(opt => opt.getOrElse(0l))
-            .instrument()
       }
     }
 
-    def apply(key: K) = new Handle(key)
+    override def add(key: K, value: V): Future[Unit] = {
+      dlog(s">>> $name($key).add($value)")
+      this.contains(key, value) flatMap { dup =>
+        if (dup) Future { () }
+        else {
+          for {
+            _ <- countTable.update()
+                .consistencyLevel_=(consistency)
+                .where(_.ekey eqs key)
+                .modify(_.ecount += 1)
+                .future()
+                .instrument()
+            _ <- entryTable.insert()
+                .consistencyLevel_=(consistency)
+                .value(_.ekey, key)
+                .value(_.evalue, value)
+                .future()
+                .instrument()
+          } yield ()
+        }
+      }
+    }
+
+    override def remove(key: K, value: V): Future[Unit] = {
+      {
+        for {
+          removed <- this.contains(key, value)
+          _ <- entryTable.delete()
+              .consistencyLevel_=(consistency)
+              .where(_.ekey eqs key)
+              .and(_.evalue eqs value)
+              .future()
+              .instrument()
+          if removed
+          _ <- countTable.update()
+              .consistencyLevel_=(consistency)
+              .where(_.ekey eqs key)
+              .modify(_.ecount -= 1)
+              .future()
+              .instrument()
+        } yield ()
+      } recover {
+        case _ => ()
+      }
+    }
+
+    def size(key: K): Future[Int] = {
+      countTable.select(_.ecount)
+          .consistencyLevel_=(consistency)
+          .where(_.ekey eqs key)
+          .one()
+          .map(o => o.getOrElse(0l).toInt)
+          .instrument()
+    }
+
+    override def apply(key: K) = new Handle(key) {
+      def get(limit: Int = 0): Future[Iterator[V]] =
+        IPASetImpl.this.get(key, limit)
+    }
   }
 
 
@@ -290,9 +384,9 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
   val tweets = new Tweets
   val timelines = new Timelines
 
-  val retweets = new IPASet[UUID, UUID]("retweets", config.consistency)
-  val followers = new IPASet[UUID, UUID]("followers", config.consistency)
-  val followees = new IPASet[UUID, UUID]("followees", config.consistency)
+  val retweets = new IPASetImplCollection[UUID, UUID]("retweets", config.consistency)
+  val followers = new IPASetImplCollection[UUID, UUID]("followers", config.consistency)
+  val followees = new IPASetImplCollection[UUID, UUID]("followees", config.consistency)
 
   object service {
 
@@ -377,8 +471,8 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
       } yield ()
     }
 
-    def followersOf(user: UUID, limit: Int = 0): Future[Iterator[UUID]] = {
-      followers(user).get(limit)
+    def followersOf(user: UUID): Future[Iterator[UUID]] = {
+      followers.get(user).map(_.toIterator)
     }
 
     private def add_to_followers_timelines(tweet: UUID, user: UUID, created: DateTime)(implicit consistency: ConsistencyLevel): Future[Unit] = {

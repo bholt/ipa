@@ -11,6 +11,7 @@ import json
 
 from os.path import abspath, dirname, realpath
 from os import environ as env
+import requests
 
 #########################
 # External dependencies
@@ -40,6 +41,19 @@ def pretty_json(value):
     return pygments.highlight(unicode(json.dumps(value, indent=2, sort_keys=True), 'UTF-8'), JsonLexer(), TerminalFormatter(bg="dark"))
 
 #########################
+
+def notify_slack(msg):
+    if 'IPA_SLACK_WEBHOOK' not in env:
+        print '<slack notifications disabled>'
+        return
+    
+    url = env['IPA_SLACK_WEBHOOK']
+    data = {
+        'username': 'Experiments',
+        'icon_emoji': ':shipit:',
+        'text': msg
+    }
+    requests.post(url, headers={'content-type': 'application/json'}, data=json.dumps(data))
 
 RE_INTERPOLATOR = re.compile(r"{(.*?)}")
 
@@ -245,6 +259,7 @@ if __name__ == '__main__':
     machines = hostname()
 
     K= 1024
+    nexp = 0
 
     for trial in range(1, opt.target+1):
         if not opt.dry:
@@ -276,4 +291,6 @@ if __name__ == '__main__':
                 continue
             if ct < trial:
                 run(table, log, **a)
-
+                nexp += 1
+    
+    notify_slack(fmt("Finished {nexp} experiments. :success:"))

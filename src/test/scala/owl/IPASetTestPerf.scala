@@ -12,6 +12,11 @@ import owl.Util._
 import scala.util.Random
 
 trait IPASetTestGeneric extends OwlTest {
+
+  override def beforeAll(): Unit = {
+    createKeyspace(session)
+  }
+
   implicit val consistency = ConsistencyLevel.ALL
   implicit override val patienceConfig =
     PatienceConfig(timeout = 500.millis, interval = 10.millis)

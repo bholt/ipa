@@ -29,6 +29,8 @@ dockerCommands := dockerCommands.value.flatMap {
 // fork for these so we can explicitly `exit` and kill all our threads
 fork in run := true
 
+parallelExecution in Test := false
+
 // pass all System properties to forked JVM
 import scala.collection.JavaConversions._
 javaOptions in run ++= {

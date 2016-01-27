@@ -14,8 +14,10 @@ import Util._
 import scala.language.postfixOps
 
 
-class BasicOwlTests extends OwlTest {
+class BasicOwlTests extends {
   override implicit val space = KeySpace("owl_basic")
+} with OwlTest {
+
   implicit val consistency = ConsistencyLevel.ALL
 
   implicit override val patienceConfig =
@@ -165,9 +167,9 @@ class BasicOwlTests extends OwlTest {
     }
   }
 
-  val sPlain = new IPASetImplPlain[UUID, UUID]("sPlain", config.consistency)
-  val sCounter = new IPASetImplWithCounter[UUID, UUID]("sCounter", config.consistency)
-  val sCollect = new IPASetImplCollection[UUID, UUID]("sCollect", config.consistency)
+  val sPlain = new IPASetImplPlain[UUID, UUID]("splain", config.consistency)
+  val sCounter = new IPASetImplWithCounter[UUID, UUID]("scounter", config.consistency)
+  val sCollect = new IPASetImplCollection[UUID, UUID]("scollect", config.consistency)
 
   val sets = Seq(sPlain, sCounter, sCollect)
 

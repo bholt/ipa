@@ -4,7 +4,7 @@ import org.scalactic.Equality
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.{BeforeAndAfterAll, FlatSpec, Inspectors, Matchers}
 
-abstract class OwlSpec extends FlatSpec with Matchers with Inspectors with ScalaFutures
+trait OwlSpec extends FlatSpec with Matchers with Inspectors with ScalaFutures
 
 trait OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll  {
 

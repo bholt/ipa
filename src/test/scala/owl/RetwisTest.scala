@@ -3,7 +3,9 @@ package owl
 import com.websudos.phantom.dsl._
 import owl.Util._
 
-class RetwisTest extends OwlTest with Retwis {
+class RetwisTest extends {
+  override implicit val space = KeySpace("owl_retwis")
+} with OwlTest with Retwis {
 
   it should "initialize social graph" in {
 

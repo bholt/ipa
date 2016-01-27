@@ -14,8 +14,6 @@ import scala.util.Random
 
 trait Retwis extends OwlService {
 
-  override implicit val space = KeySpace("owl_retwis")
-
   implicit val consistency = config.consistency
 
   object Zipf {
@@ -159,8 +157,12 @@ trait Retwis extends OwlService {
 
 }
 
-object Workload extends Retwis {
-  override implicit lazy val isession = Connector.throttledCluster.connect(space.name)
+class RetwisExec extends {
+  override implicit val space = KeySpace("owl_retwis")
+} with Retwis
+
+object Workload extends RetwisExec {
+  override implicit lazy val session = Connector.throttledCluster.connect(space.name)
   def apply() = workload()
   def main(args: Array[String]): Unit = {
     apply()
@@ -168,7 +170,7 @@ object Workload extends Retwis {
   }
 }
 
-object Init extends Retwis {
+object Init extends RetwisExec {
   def apply() = {
     // println(config.toJSON)
     service.resetKeyspace()

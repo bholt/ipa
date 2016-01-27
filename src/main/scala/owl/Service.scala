@@ -1,6 +1,7 @@
 package owl
 
 import java.io.OutputStream
+import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -159,6 +160,10 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
       f onComplete { _ => ctx.stop() }
       f
     }
+  }
+
+  case class Inconsistent[T](value: T) {
+    def apply(future: Future[T]) = future.map(Inconsistent(_))
   }
 
   trait TableGenerator {
@@ -621,8 +626,27 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
       }
     }
 
-    def timeline(user: UUID, limit: Int)(implicit consistency: ConsistencyLevel) = {
+
+    def timeline(user: UUID, limit: Int)(implicit c: ConsistencyLevel) = {
       timelines.select
+          .consistencyLevel_=(c)
+          .where(_.user eqs user)
+          .orderBy(_.tweet desc)
+          .limit(limit)
+          .future()
+          .instrument()
+          .flatMap { rs =>
+            rs.iterator()
+                .map(timelines.fromRow(_).tweet)
+                .map(getTweet)
+                .bundle
+          }
+          .map(_.flatten)
+    }
+
+    def timeline2(consistency: ConsistencyLevel, bound: Duration)(user: UUID, limit: Int) = {
+      implicit val c = consistency
+      val f = timelines.select
           .consistencyLevel_=(consistency)
           .where(_.user eqs user)
           .orderBy(_.tweet desc)
@@ -636,6 +660,10 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
                 .bundle
           }
           .map(_.flatten)
+      consistency match {
+        case ConsistencyLevel.ALL => f
+        case _ => Inconsistent(f)
+      }
     }
 
   }

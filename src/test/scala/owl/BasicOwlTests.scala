@@ -104,22 +104,30 @@ class BasicOwlTests extends OwlTest {
   }
 
   it should "show up on timelines" in {
+    val weak = ConsistencyLevel.ONE
+    val strong = ConsistencyLevel.ALL
 
-    whenReady(service.timeline(arthur.id, 10)) { iter =>
-      val tweets = iter.toVector
-      tweets.length shouldBe 1
+    val tStrong: Iterator[Tweet] = service.timeline2(strong)(arthur.id, 10).await
 
-      tweets(0) shouldEqual tweetEgo
-      tweets(0).user shouldEqual zaphod.id
-    }
+    val tWeak: Inconsistent[Iterator[Tweet]] = service.timeline2(weak)(arthur.id, 10).await
 
-    whenReady(service.timeline(ford.id, 10)) { iter =>
-      val tweets = iter.toVector
+    val tStale: Stale[Iterator[Tweet]] = service.timeline2(100 millis)(arthur.id, 10).await
 
-      tweets.length shouldBe 2
-      tweets should contain (tweetEgo)
-      tweets should contain (tweetTea)
-    }
+    //    whenReady(service.timeline(arthur.id, 10)) { iter =>
+//      val tweets = iter.toVector
+//      tweets.length shouldBe 1
+//
+//      tweets(0) shouldEqual tweetEgo
+//      tweets(0).user shouldEqual zaphod.id
+//    }
+//
+//    whenReady(service.timeline(ford.id, 10)) { iter =>
+//      val tweets = iter.toVector
+//
+//      tweets.length shouldBe 2
+//      tweets should contain (tweetEgo)
+//      tweets should contain (tweetTea)
+//    }
 
   }
 

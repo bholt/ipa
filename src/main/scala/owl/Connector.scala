@@ -65,7 +65,7 @@ object Connector {
 trait Connector extends SessionProvider {
   val config = Connector.config
   val cluster = Connector.cluster
-  implicit val space = Connector.keyspace
+
   override lazy val session = {
     val tmpSession = blocking { cluster.connect() }
     createKeyspace(tmpSession)

@@ -9,6 +9,7 @@ import Util._
 
 /** Dummy tests (don't run as part of default test suite) */
 class OwlDummy extends OwlTest {
+  override implicit val space = KeySpace("owl_dummy")
 
   "Dummy" should "run" in {
     implicit val ec = boundedQueueExecutionContext(capacity = config.cap)

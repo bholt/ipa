@@ -12,7 +12,6 @@ import owl.Util._
 import scala.util.Random
 
 trait IPASetTestGeneric extends OwlTest {
-  override implicit val space = KeySpace("owl_set_perf_test")
   implicit val consistency = ConsistencyLevel.ALL
   implicit override val patienceConfig =
     PatienceConfig(timeout = 500.millis, interval = 10.millis)
@@ -72,6 +71,7 @@ trait IPASetTestGeneric extends OwlTest {
 }
 
 class IPASetCollectionsPerf extends IPASetTestGeneric {
+  override implicit val space = KeySpace("owl_set_col_perf_test")
 
   override val set = new IPASetImplCollection[UUID, UUID]("sCol", config.consistency)
 
@@ -87,6 +87,7 @@ class IPASetCollectionsPerf extends IPASetTestGeneric {
 }
 
 class IPASetCounterPerf extends IPASetTestGeneric {
+  implicit val space = KeySpace("owl_set_counter_perf_test")
 
   override val set = new IPASetImplWithCounter[UUID, UUID]("sCounter", config.consistency)
 
@@ -102,6 +103,7 @@ class IPASetCounterPerf extends IPASetTestGeneric {
 }
 
 class IPASetPlainPerf extends IPASetTestGeneric {
+  override implicit val space = KeySpace("owl_set_plain_perf_test")
 
   override val set = new IPASetImplPlain[UUID, UUID]("sPlain", config.consistency)
 

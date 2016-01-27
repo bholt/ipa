@@ -29,8 +29,8 @@ object Util {
   }
 
   implicit class InstrumentedFuture[T](f: Future[T])(implicit ec: ExecutionContext) {
-    def instrument()(implicit timer: Timer) = {
-      val ctx = timer.timerContext()
+    def instrument(alt: Timer = null)(implicit timer: Timer) = {
+      val ctx = if (alt != null) alt.timerContext() else timer.timerContext()
       f.onComplete(_ => ctx.stop())
       f
     }

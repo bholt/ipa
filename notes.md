@@ -1,3 +1,121 @@
+# Disciplined Inconsistency
+## Type system
+- specify *lower bound* of error (e.g. the *most precise you will ever ask it to be*) for read operations
+- this frees the underlying implementation up to be weaker
+- for example:
+	- 
+
+## Evaluation
+- 
+
+
+~~~scala
+
+class Stale[T] {
+  def consistency: ConsistencyLevel // e.g. 'ALL' or 'ONE' (or strong/weak)
+  
+  // most recent time when we heard from all replicas (consensus point?)
+  def recency: DateTime
+}
+
+class IPASet[V] {
+  def      add(value: V): Unit
+  def   remove(value: V): Unit
+  def contains(value: V): Boolean
+  def     size():         Int
+
+  def      add(level: Consistency)(value: V): Unit
+  def contains(level: Consistency)(value: V): Inconsistent[T]
+  def     size(level: Consistency)():         Inconsistent[T]
+  
+  def contains(bound: Duration)(value: V): Stale[Boolean]
+  def     size(bound: Duration)():         Stale[Boolean]
+
+  def contains(bound: Probability)(value: V): Probabilistic[Boolean]
+  
+  def size(bound: Tolerance)(value: V): Interval[Int]
+}
+
+val retweets = new IPASet {
+  def add(strong)
+  def add(<1%)
+  
+  def add(_)
+  
+  // lower bound
+  // anything that can meet this is a valid impl
+  // frees up your impl to be weaker
+  def contains(>1% prob) // contains(>1%), never need to be more precise than 1%
+  
+  // upper bound on error
+  // - value doesn't make sense if it doesn't meet this
+  // - enforces contract on clients?
+  def contains() // contains(<1%) -> writes need to be able to support precise reads
+  
+  def size(1% error)
+}
+
+class IPAList[V] {
+  def append(value: V): Unit
+  def slice(start: Int, end: Int): List[V]
+
+  def slice(bound: Duration)(start: Int, end: Int): Stale[List[V]]
+
+}
+
+object Workload {
+  def loadTimeline() {
+    val t: Inconsistent[List[Tweet]] = timeline.get(weak)("Brandon")
+        
+    // make it consistent
+    // could just call the method with strong consistency
+    // -- *don't* get new data with this version
+    // - what it would have been if i'd called it consistently
+    wait(t) => List[Tweet]
+    
+    // instant cast
+    endorse(t) => List[Tweet]
+    println("This may be wrong!")
+    
+    // preview your shopping cart
+    
+    s.add(strong)("a")
+    s.contains(weak)("a") // ok
+    
+    s.add(weak)("a")
+    s.contains(strong)("a") // ok
+    
+    val r = s.contains(100 millis)("a")
+    if (r.weak()) {
+      println("may be wrong")
+    }
+    r.consistency match {
+      case strong => ...
+      case weak => ...
+    }
+    
+  }
+}
+~~~
+
+## Parameterizable ADT
+~~~scala
+
+class IPASet[K, V]() {
+	class EntryTable
+}
+
+~~~
+
+
+
+
+
+
+
+
+
+
 Comparing performance of different Set implementations.
 
 ~~~js

@@ -14,8 +14,10 @@ import Util._
 import scala.language.postfixOps
 
 
-class BasicOwlTests extends OwlTest {
+class BasicOwlTests extends {
   override implicit val space = KeySpace("owl_basic")
+} with OwlTest {
+
   implicit val consistency = ConsistencyLevel.ALL
 
   implicit override val patienceConfig =

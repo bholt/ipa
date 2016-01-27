@@ -8,8 +8,9 @@ import scala.language.postfixOps
 import Util._
 
 /** Dummy tests (don't run as part of default test suite) */
-class OwlDummy extends OwlTest {
+class OwlDummy extends {
   override implicit val space = KeySpace("owl_dummy")
+} with OwlTest {
 
   "Dummy" should "run" in {
     implicit val ec = boundedQueueExecutionContext(capacity = config.cap)
@@ -23,7 +24,9 @@ class OwlDummy extends OwlTest {
         println(s"[$i] created")
         Future {
           println(s"[$i] executing")
-          blocking { Thread.sleep(1.second.toMillis) }
+          blocking {
+            Thread.sleep(1.second.toMillis)
+          }
           println(s"[$i] done")
         }
       } takeWhile { _ =>

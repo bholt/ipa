@@ -59,29 +59,35 @@ object Connector {
       .addContactPoints(config.hosts)
       .build()
 
-  val keyspace = KeySpace(config.keyspace)
+  val default_keyspace = KeySpace(config.keyspace)
 }
 
 trait Connector extends SessionProvider {
   val config = Connector.config
   val cluster = Connector.cluster
+  override implicit val space: KeySpace // = Connector.default_keyspace
 
-  override lazy val session = {
-    val tmpSession = blocking { cluster.connect() }
-    createKeyspace(tmpSession)
-    blocking {
-      val rs = tmpSession.execute(s"SELECT strategy_options FROM system.schema_keyspaces WHERE keyspace_name = '${space.name}'")
-      val keyspace_options = rs.one().getString(0)
-      println(s"# keyspace '${space.name}' options: $keyspace_options")
-    }
-    blocking {
-      cluster.connect(space.name)
-    }
+  override implicit lazy val session = {
+    println(">>> initializing session")
+    cluster.newSession().init()
   }
+
+//  {
+//    val tmpSession = blocking { cluster.connect() }
+//    createKeyspace(tmpSession)
+//    blocking {
+//      val rs = tmpSession.execute(s"SELECT strategy_options FROM system.schema_keyspaces WHERE keyspace_name = '${space.name}'")
+//      val keyspace_options = rs.one().getString(0)
+//      println(s"# keyspace '${space.name}' options: $keyspace_options")
+//    }
+//    blocking {
+//      cluster.connect(space.name)
+//    }
+//  }
 
   def createKeyspace(s: Session): Unit = {
     val r = config.replication_factor
-    println(s"# Creating keyspace {replication_factor: $r}")
+    println(s"# Creating keyspace: ${space.name} {replication_factor: $r}")
     blocking {
       s.execute(s"CREATE KEYSPACE IF NOT EXISTS ${space.name} WITH replication = {'class': 'SimpleStrategy', 'replication_factor': $r};")
     }

@@ -126,10 +126,9 @@ class RetweetCounts extends CassandraTable[RetweetCounts, RetweetCount] {
 }
 
 trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
-  lazy implicit val isession = Connector.cluster.connect(space.name)
+
   override val metricRegistry = new MetricRegistry
   implicit val cassandraOpLatency = metrics.timer("cass_op_latency")
-  implicit val space: KeySpace
 
   object metric {
 

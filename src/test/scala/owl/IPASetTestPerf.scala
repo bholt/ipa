@@ -70,8 +70,9 @@ trait IPASetTestGeneric extends OwlTest {
   }
 }
 
-class IPASetCollectionsPerf extends IPASetTestGeneric {
+class IPASetCollectionsPerf extends {
   override implicit val space = KeySpace("owl_set_col_perf_test")
+} with IPASetTestGeneric {
 
   override val set = new IPASetImplCollection[UUID, UUID]("sCol", config.consistency)
 
@@ -83,11 +84,11 @@ class IPASetCollectionsPerf extends IPASetTestGeneric {
   it should "test performance (zipf)" in {
     performanceTest()
   }
-
 }
 
-class IPASetCounterPerf extends IPASetTestGeneric {
-  implicit val space = KeySpace("owl_set_counter_perf_test")
+class IPASetCounterPerf extends {
+  override implicit val space = KeySpace("owl_set_counter_perf_test")
+} with IPASetTestGeneric {
 
   override val set = new IPASetImplWithCounter[UUID, UUID]("sCounter", config.consistency)
 
@@ -102,8 +103,9 @@ class IPASetCounterPerf extends IPASetTestGeneric {
 
 }
 
-class IPASetPlainPerf extends IPASetTestGeneric {
+class IPASetPlainPerf extends {
   override implicit val space = KeySpace("owl_set_plain_perf_test")
+} with IPASetTestGeneric {
 
   override val set = new IPASetImplPlain[UUID, UUID]("sPlain", config.consistency)
 

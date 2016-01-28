@@ -1,16 +1,19 @@
 package owl
 
+import java.util.UUID
 import java.util.concurrent.{ArrayBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
 import nl.grons.metrics.scala.Timer
 
 import scala.collection.generic.CanBuildFrom
-import scala.concurrent.duration.Duration
+import scala.concurrent.duration.{Deadline, Duration}
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.language.higherKinds
 import scala.util.Random
 
 object Util {
+
+  def id(i: Int) = UUID.nameUUIDFromBytes(BigInt(i).toByteArray)
 
   implicit class VectorPlus[T](v: IndexedSeq[T]) {
     def sample = v(Random.nextInt(v.length))
@@ -36,6 +39,10 @@ object Util {
       f.onComplete(_ => ctx.stop())
       f
     }
+  }
+
+  implicit class DeadlinePlus(d: Deadline) {
+    def elapsed = -d.timeLeft
   }
 
   /** from scala.concurrent.impl.ExecutionContextImpl */

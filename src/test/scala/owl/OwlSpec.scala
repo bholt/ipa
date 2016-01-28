@@ -2,7 +2,7 @@ package owl
 
 import org.scalactic.Equality
 import org.scalatest.concurrent.ScalaFutures
-import org.scalatest.{BeforeAndAfterAll, FlatSpec, Inspectors, Matchers}
+import org.scalatest._
 
 trait OwlSpec extends FlatSpec with Matchers with Inspectors with ScalaFutures
 

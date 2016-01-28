@@ -28,9 +28,10 @@ class Transient[T](value: T) extends Inconsistent[T](value) {
   }
 }
 
-class Rushed[T](value: T, val consistency: ConsistencyLevel)
+class Rushed[T](value: T, cons: ConsistencyLevel)
     extends Inconsistent[T](value) with Ordered[Rushed[T]]
 {
+  def consistency = cons
   def compare(o: Rushed[T]) = { this.consistency compareTo o.consistency }
   override def toString = s"Rushed($value, $consistency)"
 }

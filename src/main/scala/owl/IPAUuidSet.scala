@@ -98,7 +98,7 @@ class IPAUuidSet(val name: String)(implicit val session: Session, val space: Key
 }
 
 trait LatencyBound extends IPAUuidSet {
-  val latencyBound: FiniteDuration
+  def latencyBound: FiniteDuration
 
   def rush[T](latencyBound: FiniteDuration)(op: () => Future[Inconsistent[T]]): Future[Rushed[T]] = {
     val deadline = latencyBound.fromNow

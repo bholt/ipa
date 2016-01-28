@@ -4,7 +4,12 @@ version := "0.1"
 
 scalaVersion := "2.11.7"
 
-scalacOptions ++= Seq("-unchecked", "-deprecation", "-feature")
+scalacOptions ++= Seq(
+  "-unchecked",
+  "-deprecation",
+  "-feature",
+  "-language:postfixOps"
+)
 
 // allow packaging using docker
 enablePlugins(DockerPlugin)

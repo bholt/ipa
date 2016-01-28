@@ -33,6 +33,7 @@ object Connector {
     def nthreads = c.getInt("ipa.nthreads")
     def cap    = c.getInt("ipa.cap")
     def concurrent_reqs = c.getInt("ipa.concurrent.requests")
+    def assumed_latency = Duration(c.getString("ipa.assumed.latency"))
 
     def do_generate   = c.getBoolean("ipa.retwis.generate")
     def zipf          = c.getDouble("ipa.retwis.zipf")

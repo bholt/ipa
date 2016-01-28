@@ -26,6 +26,8 @@ object Util {
       * Bundle up a bunch of futures into a single future using `Future.sequence`
       */
     def bundle(implicit cbf: CanBuildFrom[M[Future[A]], A, M[A]], executor: ExecutionContext): Future[M[A]] = Future.sequence(v)
+
+    def firstCompleted(implicit ec: ExecutionContext): Future[A] = Future.firstCompletedOf(v)
   }
 
   implicit class InstrumentedFuture[T](f: Future[T])(implicit ec: ExecutionContext) {

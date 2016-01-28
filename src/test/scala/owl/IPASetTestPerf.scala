@@ -10,6 +10,7 @@ import scala.concurrent.duration._
 import owl.Util._
 
 import scala.util.Random
+import scala.language.postfixOps
 
 trait IPASetTestGeneric extends OwlTest {
 
@@ -121,6 +122,60 @@ class IPASetPlainPerf extends {
 
   it should "test performance (zipf)" in {
     performanceTest()
+  }
+
+}
+
+class IPAUuidSetPerf extends {
+  override implicit val space = KeySpace("owl_uuidset_perf_test")
+} with IPASetTestGeneric {
+
+  override val set = new IPASetImplPlain[UUID, UUID]("sPlain", config.consistency)
+
+  val quickSet = new IPAUuidSet("suid")
+      with LatencyBound { val latencyBound = 100 millis }
+
+  val slothSet = new IPAUuidSet("sloth")
+      with LatencyBound { val latencyBound = 2 seconds }
+
+
+  "Latency bounded set" should "be created" in {
+    println(">>> creating table-based set")
+    quickSet.create().await()
+    slothSet.create().await()
+  }
+
+  val u1 = id(1)
+  val u2 = id(2)
+  val u3 = id(3)
+
+  "Quick set" should "allow adding" in {
+    Seq( quickSet(u1).add(u2), quickSet(u1).add(u3) )
+        .map(_.instrument(timerAdd))
+        .bundle
+        .await()
+  }
+
+  it should "support rushed size" in {
+    whenReady( quickSet(u1).size().instrument(timerSize) ) { r =>
+      println(s"set(u1).size => $r")
+      r.get shouldBe 2
+    }
+  }
+
+  "Sloth set" should "allow adding" in {
+    Seq( slothSet(u1).add(u2), slothSet(u1).add(u3) )
+        .map(_.instrument(timerAdd))
+        .bundle
+        .await()
+  }
+
+  it should "get strong consistency" in {
+    whenReady( quickSet(u1).size().instrument(timerSize) ) { r =>
+      println(s"set(u1).size => $r")
+      r.get shouldBe 2
+      r.consistency shouldBe ConsistencyLevel.ALL
+    }
   }
 
 }

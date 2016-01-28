@@ -333,27 +333,27 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
           .map(_.flatten)
     }
 
-    def timeline2(consistency: ConsistencyLevel, bound: Duration)(user: UUID, limit: Int) = {
-      implicit val c = consistency
-      val f = timelines.select
-          .consistencyLevel_=(consistency)
-          .where(_.user eqs user)
-          .orderBy(_.tweet desc)
-          .limit(limit)
-          .future()
-          .instrument()
-          .flatMap { rs =>
-            rs.iterator()
-                .map(timelines.fromRow(_).tweet)
-                .map(getTweet)
-                .bundle
-          }
-          .map(_.flatten)
-      consistency match {
-        case ConsistencyLevel.ALL => f
-        case _ => Inconsistent(f)
-      }
-    }
+//    def timeline2(consistency: ConsistencyLevel, bound: Duration)(user: UUID, limit: Int) = {
+//      implicit val c = consistency
+//      val f = timelines.select
+//          .consistencyLevel_=(consistency)
+//          .where(_.user eqs user)
+//          .orderBy(_.tweet desc)
+//          .limit(limit)
+//          .future()
+//          .instrument()
+//          .flatMap { rs =>
+//            rs.iterator()
+//                .map(timelines.fromRow(_).tweet)
+//                .map(getTweet)
+//                .bundle
+//          }
+//          .map(_.flatten)
+//      consistency match {
+//        case ConsistencyLevel.ALL => f
+//        case _ => Inconsistent(f)
+//      }
+//    }
 
   }
 }

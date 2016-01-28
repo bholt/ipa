@@ -1,5 +1,7 @@
 package owl
 
+import java.util.concurrent.TimeoutException
+
 import com.datastax.driver.core.{Row, ConsistencyLevel}
 import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.builder.primitives.Primitive
@@ -9,17 +11,23 @@ import com.websudos.phantom.keys.PartitionKey
 import nl.grons.metrics.scala.Timer
 
 import scala.collection.JavaConversions._
-import scala.concurrent.Future
+import scala.concurrent.{Await, Future}
 
 import Util._
 
+import scala.concurrent._
+import scala.concurrent.duration.{Deadline, FiniteDuration, Duration}
+import scala.util.Try
+
 abstract class IPASet[K, V] extends TableGenerator {
+  def consistency: ConsistencyLevel
 
   def create(): Future[Unit]
   def truncate(): Future[Unit]
   def contains(key: K, value: V): Future[Boolean]
   def add(key: K, value: V): Future[Unit]
   def remove(key: K, value: V): Future[Unit]
+
   def size(key: K): Future[Int]
 
   /**

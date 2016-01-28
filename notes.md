@@ -3,20 +3,37 @@
 - specify *lower bound* of error (e.g. the *most precise you will ever ask it to be*) for read operations
 - this frees the underlying implementation up to be weaker
 - for example:
-	- 
+
+### `Rushed[T]`
+~~~scala
+class Rushed[T] {
+  def consistency: ConsistencyLevel // e.g. 'ALL' or 'ONE' (or strong/weak)
+}
+~~~
+
+- What should happen if it can't meet the desired consistency level in the specified time?
+	- `Strict` version: works like `Try`, with a `Success` and `Failure` mode
+	- otherwise, could just say wait until the first one returns
+- Specify bounds on either/both time and consistency
+	~~~scala
+	def contains(>= Consistency.TWO)(<= 100 millis)
+	~~~
+
 
 ## Evaluation
-- 
 
 
 ~~~scala
 
 class Stale[T] {
-  def consistency: ConsistencyLevel // e.g. 'ALL' or 'ONE' (or strong/weak)
-  
   // most recent time when we heard from all replicas (consensus point?)
   def recency: DateTime
 }
+
+class Rushed[T] {
+  def consistency: ConsistencyLevel // e.g. 'ALL' or 'ONE' (or strong/weak)
+}
+
 
 class IPASet[V] {
   def      add(value: V): Unit
@@ -42,6 +59,8 @@ val retweets = new IPASet {
   
   def add(_)
   
+	def contains(>Cons.All && <100.millis)
+	
   // lower bound
   // anything that can meet this is a valid impl
   // frees up your impl to be weaker

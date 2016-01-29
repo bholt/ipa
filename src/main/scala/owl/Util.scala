@@ -122,6 +122,8 @@ object Util {
     def red    = color(Console.RED)
     def purple = color(Console.MAGENTA)
     def cyan   = color(Console.CYAN)
+
+    def bold = color(Console.BOLD)
   }
 
 }

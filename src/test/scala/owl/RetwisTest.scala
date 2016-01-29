@@ -2,6 +2,8 @@ package owl
 
 import com.websudos.phantom.dsl._
 import owl.Util._
+import scala.concurrent.duration._
+import scala.concurrent.Await
 
 class RetwisTest extends {
   override implicit val space = KeySpace("owl_retwis")
@@ -24,13 +26,14 @@ class RetwisTest extends {
 
   it should "initialize tweets" in {
 
-    val ts = service.followersOf(User.id(1))
+    val fs = service.followersOf(User.id(1))
         .flatMap { fs =>
           fs.take(5).map(f => service.timeline(user = f, limit = 1)).bundle
         }
         .map { _.flatten }
-        .futureValue
-        .toSeq
+
+
+    val ts = Await.result(fs, 2 seconds).toSeq
 
     println(s"Tweets:\n- ${ts.mkString("\n- ")}")
     ts.length should be >= 1

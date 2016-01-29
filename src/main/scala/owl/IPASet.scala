@@ -111,13 +111,8 @@ class IPASetImplCollection[K, V](val name: String, val consistency: ConsistencyL
         .map(_.getOrElse(Set[V]()))
   }
 
-  def random(key: K): Future[V] = {
-    get(key).map(_.toIndexedSeq.sample)
-  }
-
   class Handle(key: K) extends super.Handle(key) {
     def get() = IPASetImplCollection.this.get(key)
-    def random() = IPASetImplCollection.this.random(key)
   }
   override def apply(key: K) = new Handle(key)
 }
@@ -193,10 +188,11 @@ class IPASetImplPlain[K, V](val name: String, val consistency: ConsistencyLevel)
         .instrument()
   }
 
-  override def apply(key: K) = new Handle(key) {
+  class PlainHandle(key: K) extends Handle(key) {
     def get(limit: Int = 0): Future[Iterator[V]] =
       IPASetImplPlain.this.get(key, limit)
   }
+  override def apply(key: K) = new PlainHandle(key)
 }
 
 class IPASetImplWithCounter[K, V](val name: String, val consistency: ConsistencyLevel)(implicit val evK: Primitive[K], val evV: Primitive[V], val session: Session, val space: KeySpace, val cassandraOpMetric: Timer) extends IPASet[K, V] {
@@ -307,8 +303,11 @@ class IPASetImplWithCounter[K, V](val name: String, val consistency: Consistency
         .instrument()
   }
 
-  override def apply(key: K) = new Handle(key) {
+  class HandlePlus(key: K) extends Handle(key) {
     def get(limit: Int = 0): Future[Iterator[V]] =
       IPASetImplWithCounter.this.get(key, limit)
+  }
+  override def apply(key: K) = new HandlePlus(key) {
+
   }
 }

@@ -67,10 +67,11 @@ trait Retwis extends OwlService {
 
     case object Unfollow extends Task(() => {
       val followee = Uniform.user()
-      for {
-        f <- followers(followee).random()
-        _ <- service.unfollow(f, followee)
-      } yield ()
+      followers(followee).get(1) flatMap { fs =>
+        fs map { follower =>
+          service.unfollow(follower, followee)
+        } bundle
+      } unit
     })
 
     case object Tweet extends Task(() => {

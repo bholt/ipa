@@ -161,9 +161,9 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
   val tweets = new Tweets
   val timelines = new Timelines
 
-  val retweets = new IPASetImplCollection[UUID, UUID]("retweets", config.consistency)
-  val followers = new IPASetImplCollection[UUID, UUID]("followers", config.consistency)
-  val followees = new IPASetImplCollection[UUID, UUID]("followees", config.consistency)
+  val retweets = new IPASetImplWithCounter[UUID, UUID]("retweets", config.consistency)
+  val followers = new IPASetImplPlain[UUID, UUID]("followers", config.consistency)
+  val followees = new IPASetImplPlain[UUID, UUID]("followees", config.consistency)
 
   object service {
 

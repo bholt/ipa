@@ -30,6 +30,46 @@ class IPASetTests extends WordSpec with OwlService with BeforeAndAfterAll
   val u2 = id(2)
   val u3 = id(3)
 
+  "IPASet with LatencyBound" should {
+
+    val s = new IPAUuidSet("snorm")
+        with LatencyBound { val latencyBound = 100 millis }
+
+    "be created" in {
+      s.create().await()
+    }
+
+    "add items" in {
+      s(u1).add(u2).await(timeout)
+      s(u1).add(u3).await(timeout)
+    }
+
+    "contain added items" in {
+      assert(s(u1).contains(u2).futureValue.get)
+      assert(s(u1).contains(u3).futureValue.get)
+    }
+
+    "size reflect added items" in {
+      s(u1).size().futureValue.get shouldBe 2
+    }
+
+    "remove items that exist" in {
+      s(u1).remove(u2).await(timeout)
+      s(u1).size().futureValue.get shouldBe 1
+    }
+
+    "remove items that don't exist" in {
+      s(u1).remove(u1).await(timeout)
+      s(u1).size().futureValue.get shouldBe 1
+    }
+
+    "be empty initially" in {
+      s(u2).contains(u1).futureValue.get shouldBe false
+      s(u2).size().futureValue.get shouldBe 0
+    }
+
+  }
+
   "Quick set" should {
 
     val s = new IPAUuidSet("suid")

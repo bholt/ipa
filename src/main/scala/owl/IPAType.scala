@@ -28,6 +28,7 @@ class Transient[T](value: T) extends Inconsistent[T](value) {
   }
 }
 
+
 class Rushed[T](value: T, cons: ConsistencyLevel)
     extends Inconsistent[T](value) with Ordered[Rushed[T]]
 {
@@ -40,19 +41,13 @@ object Rushed {
   def apply[T](value: T, c: ConsistencyLevel) = new Rushed(value, c)
 }
 
-object Check {
-  val r1 = Rushed(1, ConsistencyLevel.ALL)
-  val r2 = Rushed(2, ConsistencyLevel.ANY)
-  println(r1 > r2)
-  println(r1.consistency)
-  println(r1.get)
-}
 
 class Stale[T](
     value: T,
     override val consistency: ConsistencyLevel,
     val time: DateTime
 ) extends Rushed[T](value, consistency)
+
 
 trait Interval[T] extends Inconsistent[T] {
   def min: T

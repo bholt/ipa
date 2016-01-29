@@ -154,6 +154,20 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
     }
   }
 
+  def dumpMetrics(): Unit = {
+    println("# Metrics".bold)
+    ConsoleReporter.forRegistry(metricRegistry)
+        .convertRatesTo(TimeUnit.SECONDS)
+        .build()
+        .report()
+
+    // dump metrics to stderr (for experiments script to parse)
+    if (config.output_json) {
+      metric.write(Console.err)
+    }
+    println("###############################")
+  }
+
   ///////////////////////
   // Other tables
   ///////////////////////

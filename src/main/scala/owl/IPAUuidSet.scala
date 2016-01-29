@@ -110,13 +110,14 @@ trait LatencyBound extends IPAUuidSet {
       }
 
     ops.firstCompleted flatMap { r1 =>
+      val timeRemaining = deadline.timeLeft
       if (r1.consistency == ConsistencyLevel.ALL ||
-          deadline.timeLeft < config.assumed_latency) {
+          timeRemaining < config.assumed_latency) {
         Future(r1)
       } else {
         // make sure it finishes within the deadline
         val fallback = Future {
-          blocking { Thread.sleep(deadline.timeLeft.toMillis) }
+          blocking { Thread.sleep(timeRemaining.toMillis) }
           r1
         }
         (ops.filterNot(_.isCompleted) :+ fallback)

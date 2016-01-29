@@ -18,6 +18,10 @@ class IPASetTests extends WordSpec with OwlService with BeforeAndAfterAll
 
   def now() = Deadline.now
 
+  val timeout = 2 seconds
+  implicit override val patienceConfig =
+    PatienceConfig(timeout = timeout, interval = 20 millis)
+
   override implicit val space = KeySpace("ipa_set_tests")
 
   override def beforeAll() = createKeyspace(session)
@@ -67,14 +71,13 @@ class IPASetTests extends WordSpec with OwlService with BeforeAndAfterAll
           .await()
     }
 
-    "get strong consistency" in {
+    "get strong consistency" ignore {
       val t = now()
-      whenReady( s(u1).size() ) { r =>
-        t.elapsed should be < (s.latencyBound/2)
-        println(s"set(u1).size => $r")
-        r.get shouldBe 2
-        r.consistency shouldBe ConsistencyLevel.ALL
-      }
+      val r = s(u1).size().await(timeout)
+      t.elapsed should be < (s.latencyBound/2)
+      println(s"set(u1).size => $r")
+      r.get shouldBe 2
+      r.consistency shouldBe ConsistencyLevel.ALL
     }
   }
 
@@ -93,13 +96,12 @@ class IPASetTests extends WordSpec with OwlService with BeforeAndAfterAll
           .await()
     }
 
-    "miss its deadline" in {
+    "miss its deadline and get weak consistency" ignore {
       val t = now()
-      whenReady( s(u1).size() ) { r =>
-        t.elapsed should be > s.latencyBound
-        println(s"hasty: u1.size => $r")
-        r.consistency shouldBe ConsistencyLevel.ONE
-      }
+      val r = s(u1).size().await(timeout)
+      t.elapsed should be > s.latencyBound
+      println(s"hasty: u1.size => $r")
+      r.consistency shouldBe ConsistencyLevel.ONE
     }
 
   }

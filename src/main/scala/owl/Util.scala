@@ -20,7 +20,7 @@ object Util {
   }
 
   implicit class FuturePlus[T](f: Future[T]) {
-    def await(): T = Await.result(f, Duration.Inf)
+    def await(d: Duration = Duration.Inf): T = Await.result(f, d)
     def unit(implicit ec: ExecutionContext): Future[Unit] = f.map(_ => ())
   }
 

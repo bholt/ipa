@@ -33,8 +33,14 @@ def heading(text):
 def note(text):
     return color(text, fg='black')
 
+K = 1024
 
 LIVE = {'_out': sys.stdout, '_err': sys.stderr}
+
+ANSISEQ = re.compile(r'(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]')
+
+def strip_ansi(text):
+    return ANSISEQ.sub('', text)
 
 
 def pretty_json(value):
@@ -153,8 +159,8 @@ def before_all():
     print note("> creating up-to-date docker image")
     # (suppress 'sending build context' messages)
     for line in sh.sbt("docker:publishLocal", _iter=True):
-        if not re.match(r"^\[info\] Sending build context.*$", line):
-            print line
+        if not re.match(r"^\[info\] Sending build context.*", strip_ansi(line)):
+            print line,
 
     print note("> initializing blockade")
     blockade.destroy(_ok_code=[0,1], **LIVE)
@@ -186,7 +192,7 @@ def run(table, logfile, *args, **flags):
 
     if 'blockade_mode' in flags:
         mode = flags['blockade_mode']
-        blockade(mode, "s1", "s2", "s3")
+        blockade(*mode.split())
 
     try:
         cmd = sh.docker("exec", "owl_c1", "bin/owl", *args, _timeout=60*5, _iter=True)
@@ -208,6 +214,78 @@ def run(table, logfile, *args, **flags):
 
     except (KeyboardInterrupt, sh.TimeoutException) as e:
         out.fmt("job cancelled")
+
+def run_retwis(version):
+    nexp = 0
+    for trial in range(1, opt.target+1):
+        if not opt.dry:
+            print '---------------------------------\n# starting trial', trial
+        elif opt.dry and trial > 1:
+            # only need to do one 'trial' to get all the counts if doing dry run
+            continue
+        for a in cartesian(
+                ipa_version               = [version],
+                ipa_output_json           = ['true'],
+
+                ipa_replication_factor    = [3],
+                ipa_reset                 = ['false'],
+                ipa_retwis_generate       = ['true'],
+
+                ipa_duration              = [60],
+                ipa_zipf                  = ['1.0'],
+
+                ipa_retwis_initial_users  = [100],
+                ipa_retwis_initial_tweets = [10],
+
+                ipa_concurrent_requests   = [16, 128, 512, 2*K, 4*K, 8*K, 32*K],
+
+                ipa_consistency           = ['strong', 'weak'],
+                blockade_mode             = ['slow s1 s2 s3']  # 'fast'
+        ):
+            ct = count_records(table, ignore=[],
+                               valid='meters_retwis_op_count is not null', **a)
+            out.fmt("→ {color('count:',fg='cyan')} {color(ct,fg='yellow')}", fg='black')
+            if opt.dry:
+                continue
+            if ct < trial:
+                run(table, log, *['-main', 'owl.All'] , **a)
+                nexp += 1
+    return nexp
+
+def run_rawmix(version):
+    nexp = 0
+    for trial in range(1, opt.target+1):
+        if not opt.dry:
+            print '---------------------------------\n# starting trial', trial
+        elif opt.dry and trial > 1:
+            # only need to do one 'trial' to get all the counts if doing dry run
+            continue
+        for a in cartesian(
+                ipa_version               = [version],
+                ipa_output_json           = ['true'],
+
+                ipa_replication_factor    = [3],
+                ipa_reset                 = ['false'],
+                ipa_retwis_generate       = ['true'],
+
+                ipa_duration              = [60],
+                ipa_zipf                  = ['1.0'],
+
+                ipa_concurrent_requests   = [16, 128, 512, 2*K, 4*K, 8*K, 32*K],
+
+                blockade_mode             = ['slow s1 s2 s3']  # 'fast'
+        ):
+            ct = count_records(table, ignore=[],
+                               valid='meters_retwis_op_count is not null', **a)
+            print color("→ {} {}",fg='black').format(
+                    color('count:',fg='cyan'),
+                    color(ct,fg='yellow'))
+            if opt.dry:
+                continue
+            if ct < trial:
+                run(table, log, *['-main', 'owl.RawMix'] , **a)
+                nexp += 1
+    return nexp
 
 
 if __name__ == '__main__':
@@ -256,41 +334,10 @@ if __name__ == '__main__':
 
     tag = sh.git.describe().stdout
     version = re.match(r"(\w+)(-.*)?", tag).group(1)
-    machines = hostname()
 
-    K= 1024
-    nexp = 0
+    if opt.mode == 'owl':
+        n = run_retwis(version)
+    elif opt.mode == 'rawmix':
+        n = run_rawmix(version)
 
-    for trial in range(1, opt.target+1):
-        if not opt.dry:
-            print '---------------------------------\n# starting trial', trial
-        elif opt.dry and trial > 1:
-            # only need to do one 'trial' to get all the counts if doing dry run
-            continue
-        for a in cartesian(
-            ipa_version               = [version],
-            ipa_output_json           = ['true'],
-
-            ipa_replication_factor    = [3],
-            ipa_reset                 = ['false'],
-            ipa_retwis_generate       = ['true'],
-
-            ipa_retwis_duration       = [60],
-            ipa_retwis_initial_users  = [100],
-            ipa_retwis_initial_tweets = [10],
-            ipa_retwis_zipf           = ['1.0'],
-            ipa_concurrent_requests   = [16, 128, 512, 2*K, 4*K, 8*K, 32*K],
-
-            ipa_consistency           = ['strong', 'weak'],
-            blockade_mode             = ['slow']  # 'fast'
-        ):
-            ct = count_records(table, ignore=[],
-                               valid='meters_retwis_op_count is not null', **a)
-            out.fmt("→ {color('count:',fg='cyan')} {color(ct,fg='yellow')}", fg='black')
-            if opt.dry:
-                continue
-            if ct < trial:
-                run(table, log, **a)
-                nexp += 1
-    
-    notify_slack(fmt("Finished {nexp} experiments. :success:"))
+    notify_slack(fmt("Finished {n} experiments. :success:"))

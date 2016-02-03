@@ -68,6 +68,7 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
       capacity = config.cap
     )
 
+    val actualDurationStart = Deadline.now
     val durationTimer = actualDuration.timerContext()
     val deadline = duration.fromNow
     val all = Stream from 1 map { i =>
@@ -95,6 +96,7 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
 
     Try(all.await(duration)) recover { case _: TimeoutException => () }
     val tms = durationTimer.stop().nanos.toMillis
+    output += ("actual.time" -> actualDurationStart.elapsed)
     println(s"# Done in ${tms/1000}.${tms%1000}s")
     // ec.shutdownNow()
   }

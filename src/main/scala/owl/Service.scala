@@ -141,9 +141,10 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
 
     def write(out: OutputStream) = {
       val mConfig = config.c.root().withOnlyKey("ipa").unwrapped()
+      val mOutput = output map { case (k,v) => s"ipa.out.$k" -> v }
       val mMetrics = mapper.readValue(mapper.writeValueAsString(metricRegistry), classOf[java.util.Map[String,Object]])
       val writer = mapper.writerWithDefaultPrettyPrinter()
-      Console.err.println(writer.writeValueAsString(mConfig ++ mMetrics))
+      Console.err.println(writer.writeValueAsString(mConfig ++ mMetrics ++ mOutput))
     }
 
     def dump() = {

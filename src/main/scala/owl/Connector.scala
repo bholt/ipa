@@ -9,6 +9,7 @@ import com.websudos.phantom.connectors.{KeySpace, SessionProvider}
 import com.websudos.phantom.dsl.ConsistencyLevel
 
 import scala.collection.JavaConversions._
+import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.concurrent.blocking
 import scala.util.Try
@@ -80,6 +81,8 @@ trait Connector extends SessionProvider {
   def config = Connector.config
   val cluster = Connector.cluster
   override implicit val space: KeySpace // = Connector.default_keyspace
+
+  val output = mutable.HashMap[String,AnyRef]()
 
   override implicit lazy val session = {
     println(">>> initializing session")

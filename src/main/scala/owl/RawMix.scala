@@ -1,15 +1,18 @@
 package owl
 
+import java.util.concurrent.TimeoutException
+
 import com.datastax.driver.core.ConsistencyLevel
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
 import org.apache.commons.math3.distribution.ZipfDistribution
+import org.joda.time.format.PeriodFormat
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.collection.JavaConversions._
 import Util._
 
-import scala.util.Random
+import scala.util.{Try, Random}
 
 class RawMix(val duration: FiniteDuration) extends OwlService {
   override implicit val space = RawMix.space
@@ -25,6 +28,8 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
   val set = new IPAUuidSet("raw") with LatencyBound {
     override val latencyBound = config.bound.latency
   }
+
+  val actualDuration = metrics.timer("actual_duration")
 
   val timerAdd      = metrics.timer("add_latency")
   val timerContains = metrics.timer("contains_latency")
@@ -63,8 +68,9 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
       capacity = config.cap
     )
 
+    val durationTimer = actualDuration.timerContext()
     val deadline = duration.fromNow
-    Stream.from(1).map { i =>
+    val all = Stream from 1 map { i =>
       val handle = set(zipfID())
       val op = weightedSample(mix)
       op match {
@@ -83,10 +89,14 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
               .map(recordResult(op, _))
               .unit
       }
-    }.takeWhile { _ =>
+    } takeWhile { _ =>
       deadline.hasTimeLeft
-    }.bundle.await()
+    } bundle
 
+    Try(all.await(duration)) recover { case _: TimeoutException => () }
+    val tms = durationTimer.stop().nanos.toMillis
+    println(s"# Done in ${tms/1000}.${tms%1000}s")
+    // ec.shutdownNow()
   }
 
 }

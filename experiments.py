@@ -195,8 +195,11 @@ def run(logfile, *args, **flags):
         mode = flags['blockade_mode']
         blockade(*mode.split())
 
+    # hack to invoke as a shell script because something chokes on some values...
+    invoke = ["sh", "-c", "exec bin/owl {}".format(" ".join(args))]
+
     try:
-        cmd = sh.docker("exec", "owl_c1", "bin/owl", *args, _timeout=60*5, _iter=True)
+        cmd = sh.docker("exec", "owl_c1", *invoke, _timeout=60*5, _iter=True)
         print ">", color(' '.join(cmd.cmd), fg='blue')
         for o in cmd:
             logfile.write(o)

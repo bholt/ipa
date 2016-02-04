@@ -326,7 +326,7 @@ if __name__ == '__main__':
 
     print 'machines:', MACHINES
 
-    DB = dataset.connect(fmt("mysql:///ipa?read_default_file={env['HOME']}/.my.cnf"))
+    DB = dataset.connect(fmt("mysql:///claret?read_default_file={env['HOME']}/.my.cnf"))
     table = DB['ipa_' + opt.mode]
 
     if manual:

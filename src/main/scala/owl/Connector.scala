@@ -24,13 +24,13 @@ object Connector {
     def do_reset = c.getBoolean("ipa.reset")
     def replication_factor = c.getInt("ipa.replication.factor")
 
-    def consistency = {
-      c.getString("ipa.consistency") match {
-        case "strong" => ConsistencyLevel.ALL
-        case "weak" => ConsistencyLevel.ONE
-        case e => throw new RuntimeException(s"invalid consistency in config: $e")
-      }
+    private def consistencyFromString(s: String) = s match {
+      case "strong" => ConsistencyLevel.ALL
+      case "weak" => ConsistencyLevel.ONE
+      case e => throw new RuntimeException(s"invalid consistency in config: $e")
     }
+
+    def consistency = consistencyFromString(c.getString("ipa.consistency"))
 
     object rawmix {
       val nsets = c.getInt("ipa.rawmix.nsets")
@@ -42,7 +42,20 @@ object Connector {
     }
 
     object bound {
-      val latency = FiniteDuration(c.getDuration("ipa.bound.latency").toNanos, NANOSECONDS)
+      private val split = c.getString("ipa.bound").split(":")
+
+      val kind = split(0)
+
+      val latency = kind match {
+        case "latency" => Some(Duration(split(1)).asInstanceOf[FiniteDuration])
+        case _ => None
+      }
+
+      val consistency = kind match {
+        case "consistency" => Some(consistencyFromString(split(1)))
+        case _ => None
+      }
+
     }
 
     def nthreads = c.getInt("ipa.nthreads")

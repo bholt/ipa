@@ -22,9 +22,15 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
   def zipfID() = id(zipfDist.sample())
   def urandID() = id(Random.nextInt(nsets))
 
-  val set = new IPAUuidSet("raw")
-//      with LatencyBound { override val latencyBound = config.bound.latency }
-      with ConsistencyBound { override val consistencyLevel = config.consistency }
+  val set = (config.bound.latency, config.bound.consistency) match {
+    case (Some(latency), None) =>
+      new IPAUuidSet("raw") with LatencyBound { override val latencyBound = latency }
+    case (None, Some(consistency)) =>
+      new IPAUuidSet("raw")
+          with ConsistencyBound { override val consistencyLevel = consistency }
+    case e =>
+      sys.error(s"impossible case: $e")
+  }
 
   val timerAdd      = metrics.timer("add_latency")
   val timerContains = metrics.timer("contains_latency")
@@ -35,19 +41,13 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
   val countSizeStrong     = metrics.counter("size_strong")
   val countSizeWeak       = metrics.counter("size_weak")
 
+  def recordResult[T](op: Symbol, r: Inconsistent[T]): Inconsistent[T] = {
+    val cons = set match {
+      case lbound: LatencyBound => r.asInstanceOf[Rushed[T]].consistency
+      case cbound: ConsistencyBound => cbound.consistencyLevel
+    }
 
-
-//  def recordResult[T](op: Symbol, r: Rushed[T]): Rushed[T] = {
-//    (op, r.consistency) match {
-//      case ('contains, ConsistencyLevel.ALL) => countContainsStrong += 1
-//      case ('contains, ConsistencyLevel.ONE) => countContainsWeak += 1
-//      case ('size,     ConsistencyLevel.ALL) => countSizeStrong += 1
-//      case ('size,     ConsistencyLevel.ONE) => countSizeWeak += 1
-//    }
-//    r
-//  }
-  def recordResult[T](op: Symbol, r: T): T = {
-    (op, set.consistencyLevel) match {
+    (op, cons) match {
       case ('contains, ConsistencyLevel.ALL) => countContainsStrong += 1
       case ('contains, ConsistencyLevel.ONE) => countContainsWeak += 1
       case ('size, ConsistencyLevel.ALL) => countSizeStrong += 1

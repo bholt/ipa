@@ -4,7 +4,7 @@ import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 
 import com.datastax.driver.core.{HostDistance, PoolingOptions, Cluster, Session}
-import com.typesafe.config.{ConfigValue, ConfigRenderOptions, ConfigFactory}
+import com.typesafe.config.{ConfigValueType, ConfigValue, ConfigRenderOptions, ConfigFactory}
 import com.websudos.phantom.connectors.{KeySpace, SessionProvider}
 import com.websudos.phantom.dsl.ConsistencyLevel
 
@@ -35,7 +35,9 @@ object Connector {
     object rawmix {
       val nsets = c.getInt("ipa.rawmix.nsets")
       val mix = c.getObject("ipa.rawmix.mix").toMap.map {
-        case (key, value) => (Symbol(key), value.unwrapped().asInstanceOf[Double])
+        case (key, value) => {
+          (Symbol(key), value.unwrapped().toString.toDouble)
+        }
       }
     }
 

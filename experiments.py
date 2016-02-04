@@ -15,6 +15,7 @@ import requests
 
 #########################
 # External dependencies
+import signal
 import colors  # ansicolors
 import sh
 import pygments
@@ -202,15 +203,19 @@ def run(table, logfile, *args, **flags):
             if opt.verbose:
                 print o, # w/o extra newline
 
+        print color(">", fg='black'), "exit code:", color(str(cmd.exit_code), fg='red')
+        if cmd.exit_code == -signal.SIGINT:
+            raise Exception("Cancelled.")
+
         # flatten & clean up metrics a bit
         metrics = {
             re.sub(r"owl\.\w+\.", "", k): v
             for k, v in flatten_json(json.loads(cmd.stderr)).items()
         }
 
-        a.update(metrics)
-        print pretty_json(a)
-        table.insert(a)
+        flags.update(metrics)
+        print pretty_json(flags)
+        table.insert(flags)
 
     except (KeyboardInterrupt, sh.TimeoutException) as e:
         out.fmt("job cancelled")
@@ -266,14 +271,13 @@ def run_rawmix(version):
 
                 ipa_replication_factor    = [3],
                 ipa_reset                 = ['false'],
-                ipa_retwis_generate       = ['true'],
 
                 ipa_duration              = [60],
                 ipa_zipf                  = ['1.0'],
 
                 ipa_concurrent_requests   = [16, 128, 512, 2*K, 4*K, 8*K, 32*K],
 
-                blockade_mode             = ['slow s1 s2 s3']  # 'fast'
+                blockade_mode             = ['slow s3']  # 'fast'
         ):
             ct = count_records(table, ignore=[],
                                valid='meters_retwis_op_count is not null', **a)

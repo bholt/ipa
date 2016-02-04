@@ -18,6 +18,8 @@ object Connector {
   object config {
     val c = ConfigFactory.load()
 
+    val disable_perf_tests = Try(c.getBoolean("ipa.disable.perf.tests")).toOption.getOrElse(false)
+
     val hosts = c.getStringList("ipa.cassandra.host").map(InetAddress.getByName)
     def keyspace = c.getString("ipa.cassandra.keyspace")
 

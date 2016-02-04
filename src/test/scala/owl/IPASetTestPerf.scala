@@ -47,24 +47,27 @@ trait IPASetTestGeneric extends OwlTest {
   def set: IPASet[UUID, UUID]
 
   def performanceTest() {
-    println(">>> testing performance (zipf)")
-
-    {
-      for {
-        i <- 0 to n
-        j <- 0 to m
-      } yield {
-        val handle = set(zipfID())
-        weightedSample(mix) match {
-          case 'add =>
-            handle.add(urandID()).instrument(timerAdd).unit
-          case 'contains =>
-            handle.contains(urandID()).instrument(timerContains).unit
-          case 'size =>
-            handle.size().instrument(timerSize).unit
+    if (config.disable_perf_tests) {
+      println(">>> skipping performance test")
+    } else {
+      println(">>> testing performance (zipf)");
+      {
+        for {
+          i <- 0 to n
+          j <- 0 to m
+        } yield {
+          val handle = set(zipfID())
+          weightedSample(mix) match {
+            case 'add =>
+              handle.add(urandID()).instrument(timerAdd).unit
+            case 'contains =>
+              handle.contains(urandID()).instrument(timerContains).unit
+            case 'size =>
+              handle.size().instrument(timerSize).unit
+          }
         }
-      }
-    }.bundle.await()
+      }.bundle.await()
+    }
   }
 
   override def afterAll() {

@@ -59,7 +59,11 @@ class RetwisTest extends {
 
   }
 
-  it should "run workload" in {
-    workload()
-  }
+   it should "run workload" in {
+     if (config.disable_perf_tests) {
+       println(">>> skipping performance tests")
+     } else {
+       workload()
+     }
+   }
 }

@@ -46,7 +46,6 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
       case lbound: LatencyBound => r.asInstanceOf[Rushed[T]].consistency
       case cbound: ConsistencyBound => cbound.consistencyLevel
     }
-
     (op, cons) match {
       case ('contains, ConsistencyLevel.ALL) => countContainsStrong += 1
       case ('contains, ConsistencyLevel.ONE) => countContainsWeak += 1
@@ -98,7 +97,7 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
     }
 
     val actualTime = actualDurationStart.elapsed
-    output += ("actual.time" -> actualTime)
+    output += ("actual_time" -> actualTime)
     println(s"# Done in ${actualTime.toSeconds}.${actualTime.toMillis%1000}s")
   }
 

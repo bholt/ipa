@@ -2,7 +2,6 @@ package owl
 
 import com.datastax.driver.core.{ConsistencyLevel, Row}
 import com.websudos.phantom.CassandraTable
-import com.websudos.phantom.builder.primitives.Primitive
 import com.websudos.phantom.column.PrimitiveColumn
 import com.websudos.phantom.dsl._
 import com.websudos.phantom.keys.PartitionKey
@@ -11,6 +10,7 @@ import nl.grons.metrics.scala.Timer
 import scala.concurrent._
 import scala.collection.JavaConversions._
 import scala.math.Ordering.Implicits._
+import java.util.UUID
 
 import Connector.config
 import Util._
@@ -37,7 +37,7 @@ class IPAUuidSet(val name: String)(implicit val session: Session, val space: Key
   override def truncate(): Future[Unit] =
     entryTable.truncate.future().unit
 
-  class Handle(key: K, cons: ConsistencyLevel) {
+  class HandleBase(key: K, cons: ConsistencyLevel) {
 
     def contains(value: V): Future[Inconsistent[Boolean]] = {
       entryTable.select(_.evalue)
@@ -95,8 +95,15 @@ class IPAUuidSet(val name: String)(implicit val session: Session, val space: Key
 
   }
 
-  def apply(key: K) = new Handle(key, ConsistencyLevel.ALL)
+  def apply(key: K) = new HandleBase(key, ConsistencyLevel.ALL)
 }
+
+trait ConsistencyBound extends IPAUuidSet {
+  def consistencyLevel: ConsistencyLevel
+
+  override def apply(key: K) = new HandleBase(key, consistencyLevel)
+}
+
 
 trait LatencyBound extends IPAUuidSet {
   def latencyBound: FiniteDuration
@@ -127,7 +134,7 @@ trait LatencyBound extends IPAUuidSet {
     }
   }
 
-  class RushHandle(v: V) extends Handle(v, ConsistencyLevel.ALL) {
+  class Handle(v: V) extends HandleBase(v, ConsistencyLevel.ALL) {
 
     override def size(): Future[Rushed[Int]] =
       rush(latencyBound){ () => super.size() }
@@ -139,5 +146,5 @@ trait LatencyBound extends IPAUuidSet {
       rush(latencyBound){ () => super.get(limit) }
   }
 
-  override def apply(key: K) = new RushHandle(key)
+  override def apply(key: K) = new Handle(key)
 }

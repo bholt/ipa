@@ -182,7 +182,7 @@ def before_all():
     blockade.status(**LIVE)
 
 
-def run(table, logfile, *args, **flags):
+def run(logfile, *args, **flags):
     # convert ipa_* flags to java properties & add to args
     # ipa_retwis_initial_users -> ipa.retwis.initial.users
     args = list(args)
@@ -204,8 +204,6 @@ def run(table, logfile, *args, **flags):
                 print o, # w/o extra newline
 
         print color(">", fg='black'), "exit code:", color(str(cmd.exit_code), fg='red')
-        if cmd.exit_code == -signal.SIGINT:
-            raise Exception("Cancelled.")
 
         # flatten & clean up metrics a bit
         metrics = {
@@ -217,10 +215,14 @@ def run(table, logfile, *args, **flags):
         print pretty_json(flags)
         table.insert(flags)
 
-    except (KeyboardInterrupt, sh.TimeoutException) as e:
-        out.fmt("job cancelled")
+    except KeyboardInterrupt:
+        out.fmt("cancelled experiments")
+        sys.exit()
+    except sh.TimeoutException:
+        out.fmt("job exceeded time limit")
 
-def run_retwis(version):
+
+def run_retwis():
     nexp = 0
     for trial in range(1, opt.target+1):
         if not opt.dry:
@@ -229,23 +231,23 @@ def run_retwis(version):
             # only need to do one 'trial' to get all the counts if doing dry run
             continue
         for a in cartesian(
-                ipa_version               = [version],
-                ipa_output_json           = ['true'],
+            ipa_version               = [version],
+            ipa_output_json           = ['true'],
 
-                ipa_replication_factor    = [3],
-                ipa_reset                 = ['false'],
-                ipa_retwis_generate       = ['true'],
+            ipa_replication_factor    = [3],
+            ipa_reset                 = ['false'],
+            ipa_retwis_generate       = ['true'],
 
-                ipa_duration              = [60],
-                ipa_zipf                  = ['1.0'],
+            ipa_duration              = [60],
+            ipa_zipf                  = ['1.0'],
 
-                ipa_retwis_initial_users  = [100],
-                ipa_retwis_initial_tweets = [10],
+            ipa_retwis_initial_users  = [100],
+            ipa_retwis_initial_tweets = [10],
 
-                ipa_concurrent_requests   = [16, 128, 512, 2*K, 4*K, 8*K, 32*K],
+            ipa_concurrent_requests   = [16, 128, 512, 2*K, 4*K, 8*K, 32*K],
 
-                ipa_consistency           = ['strong', 'weak'],
-                blockade_mode             = ['slow s1 s2 s3']  # 'fast'
+            ipa_consistency           = ['strong', 'weak'],
+            blockade_mode             = ['slow s1 s2 s3']  # 'fast'
         ):
             ct = count_records(table, ignore=[],
                                valid='meters_retwis_op_count is not null', **a)
@@ -253,11 +255,11 @@ def run_retwis(version):
             if opt.dry:
                 continue
             if ct < trial:
-                run(table, log, *['-main', 'owl.All'] , **a)
+                run(log, *['-main', 'owl.All'] , **a)
                 nexp += 1
     return nexp
 
-def run_rawmix(version):
+def run_rawmix():
     nexp = 0
     for trial in range(1, opt.target+1):
         if not opt.dry:
@@ -266,18 +268,18 @@ def run_rawmix(version):
             # only need to do one 'trial' to get all the counts if doing dry run
             continue
         for a in cartesian(
-                ipa_version               = [version],
-                ipa_output_json           = ['true'],
+            ipa_version               = [version],
+            ipa_output_json           = ['true'],
 
-                ipa_replication_factor    = [3],
-                ipa_reset                 = ['false'],
+            ipa_replication_factor    = [3],
+            ipa_reset                 = ['false'],
 
-                ipa_duration              = [60],
-                ipa_zipf                  = ['1.0'],
+            ipa_duration              = [60],
+            ipa_zipf                  = ['1.0'],
 
                 ipa_concurrent_requests   = [16, 128, 512, 2*K, 4*K, 8*K, 32*K],
 
-                blockade_mode             = ['slow s3']  # 'fast'
+            blockade_mode             = ['slow s3']  # 'fast'
         ):
             ct = count_records(table, ignore=[],
                                valid='meters_retwis_op_count is not null', **a)
@@ -287,7 +289,7 @@ def run_rawmix(version):
             if opt.dry:
                 continue
             if ct < trial:
-                run(table, log, *['-main', 'owl.RawMix'] , **a)
+                run(log, *['-main', 'owl.RawMix'] , **a)
                 nexp += 1
     return nexp
 
@@ -323,7 +325,7 @@ if __name__ == '__main__':
     print 'machines:', MACHINES
 
     DB = dataset.connect(fmt("mysql:///ipa?read_default_file={env['HOME']}/.my.cnf"))
-    table = DB[opt.mode]
+    table = DB['ipa_' + opt.mode]
 
     if manual:
         run(table, sys.stdout, ' '.join(manual),
@@ -340,8 +342,8 @@ if __name__ == '__main__':
     version = re.match(r"(\w+)(-.*)?", tag).group(1)
 
     if opt.mode == 'owl':
-        n = run_retwis(version)
+        n = run_retwis()
     elif opt.mode == 'rawmix':
-        n = run_rawmix(version)
+        n = run_rawmix()
 
     notify_slack(fmt("Finished {n} experiments. :success:"))

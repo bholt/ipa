@@ -100,14 +100,12 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
     val actualTime = actualDurationStart.elapsed
     output += ("actual.time" -> actualTime)
     println(s"# Done in ${actualTime.toSeconds}.${actualTime.toMillis%1000}s")
-    // ec.shutdownNow()
   }
 
 }
 
 object RawMix extends Connector {
 
-//  override implicit lazy val session = Connector.throttledCluster.connect(space.name)
   override implicit val space = KeySpace("rawmix")
 
   def main(args: Array[String]): Unit = {

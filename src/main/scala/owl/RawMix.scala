@@ -1,18 +1,15 @@
 package owl
 
-import java.util.concurrent.TimeoutException
-
 import com.datastax.driver.core.ConsistencyLevel
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
 import org.apache.commons.math3.distribution.ZipfDistribution
-import org.joda.time.format.PeriodFormat
-import scala.concurrent.Future
+import scala.concurrent._
 import scala.concurrent.duration._
-import scala.collection.JavaConversions._
 import Util._
+import java.util.concurrent.Semaphore
 
-import scala.util.{Try, Random}
+import scala.util.{Success, Try, Random}
 
 class RawMix(val duration: FiniteDuration) extends OwlService {
   override implicit val space = RawMix.space
@@ -25,11 +22,9 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
   def zipfID() = id(zipfDist.sample())
   def urandID() = id(Random.nextInt(nsets))
 
-  val set = new IPAUuidSet("raw") with LatencyBound {
-    override val latencyBound = config.bound.latency
-  }
-
-  val actualDuration = metrics.timer("actual_duration")
+  val set = new IPAUuidSet("raw")
+//      with LatencyBound { override val latencyBound = config.bound.latency }
+      with ConsistencyBound { override val consistencyLevel = config.consistency }
 
   val timerAdd      = metrics.timer("add_latency")
   val timerContains = metrics.timer("contains_latency")
@@ -40,12 +35,23 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
   val countSizeStrong     = metrics.counter("size_strong")
   val countSizeWeak       = metrics.counter("size_weak")
 
-  def recordResult[T](op: Symbol, r: Rushed[T]): Rushed[T] = {
-    (op, r.consistency) match {
+
+
+//  def recordResult[T](op: Symbol, r: Rushed[T]): Rushed[T] = {
+//    (op, r.consistency) match {
+//      case ('contains, ConsistencyLevel.ALL) => countContainsStrong += 1
+//      case ('contains, ConsistencyLevel.ONE) => countContainsWeak += 1
+//      case ('size,     ConsistencyLevel.ALL) => countSizeStrong += 1
+//      case ('size,     ConsistencyLevel.ONE) => countSizeWeak += 1
+//    }
+//    r
+//  }
+  def recordResult[T](op: Symbol, r: T): T = {
+    (op, set.consistencyLevel) match {
       case ('contains, ConsistencyLevel.ALL) => countContainsStrong += 1
       case ('contains, ConsistencyLevel.ONE) => countContainsWeak += 1
-      case ('size,     ConsistencyLevel.ALL) => countSizeStrong += 1
-      case ('size,     ConsistencyLevel.ONE) => countSizeWeak += 1
+      case ('size, ConsistencyLevel.ALL) => countSizeStrong += 1
+      case ('size, ConsistencyLevel.ONE) => countSizeWeak += 1
     }
     r
   }
@@ -62,19 +68,15 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
 
     set.create().await()
 
-    // only generate tasks as needed, limit parallelism
-    implicit val ec = boundedQueueExecutionContext(
-      workers = config.nthreads,
-      capacity = config.cap
-    )
-
     val actualDurationStart = Deadline.now
-    val durationTimer = actualDuration.timerContext()
     val deadline = duration.fromNow
-    val all = Stream from 1 map { i =>
+    val sem = new Semaphore(config.concurrent_reqs)
+
+    while (deadline.hasTimeLeft) {
+      sem.acquire()
       val handle = set(zipfID())
       val op = weightedSample(mix)
-      op match {
+      val f = op match {
         case 'add =>
           handle.add(urandID())
               .instrument(timerAdd)
@@ -90,14 +92,14 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
               .map(recordResult(op, _))
               .unit
       }
-    } takeWhile { _ =>
-      deadline.hasTimeLeft
-    } bundle
+      f onComplete { _ =>
+        sem.release()
+      }
+    }
 
-    Try(all.await(duration)) recover { case _: TimeoutException => () }
-    val tms = durationTimer.stop().nanos.toMillis
-    output += ("actual.time" -> actualDurationStart.elapsed)
-    println(s"# Done in ${tms/1000}.${tms%1000}s")
+    val actualTime = actualDurationStart.elapsed
+    output += ("actual.time" -> actualTime)
+    println(s"# Done in ${actualTime.toSeconds}.${actualTime.toMillis%1000}s")
     // ec.shutdownNow()
   }
 
@@ -105,6 +107,7 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
 
 object RawMix extends Connector {
 
+//  override implicit lazy val session = Connector.throttledCluster.connect(space.name)
   override implicit val space = KeySpace("rawmix")
 
   def main(args: Array[String]): Unit = {

@@ -21,7 +21,7 @@ version in Docker := "latest"
 mainClass in Compile := Some("owl.All") // set main for docker
 
 import com.typesafe.sbt.packager.docker._
-dockerCommands += Cmd("ENV", "CASSANDRA_HOST", "cassandra")
+// dockerCommands += Cmd("ENV", "CASSANDRA_HOST", "cassandra")
 
 // Allow overriding default command by rewriting dockerCommands.
 // make 'ENTRYPOINT' an (optional) CMD instead, remove (empty) CMD, & keep the rest

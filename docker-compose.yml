@@ -1,6 +1,7 @@
 version: '2'
 
 services:
+  
   cass:
     # build: ./docker/cassandra
     image: bholt/cassandra
@@ -9,19 +10,22 @@ services:
     command: cassandra -f
     environment:
       JVM_OPTS: -Dcassandra.consistent.rangemovement=false
-    # cpu_shares: 10
+      CASSANDRA_SEEDS: owl_cass_1
     privileged: true
     networks:
       - dev
-    
+    # cpu_shares: 10
 
   owl:
     image: bholt/owl
     command: tail -f /dev/null
-    # cpu_shares: 30
     privileged: true
-    # environment:
+    networks:
+      - dev
+    environment:
+      CASSANDRA_HOST: owl_cass_1
     #   - "constraint:node==ibex"
+    # cpu_shares: 30
 
 networks:
   default:

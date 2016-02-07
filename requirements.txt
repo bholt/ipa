@@ -1,7 +1,7 @@
 dataset
 pyhocon
 sh
-ansicolors
 mysql
 ipdb
 pygments
+clint

@@ -21,18 +21,16 @@ import sh
 import pygments
 from pygments.lexers import JsonLexer
 from pygments.formatters import TerminalFormatter
-
-
-def color(o, **args):
-    return colors.color(str(o), **args)
+from util import *
 
 
 def heading(text):
-    return color(text, fg='black', style='underline+bold')
+    return colored.black(text, bold=True)
 
 
 def note(text):
-    return color(text, fg='black')
+    return colored.black(text)
+
 
 K = 1024
 
@@ -61,26 +59,6 @@ def notify_slack(msg):
         'text': msg
     }
     requests.post(url, headers={'content-type': 'application/json'}, data=json.dumps(data))
-
-RE_INTERPOLATOR = re.compile(r"{(.*?)}")
-
-
-def fmt(s):
-    return RE_INTERPOLATOR.sub(lambda m: str(eval(m.group(1))), str(s))
-
-
-class FormatStream(object):
-    def __init__(self, stream, color = None):
-        self.stream = stream
-        self.color = color
-
-    def fmt(self, s, **colorargs):
-        if self.color and 'fg' not in colorargs:
-            colorargs['fg'] = self.color
-        self.stream.write(color(fmt(s)+"\n", **colorargs))
-
-out = FormatStream(sys.stdout)
-err = FormatStream(sys.stderr, 'red')
 
 
 def hostname():
@@ -142,7 +120,7 @@ def count_records(table, ignore=None, valid='total_time is not null', **params):
         r = query('SELECT count(*) as ct FROM %s WHERE %s and %s' % (tname, valid, cond))
         return r[0]['ct']
     except Exception as e:
-        err.fmt("error with query: " + str(e))
+        puts_err("error with query: " + str(e))
         return 0
 
 
@@ -200,13 +178,13 @@ def run(logfile, *args, **flags):
 
     try:
         cmd = sh.docker("exec", "owl_c1", *invoke, _timeout=60*5, _iter=True)
-        print ">", color(' '.join(cmd.cmd), fg='blue')
+        puts("> {colored.blue(' '.join(cmd.cmd))}")
         for o in cmd:
             logfile.write(o)
             if opt.verbose:
                 print o, # w/o extra newline
 
-        print color(">", fg='black'), "exit code:", color(str(cmd.exit_code), fg='red')
+        puts("{colored.black('>')} exit code: {colored.red(cmd.exit_code)}")
 
         # flatten & clean up metrics a bit
         metrics = {
@@ -219,10 +197,10 @@ def run(logfile, *args, **flags):
         table.insert(flags)
 
     except KeyboardInterrupt:
-        out.fmt("cancelled experiments")
+        puts_err("cancelled experiments")
         sys.exit()
     except sh.TimeoutException:
-        out.fmt("job exceeded time limit")
+        puts_err("job exceeded time limit")
 
 
 def run_retwis():
@@ -254,7 +232,7 @@ def run_retwis():
         ):
             ct = count_records(table, ignore=[],
                                valid='meters_retwis_op_count is not null', **a)
-            out.fmt("→ {color('count:',fg='cyan')} {color(ct,fg='yellow')}", fg='black')
+            puts(colored.black("→")+colored.cyan('count:')+colored.yellow(ct))
             if opt.dry:
                 continue
             if ct < trial:
@@ -280,17 +258,15 @@ def run_rawmix():
             ipa_duration              = [60],
             ipa_zipf                  = ['1.0'],
 
-            ipa_concurrent_requests   = [16, 128, 512, 2*K, 4*K, 8*K, 32*K],
+            ipa_concurrent_requests   = [16, 128, 512, 2*K, 4*K, 8*K],
 
             ipa_bound = ['latency:50ms', 'consistency:strong', 'consistency:weak'],
 
-            blockade_mode             = ['slow s3']  # 'fast'
+            blockade_mode             = ['slow s3', 'slow s1 s2 s3']  # 'fast'
         ):
             ct = count_records(table, ignore=[],
                                valid='meters_retwis_op_count is not null', **a)
-            print color("→ {} {}",fg='black').format(
-                    color('count:',fg='cyan'),
-                    color(ct,fg='yellow'))
+            puts(colored.black("→")+colored.cyan('count:')+colored.yellow(ct))
             if opt.dry:
                 continue
             if ct < trial:

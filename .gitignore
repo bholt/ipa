@@ -3,3 +3,4 @@ target/
 *.log
 .ipynb_checkpoints
 stats.json
+*.pyc

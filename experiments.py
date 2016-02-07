@@ -178,13 +178,13 @@ def run(logfile, *args, **flags):
 
     try:
         cmd = sh.docker("exec", "owl_c1", *invoke, _timeout=60*5, _iter=True)
-        puts("> {colored.blue(' '.join(cmd.cmd))}")
+        puts("> #{colored.blue(' '.join(cmd.cmd))}")
         for o in cmd:
             logfile.write(o)
             if opt.verbose:
                 print o, # w/o extra newline
 
-        puts("{colored.black('>')} exit code: {colored.red(cmd.exit_code)}")
+        puts("#{colored.black('>')} exit code: #{colored.red(cmd.exit_code)}")
 
         # flatten & clean up metrics a bit
         metrics = {
@@ -305,7 +305,7 @@ if __name__ == '__main__':
 
     print 'machines:', MACHINES
 
-    DB = dataset.connect(fmt("mysql:///claret?read_default_file={env['HOME']}/.my.cnf"))
+    DB = dataset.connect(fmt("mysql:///claret?read_default_file=#{env['HOME']}/.my.cnf"))
     table = DB['ipa_' + opt.mode]
 
     if manual:

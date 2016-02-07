@@ -35,7 +35,7 @@ def on(host):
 
 def start():
     # start Consul key/value store for service discovery
-    on(MASTER).sudo(fmt("sh -c 'rm -rf /tmp/consul; nohup /homes/sys/bholt/bin/consul agent -server -bootstrap -data-dir /tmp/consul -node=master -bind={CONSUL} -client {CONSUL} >{CONSUL_LOG} 2>&1 &'"))
+    on(MASTER).sudo(fmt("sh -c 'rm -rf /tmp/consul; nohup /homes/sys/bholt/bin/consul agent -server -bootstrap -data-dir /tmp/consul -node=master -bind=#{CONSUL} -client #{CONSUL} >#{CONSUL_LOG} 2>&1 &'"))
 
     time.sleep(4)
     
@@ -59,7 +59,6 @@ def start():
 
 
 def stop():
-    # TODO: `stop` and `rm` all swarm processes first?
     
     for host in hosts:
         try:
@@ -68,7 +67,7 @@ def stop():
                 docker(host).stop(*containers)
                 docker(host).rm(*containers)
         except sh.ErrorReturnCode_1:
-            puts("{colored.yellow('[warning]')} no docker running on {host}")
+            puts("#{colored.yellow('[warning]')} no docker running on {host}")
         
         on(host).sudo.pkill("-f", "[d]ocker.*tcp://", _ok_code=[0,1])
     
@@ -80,8 +79,8 @@ def status():
 
 
 def env():
-    puts("alias swarm='docker -H tcp://{MASTER}:{SWARM_PORT}'")
-    puts("export DOCKER_HOST='tcp://{MASTER}:{SWARM_PORT}'")
+    puts("alias swarm='docker -H tcp://#{MASTER}:#{SWARM_PORT}'")
+    puts("export DOCKER_HOST='tcp://#{MASTER}:#{SWARM_PORT}'")
 
 
 if __name__ == '__main__':

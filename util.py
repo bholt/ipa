@@ -22,7 +22,7 @@ def fmt(s, context=None):
         > x is  1, x+1 is 2
     """
     context = context or caller()
-    return re.compile(r"{(.*?)}").sub(lambda m: str(eval(m.group(1), *context)), str(s))
+    return re.compile(r"#{(.*?)}").sub(lambda m: str(eval(m.group(1), *context)), str(s))
 
 
 def puts(s):

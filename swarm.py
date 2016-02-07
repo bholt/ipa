@@ -13,6 +13,9 @@ BRIDGE = 'swarm'
 
 CONSUL = '10.100.1.10'
 CONSUL_PORT = 8500
+CONSUL_LOG = '/var/log/consul'
+
+NETWORK = 'owl'
 
 hosts = [MASTER] + AGENTS
 machines = [ ssh.bake(host) for host in hosts ]
@@ -32,7 +35,7 @@ def on(host):
 
 def start():
     # start Consul key/value store for service discovery
-    master(consul, "agent", "-server", "-bootstrap", "-data-dir", "/tmp/consul", "-node=master", "-bind={}".format(MASTER), "-client", MASTER, _bg=True)
+    on(MASTER).sudo(fmt("sh -c 'rm -rf /tmp/consul; nohup /homes/sys/bholt/bin/consul agent -server -bootstrap -data-dir /tmp/consul -node=master -bind={CONSUL} -client {CONSUL} >{CONSUL_LOG} 2>&1 &'"))
 
     time.sleep(4)
     
@@ -50,7 +53,10 @@ def start():
     time.sleep(1)
     # start Swarm manager
     nodelist = ','.join(["{}:{}".format(h, DOCKER_PORT) for h in hosts])
-    docker(MASTER).run("--name=swarm", "-d", "--publish={}:2375".format(SWARM_PORT), "swarm", "--debug", "manage", "nodes://{}".format(nodelist))
+    docker(MASTER).run("--name=swarm", "-d", "--publish={}:2375".format(SWARM_PORT), "swarm:1.1.0", "--debug", "manage", "nodes://{}".format(nodelist))
+
+    #swarm.network.create('--driver=overlay', NETWORK)
+
 
 def stop():
     # TODO: `stop` and `rm` all swarm processes first?
@@ -64,20 +70,34 @@ def stop():
         except sh.ErrorReturnCode_1:
             puts("{colored.yellow('[warning]')} no docker running on {host}")
         
-        on(host).pkill("-f", "[d]ocker.*tcp://", _ok_code=[0,1])
+        on(host).sudo.pkill("-f", "[d]ocker.*tcp://", _ok_code=[0,1])
     
     on(MASTER).pkill("consul", _ok_code=[0,1])
+
+
+def status():
+    print swarm.info()
+
+
+def env():
+    puts("alias swarm='docker -H tcp://{MASTER}:{SWARM_PORT}'")
+    puts("export DOCKER_HOST='tcp://{MASTER}:{SWARM_PORT}'")
+
 
 if __name__ == '__main__':
     from argparse import ArgumentParser
     parser = ArgumentParser()
-    parser.add_argument('commands', type=str, nargs='+', metavar='start|stop')
+    parser.add_argument('commands', type=str, nargs=1, metavar='start|stop|status|env')
     opt = parser.parse_args()
     for command in opt.commands:
         if command == 'start':
             start()
         elif command == 'stop':
             stop()
+        elif command == 'status':
+            status()
+        elif command == 'env':
+            env()
         else:
             print 'invalid command'
             parser.print_help()

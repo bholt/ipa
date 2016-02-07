@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import sh
+import sys
 from sh import sudo, ssh, docker
 import time
 from util import *
@@ -21,8 +22,14 @@ hosts = [MASTER] + AGENTS
 machines = [ ssh.bake(host) for host in hosts ]
 
 consul = "/homes/sys/bholt/bin/consul"
-swarm  = docker.bake(H="tcp://{}:{}".format(MASTER,SWARM_PORT))
+
+swarm_url = fmt("tcp://#{MASTER}:#{SWARM_PORT}")
+
+swarm  = docker.bake(host=swarm_url)
 master = ssh.bake(MASTER)
+
+
+LIVE = {'_out': sys.stdout, '_err': sys.stderr}
 
 
 def docker(host):
@@ -33,7 +40,7 @@ def on(host):
     return ssh.bake(host)
 
 
-def start():
+def start(args=None, opt=None):
     # start Consul key/value store for service discovery
     on(MASTER).sudo(fmt("sh -c 'rm -rf /tmp/consul; nohup /homes/sys/bholt/bin/consul agent -server -bootstrap -data-dir /tmp/consul -node=master -bind=#{CONSUL} -client #{CONSUL} >#{CONSUL_LOG} 2>&1 &'"))
 
@@ -58,7 +65,7 @@ def start():
     #swarm.network.create('--driver=overlay', NETWORK)
 
 
-def stop():
+def stop(args=None, opt=None):
     
     for host in hosts:
         try:
@@ -74,29 +81,42 @@ def stop():
     on(MASTER).pkill("consul", _ok_code=[0,1])
 
 
-def status():
+def status(args=None, opt=None):
     print swarm.info()
 
 
-def env():
+def env(args=None, opt=None):
     puts("alias swarm='docker -H tcp://#{MASTER}:#{SWARM_PORT}'")
     puts("export DOCKER_HOST='tcp://#{MASTER}:#{SWARM_PORT}'")
+
+
+def compose(args=None, opt=None):
+    """ Invoke docker-compose command using Swarm. """
+    puts(">>> docker-compose #{' '.join(opt_extra)} (with --host=#{swarm_url})")
+    sh.docker_compose(*args, _env={'DOCKER_HOST': swarm_url}, **LIVE)
 
 
 if __name__ == '__main__':
     from argparse import ArgumentParser
     parser = ArgumentParser()
-    parser.add_argument('commands', type=str, nargs=1, metavar='start|stop|status|env')
-    opt = parser.parse_args()
-    for command in opt.commands:
-        if command == 'start':
-            start()
-        elif command == 'stop':
-            stop()
-        elif command == 'status':
-            status()
-        elif command == 'env':
-            env()
-        else:
-            print 'invalid command'
-            parser.print_help()
+    subparsers = parser.add_subparsers(help='Commands help')
+    commands = {}
+
+    def add_command(command, callback):
+        subp = subparsers.add_parser(command)
+        subp.set_defaults(command=command)
+        commands[command] = callback
+        return subp
+
+    add_command('start', start)
+    add_command('stop', stop)
+    add_command('status', status)
+    add_command('env', env)
+    add_command('compose', compose)
+
+    opt, extra = parser.parse_known_args()
+    if opt.command in commands:
+        commands[opt.command](extra, opt)
+    else:
+        print 'invalid command'
+        parser.print_help()

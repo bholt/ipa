@@ -1,0 +1,30 @@
+version: '2'
+
+services:
+  cass:
+    # build: ./docker/cassandra
+    image: bholt/cassandra
+    # ports:
+    #   - '7000:7000'
+    command: cassandra -f
+    environment:
+      JVM_OPTS: -Dcassandra.consistent.rangemovement=false
+    # cpu_shares: 10
+    privileged: true
+    networks:
+      - dev
+    
+
+  owl:
+    image: bholt/owl
+    command: tail -f /dev/null
+    # cpu_shares: 30
+    privileged: true
+    # environment:
+    #   - "constraint:node==ibex"
+
+networks:
+  default:
+    driver: overlay
+  dev:
+    driver: overlay

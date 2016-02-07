@@ -11,11 +11,13 @@ def container(num):
 
 
 def configure(network):
+    puts(colored.green('>>> configuring'))
     settings = config['networks'][network]
-    puts(colored.blue(network+": ") + colored.black(str(settings)))
-    for name, latency in settings.items():
-        swarm("exec", container(name),
-              "tc", "qdisc", "replace", "dev", "eth0", "root", "netem", "delay", latency)
+    puts(yaml.dump({network: settings}))
+    for name, commands in settings.items():
+        for cmd in commands:
+            swarm("exec", container(name),
+                  "tc", "qdisc", "replace", "dev", "eth0", "root", "netem", *cmd.split())
 
 
 if __name__ == '__main__':

@@ -3,17 +3,16 @@ prefix: owl_cass_
 networks:
   
   uniform:
-    1: 100ms
-    2: 100ms
-    3: 100ms
+    1: [delay 10ms 15ms 50% distribution normal]
+    2: [delay 10ms 15ms 50% distribution normal]
+    3: [delay 10ms 15ms 50% distribution normal]
 
   world:
-    1: 50ms
-    2: 200ms
-    3: 100ms
+    1: [delay  10ms 15ms 80% distribution normal]
+    2: [delay 150ms 50ms 50% distribution normal]
+    3: [delay  50ms 15ms 80% distribution normal]
   
   slowpoke:
-    1: 50ms
-    2: 50ms
-    3: 400ms
-
+    1: [delay 10ms 15ms 50% distribution normal]
+    2: [delay 10ms 15ms 50% distribution normal]
+    3: [delay 100ms 15ms 50% distribution normal]

@@ -5,29 +5,29 @@ from swarm import swarm
 
 config = yaml.load(open('honeycomb.yml','r'))
 
-def container(num):
+def cass(num):
     """ Translate number (from network config) to container name. """
     return config['prefix'] + str(num)
 
 
-def configure(network):
+def configure(mode):
     puts(colored.green('>>> configuring'))
-    settings = config['networks'][network]
-    puts(yaml.dump({network: settings}))
+    settings = config['modes'][mode]
+    puts(yaml.dump({mode: settings}))
     for name, commands in settings.items():
         for cmd in commands:
-            swarm("exec", container(name),
+            swarm("exec", cass(name),
                   "tc", "qdisc", "replace", "dev", "eth0", "root", "netem", *cmd.split())
 
 
 if __name__ == '__main__':
     from argparse import ArgumentParser
     parser = ArgumentParser()
-    parser.add_argument('network', help='Command to execute, one of: ', type=str, nargs=1)
+    parser.add_argument('mode', help='Configure network with specified mode.', type=str, nargs=1)
     opt = parser.parse_args()
 
-    network = opt.network[0]
-    if network in config['networks']:
-        configure(network)
+    mode = opt.mode[0]
+    if mode in config['modes']:
+        configure(mode)
     else:
-        puts("unknown network: {network}")
+        puts("unknown network: {mode}")

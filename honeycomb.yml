@@ -1,6 +1,6 @@
 prefix: owl_cass_
 
-networks:
+modes:
   
   uniform:
     1: [delay 10ms 15ms 50% distribution normal]

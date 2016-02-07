@@ -21,7 +21,10 @@ import sh
 import pygments
 from pygments.lexers import JsonLexer
 from pygments.formatters import TerminalFormatter
+
+import honeycomb
 from util import *
+import swarm
 
 
 def heading(text):
@@ -137,27 +140,27 @@ def before_all():
 
     print note("> creating up-to-date docker image")
     # (suppress 'sending build context' messages)
-    for line in sh.sbt("docker:publishLocal", _iter=True):
-        if not re.match(r"^\[info\] Sending build context.*", strip_ansi(line)):
+    for line in sh.sbt("docker:publish", _iter=True):
+        if not re.match(r"^\[info\] (Sending build context.*|.*Waiting|.*Layer already exists)", strip_ansi(line)):
             print line,
 
-    print note("> initializing blockade")
-    blockade.destroy(_ok_code=[0,1], **LIVE)
-    blockade.up(**LIVE)
+    print note("> initializing cluster")
+    swarm.compose(["up", "-d"])
+    swarm.compose(["scale", "owl=1", "cass=3"])
 
     def check(container):
-        o = sh.grep(sh.docker.logs(container, _piped=True), "listening for CQL clients", _ok_code=[0,1])
+        o = sh.grep(swarm.swarm.logs(container, _piped=True), "listening for CQL clients", _ok_code=[0,1])
         return len(o) > 0
 
     sys.stdout.write("Waiting for Cassandra to finish launching")
-    while not check("owl_s3"):
+    while not check(honeycomb.cass(3)):
         sys.stdout.write(".")
         sys.stdout.flush()
         time.sleep(1)
     print "done"
 
     time.sleep(5) # make sure Cassandra has finished initializing
-    blockade.status(**LIVE)
+    # blockade.status(**LIVE)
 
 
 def run(logfile, *args, **flags):
@@ -169,15 +172,15 @@ def run(logfile, *args, **flags):
         for k in flags if k.startswith('ipa_')
     ])
 
-    if 'blockade_mode' in flags:
-        mode = flags['blockade_mode']
-        blockade(*mode.split())
+    if 'honeycomb_mode' in flags:
+        mode = flags['honeycomb_mode']
+        honeycomb.configure(mode)
 
     # hack to invoke as a shell script because something chokes on some values...
-    invoke = ["sh", "-c", "exec bin/owl {}".format(" ".join(args))]
+    invoke = ["sh",  "-c", "exec bin/owl {}".format(" ".join(args))]
 
     try:
-        cmd = sh.docker("exec", "owl_c1", *invoke, _timeout=60*5, _iter=True)
+        cmd = swarm.owl_exec(*invoke, _timeout=60*5, _iter=True)
         puts("> #{colored.blue(' '.join(cmd.cmd))}")
         for o in cmd:
             logfile.write(o)
@@ -228,7 +231,8 @@ def run_retwis():
             ipa_concurrent_requests   = [16, 128, 512, 2*K, 4*K, 8*K, 32*K],
 
             ipa_consistency           = ['strong', 'weak'],
-            blockade_mode             = ['slow s1 s2 s3']  # 'fast'
+
+            honeycomb_mode = ['uniform', 'world', 'slowpoke']
         ):
             ct = count_records(table, ignore=[],
                                valid='meters_retwis_op_count is not null', **a)
@@ -262,7 +266,8 @@ def run_rawmix():
 
             ipa_bound = ['latency:50ms', 'consistency:strong', 'consistency:weak'],
 
-            blockade_mode             = ['slow s3', 'slow s1 s2 s3']  # 'fast'
+            honeycomb_mode = ['uniform', 'world', 'slowpoke']
+
         ):
             ct = count_records(table, ignore=[],
                                valid='meters_retwis_op_count is not null', **a)

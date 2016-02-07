@@ -92,9 +92,12 @@ def env(args=None, opt=None):
 
 def compose(args=None, opt=None):
     """ Invoke docker-compose command using Swarm. """
-    puts(">>> docker-compose #{' '.join(opt_extra)} (with --host=#{swarm_url})")
-    sh.docker_compose(*args, _env={'DOCKER_HOST': swarm_url}, **LIVE)
+    puts(">>> docker-compose #{' '.join(args)} (with --host=#{swarm_url})")
+    sh.docker_compose(*args, _ok_code=[0,1], _env={'DOCKER_HOST': swarm_url}, **LIVE)
 
+
+def owl_exec(*args, **flags):
+    return swarm("exec", "-i", "owl_owl_1", *args, **flags)
 
 if __name__ == '__main__':
     from argparse import ArgumentParser
@@ -103,7 +106,7 @@ if __name__ == '__main__':
     commands = {}
 
     def add_command(command, callback):
-        subp = subparsers.add_parser(command)
+        subp = subparsers.add_parser(command, add_help=False)
         subp.set_defaults(command=command)
         commands[command] = callback
         return subp

@@ -1,0 +1,19 @@
+prefix: owl_cass_
+
+networks:
+  
+  uniform:
+    1: 100ms
+    2: 100ms
+    3: 100ms
+
+  world:
+    1: 50ms
+    2: 200ms
+    3: 100ms
+  
+  slowpoke:
+    1: 50ms
+    2: 50ms
+    3: 400ms
+

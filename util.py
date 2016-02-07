@@ -3,9 +3,10 @@ import re
 import clint.textui
 from clint.textui import colored
 
-def caller_locals():
+def caller():
     # note, need extra 'f_back' because this itself is a function...
-    return inspect.currentframe().f_back.f_back.f_locals
+    frame = inspect.currentframe().f_back.f_back
+    return frame.f_globals, frame.f_locals
 
 
 def fmt(s, context=None):
@@ -20,13 +21,13 @@ def fmt(s, context=None):
         print fmt('x is {x}, x+1 is {x+1}')
         > x is  1, x+1 is 2
     """
-    context = context or caller_locals()
-    return re.compile(r"{(.*?)}").sub(lambda m: str(eval(m.group(1), globals(), context)), str(s))
+    context = context or caller()
+    return re.compile(r"{(.*?)}").sub(lambda m: str(eval(m.group(1), *context)), str(s))
 
 
 def puts(s):
-    clint.textui.puts(fmt(s, caller_locals()))
+    clint.textui.puts(fmt(s, caller()))
 
 
 def puts_err(s):
-    clint.textui.puts_err(fmt(s, caller_locals()))
+    clint.textui.puts_err(fmt(s, caller()))

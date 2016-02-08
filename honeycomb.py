@@ -10,10 +10,13 @@ def cass(num):
     return config['prefix'] + str(num)
 
 
-def configure(mode):
-    puts(colored.green('>>> configuring'))
+def configure(mode, quiet=False):
     settings = config['modes'][mode]
-    puts(yaml.dump({mode: settings}))
+
+    if not quiet:
+        puts(colored.green('>>> configuring'))
+        puts(yaml.dump({mode: settings}))
+
     for name, commands in settings.items():
         for cmd in commands:
             swarm("exec", cass(name),
@@ -24,10 +27,11 @@ if __name__ == '__main__':
     from argparse import ArgumentParser
     parser = ArgumentParser()
     parser.add_argument('mode', help='Configure network with specified mode.', type=str, nargs=1)
+    parser.add_argument('--quiet', help='Suppress debug output', default=False, action='store_true')
     opt = parser.parse_args()
 
     mode = opt.mode[0]
     if mode in config['modes']:
-        configure(mode)
+        configure(mode, opt.quiet)
     else:
         puts("unknown network: {mode}")

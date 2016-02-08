@@ -108,12 +108,12 @@ trait ConsistencyBound extends IPAUuidSet {
 trait LatencyBound extends IPAUuidSet {
   def latencyBound: FiniteDuration
 
-  def rush[T](latencyBound: FiniteDuration)(op: () => Future[Inconsistent[T]]): Future[Rushed[T]] = {
+  def rush[T](latencyBound: FiniteDuration)(op: ConsistencyLevel => Future[Inconsistent[T]]): Future[Rushed[T]] = {
     val deadline = latencyBound.fromNow
 
     val ops =
       Seq(ConsistencyLevel.ALL, ConsistencyLevel.ONE) map { c =>
-        op() map { r => Rushed(r.get, c) }
+        op(c) map { r => Rushed(r.get, c) }
       }
 
     ops.firstCompleted flatMap { r1 =>
@@ -134,16 +134,16 @@ trait LatencyBound extends IPAUuidSet {
     }
   }
 
-  class Handle(v: V) extends HandleBase(v, ConsistencyLevel.ALL) {
+  class Handle(key: K) extends HandleBase(key, ConsistencyLevel.ALL) {
 
     override def size(): Future[Rushed[Int]] =
-      rush(latencyBound){ () => super.size() }
+      rush(latencyBound){ c: ConsistencyLevel => new HandleBase(key, c).size() }
 
     override def contains(v: V): Future[Rushed[Boolean]] =
-      rush(latencyBound){ () => super.contains(v) }
+      rush(latencyBound){ c: ConsistencyLevel => new HandleBase(key, c).contains(v) }
 
     override def get(limit: Int = 0): Future[Rushed[Iterator[V]]] =
-      rush(latencyBound){ () => super.get(limit) }
+      rush(latencyBound){ c: ConsistencyLevel => new HandleBase(key, c).get(limit) }
   }
 
   override def apply(key: K) = new Handle(key)

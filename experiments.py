@@ -332,4 +332,4 @@ if __name__ == '__main__':
     elif opt.mode == 'rawmix':
         n = run_rawmix()
 
-    notify_slack(fmt("Finished {n} experiments. :success:"))
+    notify_slack(fmt("Finished #{n} experiments. :success:"))

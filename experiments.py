@@ -232,7 +232,7 @@ def run_retwis():
 
             ipa_consistency           = ['strong', 'weak'],
 
-            honeycomb_mode = ['uniform', 'world', 'slowpoke']
+            honeycomb_mode = ['uniform', 'slowpoke', 'slowflat']
         ):
             ct = count_records(table, ignore=[],
                                valid='meters_retwis_op_count is not null', **a)
@@ -264,7 +264,7 @@ def run_rawmix():
 
             ipa_concurrent_requests   = [16, 128, 512, 2*K, 4*K, 8*K],
 
-            ipa_bound = ['latency:50ms', 'consistency:strong', 'consistency:weak'],
+            ipa_bound = ['latency:50ms', 'latency:10ms', 'consistency:strong', 'consistency:weak'],
 
             honeycomb_mode = ['uniform', 'world', 'slowpoke']
 

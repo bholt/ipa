@@ -174,7 +174,7 @@ def run(logfile, *args, **flags):
 
     if 'honeycomb_mode' in flags:
         mode = flags['honeycomb_mode']
-        honeycomb.configure(mode)
+        honeycomb.configure(mode, quiet=True)
 
     # hack to invoke as a shell script because something chokes on some values...
     invoke = ["sh",  "-c", "exec bin/owl {}".format(" ".join(args))]

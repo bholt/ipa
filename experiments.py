@@ -141,7 +141,7 @@ def before_all():
     print note("> creating up-to-date docker image")
     # (suppress 'sending build context' messages)
     for line in sh.sbt("docker:publish", _iter=True):
-        if not re.match(r"^\[info\] (Sending build context.*|.*Waiting|.*Layer already exists)", strip_ansi(line)):
+        if not re.match(r"^\[info\] (Sending build context.*|.*Preparing|.*Waiting|.*Layer already exists)", strip_ansi(line)):
             print line,
 
     print note("> initializing cluster")
@@ -325,7 +325,7 @@ if __name__ == '__main__':
     log = open(SRC + '/experiments.log', 'w')
 
     tag = sh.git.describe().stdout
-    version = re.match(r"(\w+)(-.*)?", tag).group(1)
+    version = re.match(r"([a-zA-Z0-9._]+)(-.*)?", tag).group(1)
 
     if opt.mode == 'owl':
         n = run_retwis()

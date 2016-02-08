@@ -13,7 +13,6 @@ import scala.util.{Success, Try, Random}
 
 class RawMix(val duration: FiniteDuration) extends OwlService {
   override implicit val space = RawMix.space
-
   val nsets = config.rawmix.nsets
   val mix = config.rawmix.mix
 

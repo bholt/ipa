@@ -1,11 +1,12 @@
 package owl
 
+import com.codahale.metrics.MetricRegistry
 import com.datastax.driver.core.{ConsistencyLevel, Row}
 import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.column.PrimitiveColumn
 import com.websudos.phantom.dsl._
 import com.websudos.phantom.keys.PartitionKey
-import nl.grons.metrics.scala.Timer
+import nl.grons.metrics.scala.{MetricBuilder, Timer}
 
 import scala.concurrent._
 import scala.collection.JavaConversions._
@@ -17,7 +18,7 @@ import Util._
 
 import scala.concurrent.duration.FiniteDuration
 
-class IPAUuidSet(val name: String)(implicit val session: Session, val space: KeySpace, val cassandraOpMetric: Timer) extends TableGenerator {
+class IPAUuidSet(val name: String)(implicit val session: Session, val space: KeySpace, val cassandraOpMetric: Timer, val ipa_metrics: IPAMetrics) extends TableGenerator {
   type K = UUID
   type V = UUID
 
@@ -120,6 +121,7 @@ trait LatencyBound extends IPAUuidSet {
       val timeRemaining = deadline.timeLeft
       if (r1.consistency == ConsistencyLevel.ALL ||
           timeRemaining < config.assumed_latency) {
+        if (deadline.isOverdue()) ipa_metrics.missedDeadlines.mark()
         Future(r1)
       } else {
         // make sure it finishes within the deadline

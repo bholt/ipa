@@ -16,7 +16,7 @@ import com.websudos.phantom.builder.primitives.Primitive
 import com.websudos.phantom.column.DateTimeColumn
 import com.websudos.phantom.dsl.{StringColumn, UUIDColumn, _}
 import com.websudos.phantom.keys.PartitionKey
-import nl.grons.metrics.scala.{Timer, FutureMetrics, InstrumentedBuilder}
+import nl.grons.metrics.scala.{MetricBuilder, Timer, FutureMetrics, InstrumentedBuilder}
 import org.joda.time.DateTime
 
 import scala.collection.JavaConversions._
@@ -126,10 +126,16 @@ class RetweetCounts extends CassandraTable[RetweetCounts, RetweetCount] {
   override def fromRow(r: Row) = RetweetCount(tweet(r), count(r))
 }
 
+class IPAMetrics(metrics: MetricBuilder) {
+  val missedDeadlines = metrics.meter("missed_deadlines")
+}
+
 trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
 
-  override val metricRegistry = new MetricRegistry
+  implicit override val metricRegistry = new MetricRegistry
   implicit val cassandraOpLatency = metrics.timer("cass_op_latency")
+
+  implicit val ipa_metrics = new IPAMetrics(metrics)
 
   object metric {
 

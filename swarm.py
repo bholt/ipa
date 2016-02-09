@@ -103,6 +103,11 @@ def swarm_exec(node):
 owl_exec = swarm_exec("owl_owl_1")
 
 
+def cass_nodes():
+    ps = swarm.ps()
+    return [ l.split()[-1] for l in ps.split('\n') if 'owl_cass_' in l ]
+
+
 if __name__ == '__main__':
     from argparse import ArgumentParser
     parser = ArgumentParser()

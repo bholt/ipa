@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import yaml
 from util import *
-from swarm import swarm, swarm_exec
+from swarm import swarm, swarm_exec, cass_nodes
 
 config = yaml.load(open('honeycomb.yml','r'))
 
@@ -25,11 +25,6 @@ def configure(mode, quiet=False):
         for cmd in commands:
             swarm_exec(cass(name))(
                 "tc", "qdisc", "replace", "dev", "eth0", "root", "netem", *cmd.split())
-
-
-def cass_nodes():
-    ps = swarm.ps()
-    return [ l.split()[-1] for l in ps.split('\n') if 'owl_cass_' in l ]
 
 
 def cmd_set(extra=None, opt=None):

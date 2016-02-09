@@ -9,20 +9,21 @@ services:
     networks:
       - dev
     environment:
-      CASSANDRA_HOST: owl_cass_1
-    #   - "constraint:node==ibex"
-    cpu_shares: 6
+      - "CASSANDRA_HOST=owl_cass_1"
+#      - "constraint:node==ibex"
+#    cpu_shares: 6
 
   cass:
     image: bholt/cassandra
     command: cassandra -f
     environment:
-      JVM_OPTS: -Dcassandra.consistent.rangemovement=false
-      CASSANDRA_SEEDS: owl_cass_1
+      - "JVM_OPTS=-Dcassandra.consistent.rangemovement=false"
+      - "CASSANDRA_SEEDS=owl_cass_1"
+#      - "constraint:node==platypus"
     privileged: true
     networks:
       - dev
-    cpu_shares: 2
+#    cpu_shares: 2
 
 networks:
   dev:

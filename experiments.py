@@ -186,6 +186,8 @@ def run(logfile, *args, **flags):
         sys.exit()
     except sh.TimeoutException:
         puts_err("job exceeded time limit")
+    except sh.ErrorReturnCode_1:
+        puts_err("job exited with '1', skipping...")
 
 
 def run_retwis():
@@ -228,6 +230,9 @@ def run_retwis():
 
 def run_rawmix():
     nexp = 0
+
+    containers = swarm.cass_nodes()
+
     for trial in range(1, opt.target+1):
         if not opt.dry:
             print '---------------------------------\n# starting trial', trial
@@ -254,6 +259,7 @@ def run_rawmix():
             ct = count_records(table, ignore=[],
                                valid='meters_retwis_op_count is not null', **a)
             puts(colored.black("→ ")+colored.cyan('count:')+colored.yellow(ct))
+            a['containers'] = containers
             if opt.dry:
                 continue
             if ct < trial:

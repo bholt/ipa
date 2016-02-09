@@ -7,6 +7,11 @@ modes:
     2: [delay 10ms 15ms 50% distribution normal]
     3: [delay 10ms 15ms 50% distribution normal]
 
+  normal:
+      1: [delay 10ms 5ms 80% distribution normal]
+      2: [delay 10ms 5ms 80% distribution normal]
+      3: [delay 10ms 5ms 80% distribution normal]
+
   world:
     1: [delay  10ms 15ms 80% distribution normal]
     2: [delay 150ms 50ms 50% distribution normal]
@@ -21,3 +26,8 @@ modes:
     1: [delay 10ms]
     2: [delay 10ms]
     3: [delay 100ms]
+
+  fast:
+    1: [delay 0ms]
+    2: [delay 0ms]
+    3: [delay 0ms]

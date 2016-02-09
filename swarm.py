@@ -96,8 +96,12 @@ def compose(args=None, opt=None):
     sh.docker_compose(*args, _ok_code=[0,1], _env={'DOCKER_HOST': swarm_url}, **LIVE)
 
 
-def owl_exec(*args, **flags):
-    return swarm("exec", "-i", "owl_owl_1", *args, **flags)
+def swarm_exec(node):
+    return swarm.bake("exec", "-i", node)
+
+
+owl_exec = swarm_exec("owl_owl_1")
+
 
 if __name__ == '__main__':
     from argparse import ArgumentParser

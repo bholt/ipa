@@ -17,7 +17,7 @@ modes:
     2: [delay 10ms 15ms 50% distribution normal]
     3: [delay 100ms 15ms 50% distribution normal]
 
-  slowflat:
+  slowpoke_flat:
     1: [delay 10ms]
     2: [delay 10ms]
     3: [delay 100ms]

@@ -1,7 +1,12 @@
 import inspect
 import re
 import clint.textui
+import yaml
 from clint.textui import colored
+import json
+import pygments
+from pygments.lexers import JsonLexer, YamlLexer
+from pygments.formatters import TerminalFormatter
 
 def caller():
     # note, need extra 'f_back' because this itself is a function...
@@ -31,3 +36,26 @@ def puts(s):
 
 def puts_err(s):
     clint.textui.puts_err(fmt(s, caller()))
+
+
+def pretty_json(value):
+    return pygments.highlight(unicode(json.dumps(value, indent=2, sort_keys=True), 'UTF-8'), JsonLexer(), TerminalFormatter(bg="dark"))
+
+
+def pretty_yaml(value):
+    return pygments.highlight(unicode(yaml.safe_dump(value, indent=2, default_flow_style=False), 'UTF-8'), YamlLexer(), TerminalFormatter(bg="dark"))
+
+
+def heading(text):
+    return colored.black(text, bold=True)
+
+
+def note(text):
+    return colored.black(text)
+
+
+ANSISEQ = re.compile(r'(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]')
+
+def strip_ansi(text):
+    return ANSISEQ.sub('', text)
+

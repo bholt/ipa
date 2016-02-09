@@ -18,35 +18,17 @@ import requests
 import signal
 import colors  # ansicolors
 import sh
-import pygments
-from pygments.lexers import JsonLexer
-from pygments.formatters import TerminalFormatter
 
 import honeycomb
 from util import *
 import swarm
 
 
-def heading(text):
-    return colored.black(text, bold=True)
-
-
-def note(text):
-    return colored.black(text)
-
 
 K = 1024
 
 LIVE = {'_out': sys.stdout, '_err': sys.stderr}
 
-ANSISEQ = re.compile(r'(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]')
-
-def strip_ansi(text):
-    return ANSISEQ.sub('', text)
-
-
-def pretty_json(value):
-    return pygments.highlight(unicode(json.dumps(value, indent=2, sort_keys=True), 'UTF-8'), JsonLexer(), TerminalFormatter(bg="dark"))
 
 #########################
 
@@ -266,12 +248,12 @@ def run_rawmix():
 
             ipa_bound = ['latency:50ms', 'latency:10ms', 'consistency:strong', 'consistency:weak'],
 
-            honeycomb_mode = ['uniform', 'world', 'slowpoke']
+            honeycomb_mode = ['world', 'slowpoke', 'slowpoke_flat']
 
         ):
             ct = count_records(table, ignore=[],
                                valid='meters_retwis_op_count is not null', **a)
-            puts(colored.black("→")+colored.cyan('count:')+colored.yellow(ct))
+            puts(colored.black("→ ")+colored.cyan('count:')+colored.yellow(ct))
             if opt.dry:
                 continue
             if ct < trial:

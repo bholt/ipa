@@ -6,7 +6,7 @@ import time
 from util import *
 
 MASTER = 'ibex'
-AGENTS = ['platypus']
+AGENTS = ['platypus', 'sloth', 'rhinoceros']
 
 DOCKER_PORT = 2376
 SWARM_PORT = 4000

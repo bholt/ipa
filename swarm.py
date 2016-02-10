@@ -108,6 +108,12 @@ def cass_nodes():
     return [ l.split()[-1] for l in ps.split('\n') if 'owl_cass_' in l ]
 
 
+def containers(prefix='owl_'):
+    containers = [ l.split()[-1] for l in swarm.ps().split('\n') if '/owl_' in l ]
+    cmap = {c: n for n, c in [c.split('/') for c in containers]}
+    return yaml.safe_dump(cmap).strip()
+
+
 if __name__ == '__main__':
     from argparse import ArgumentParser
     parser = ArgumentParser()

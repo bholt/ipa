@@ -228,10 +228,22 @@ def run_retwis():
                 nexp += 1
     return nexp
 
+
+class RawMix:
+    def __init__(self, add, contains, size):
+        self.add = str(add)
+        self.contains = str(contains)
+        self.size = str(size)
+
 def run_rawmix():
     nexp = 0
 
-    containers = swarm.cass_nodes()
+    containers = swarm.containers()
+
+    mixes = {
+        'no_size': RawMix(add=0.2, contains=0.8, size=0.0),
+        'default': RawMix(add=0.3, contains=0.5, size=0.2)
+    }
 
     for trial in range(1, opt.target+1):
         if not opt.dry:
@@ -252,14 +264,20 @@ def run_rawmix():
             ipa_concurrent_requests   = [16, 128, 512, 2*K, 4*K, 8*K],
 
             ipa_bound = ['latency:50ms', 'latency:10ms', 'consistency:strong', 'consistency:weak'],
-
-            honeycomb_mode = ['world', 'slowpoke', 'slowpoke_flat']
+            honeycomb_mode = ['normal', 'slowpoke_flat'],
+            mix = ['no_size']
 
         ):
+            a['containers'] = containers
+
+            a['ipa_rawmix_mix_add']      = mixes[a['mix']].add
+            a['ipa_rawmix_mix_contains'] = mixes[a['mix']].contains
+            a['ipa_rawmix_mix_size']     = mixes[a['mix']].size
+
             ct = count_records(table, ignore=[],
                                valid='meters_retwis_op_count is not null', **a)
             puts(colored.black("→ ")+colored.cyan('count:')+colored.yellow(ct))
-            a['containers'] = containers
+
             if opt.dry:
                 continue
             if ct < trial:

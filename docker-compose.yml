@@ -19,7 +19,7 @@ services:
     environment:
       - "JVM_OPTS=-Dcassandra.consistent.rangemovement=false"
       - "CASSANDRA_SEEDS=owl_cass_1"
-#      - "constraint:node==platypus"
+#      - "constraint:node==ibex"
     privileged: true
     networks:
       - dev

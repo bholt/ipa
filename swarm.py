@@ -74,7 +74,7 @@ def stop(args=None, opt=None):
                 docker(host).stop(*containers)
                 docker(host).rm(*containers)
         except sh.ErrorReturnCode_1:
-            puts("#{colored.yellow('[warning]')} no docker running on {host}")
+            puts("#{colored.yellow('[warning]')} no docker running on #{host}")
         
         on(host).sudo.pkill("-f", "[d]ocker.*tcp://", _ok_code=[0,1])
     
@@ -128,6 +128,9 @@ if __name__ == '__main__':
 
     add_command('start', start)
     add_command('stop', stop)
+    add_command('up', start)  # alias
+    add_command('down', stop) # alias
+
     add_command('status', status)
     add_command('env', env)
     add_command('compose', compose)

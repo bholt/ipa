@@ -242,7 +242,7 @@ def run_rawmix():
 
     mixes = {
         'no_size': RawMix(add=0.2, contains=0.8, size=0.0),
-        'default': RawMix(add=0.3, contains=0.5, size=0.2)
+        'default': RawMix(add=0.3, contains=0.6, size=0.1)
     }
 
     for trial in range(1, opt.target+1):
@@ -259,7 +259,7 @@ def run_rawmix():
             ipa_reset                 = ['false'],
 
             ipa_duration              = [60],
-            ipa_zipf                  = ['1.0'],
+            ipa_zipf                  = ['1.0', '0.6'],
 
             ipa_concurrent_requests   = [16, 128, 512, 2*K, 4*K, 8*K],
 

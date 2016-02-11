@@ -1,5 +1,7 @@
 package owl
 
+import java.util.UUID
+
 import com.datastax.driver.core.ConsistencyLevel
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
@@ -40,6 +42,9 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
   val countSizeStrong     = metrics.counter("size_strong")
   val countSizeWeak       = metrics.counter("size_weak")
 
+  val countConsistent = metrics.counter("consistent")
+  val countInconsistent = metrics.counter("inconsistent")
+
   def recordResult[T](op: Symbol, r: Inconsistent[T]): Inconsistent[T] = {
     val cons = set match {
       case lbound: LatencyBound => r.asInstanceOf[Rushed[T]].consistency
@@ -48,8 +53,8 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
     (op, cons) match {
       case ('contains, ConsistencyLevel.ALL) => countContainsStrong += 1
       case ('contains, ConsistencyLevel.ONE) => countContainsWeak += 1
-      case ('size, ConsistencyLevel.ALL) => countSizeStrong += 1
-      case ('size, ConsistencyLevel.ONE) => countSizeWeak += 1
+      case ('size,     ConsistencyLevel.ALL) => countSizeStrong += 1
+      case ('size,     ConsistencyLevel.ONE) => countSizeWeak += 1
     }
     r
   }
@@ -76,9 +81,27 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
       val op = weightedSample(mix)
       val f = op match {
         case 'add =>
-          handle.add(urandID())
-              .instrument(timerAdd)
-              .unit
+          if (Random.nextDouble() > config.rawmix.check_probability) {
+            val v = urandID()
+            handle.add(v).instrument(timerAdd)
+          } else {
+            // get a truly random UUID so it's unlikely to already exist
+            // (otherwise our test is bunk
+            val v = UUID.randomUUID()
+            for {
+              add <- handle.add(v).instrument(timerAdd)
+              contains <- handle.contains(v).instrument(timerContains)
+            } yield {
+              recordResult('contains, contains)
+              if (contains.get) {
+                countConsistent += 1
+              } else {
+                countInconsistent += 1
+              }
+              ()
+            }
+          }
+
         case 'contains =>
           handle.contains(urandID())
               .instrument(timerContains)

@@ -41,6 +41,9 @@ object Connector {
           (Symbol(key), value.unwrapped().toString.toDouble)
         }
       }
+      // probability of doing consistency check
+      // (only happens after adds, so scale up accordingly)
+      val check_probability = c.getDouble("ipa.rawmix.check.probability") / mix('add)
     }
 
     object bound {

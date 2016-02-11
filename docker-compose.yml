@@ -10,7 +10,7 @@ services:
       - dev
     environment:
       - "CASSANDRA_HOST=owl_cass_1"
-#      - "constraint:node==ibex"
+      - "constraint:node==ibex"
 #    cpu_shares: 6
 
   cass:

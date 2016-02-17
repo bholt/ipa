@@ -49,8 +49,10 @@ class Stale[T](
 ) extends Rushed[T](value, consistency)
 
 
-trait Interval[T] extends Inconsistent[T] {
-  def min: T
-  def max: T
-  def contains(value: T): Boolean
+case class Tolerance(val error: Double)
+
+class Interval[T](val min: T, val max: T)(implicit ev: Numeric[T]) extends Inconsistent[T](min) {
+  override def get = median
+  def median: T = { min } // FIXME
+  def contains(o: T): Boolean = { o >= min && o <= max }
 }

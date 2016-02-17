@@ -13,7 +13,9 @@ import Util._
 /**
   * Created by bholt on 1/28/16.
   */
-class IPASetTests extends WordSpec with OwlService with BeforeAndAfterAll
+class IPASetTests extends {
+  override implicit val space = KeySpace("ipa_set_tests")
+} with WordSpec with OwlService with BeforeAndAfterAll
     with Matchers with Inspectors with ScalaFutures {
 
   def now() = Deadline.now
@@ -22,9 +24,8 @@ class IPASetTests extends WordSpec with OwlService with BeforeAndAfterAll
   implicit override val patienceConfig =
     PatienceConfig(timeout = timeout, interval = 20 millis)
 
-  override implicit val space = KeySpace("ipa_set_tests")
-
-  override def beforeAll() = createKeyspace(session)
+  println(s"create keyspace ${space.name} in beforeAll")
+  createKeyspace(session)
 
   val u1 = id(1)
   val u2 = id(2)

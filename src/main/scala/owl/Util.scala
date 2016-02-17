@@ -15,6 +15,10 @@ object Util {
 
   def id(i: Int) = UUID.nameUUIDFromBytes(BigInt(i).toByteArray)
 
+  implicit class IntToId(v: Int) {
+    def id = Util.id(v)
+  }
+
   implicit class VectorPlus[T](v: IndexedSeq[T]) {
     def sample = v(Random.nextInt(v.length))
   }

@@ -10,9 +10,6 @@ import scala.concurrent.duration._
 
 import Util._
 
-/**
-  * Created by bholt on 1/28/16.
-  */
 class IPASetTests extends {
   override implicit val space = KeySpace("ipa_set_tests")
 } with WordSpec with OwlService with BeforeAndAfterAll

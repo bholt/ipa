@@ -19,7 +19,37 @@ abstract class BaseSettings(implicit val space: KeySpace, val session: Session, 
   def name: String
 }
 
-trait SetBase extends BaseSettings with Set with TableGenerator with SizeImpl {
+object Op {
+
+  trait Add {
+    def add(key: UUID, value: UUID): Future[Unit]
+  }
+
+  trait Contains {
+    type ContainsType
+    def contains(key: UUID, value: UUID): Future[ContainsType]
+  }
+
+  trait Size {
+    type SizeType
+    def size(key: UUID): Future[SizeType]
+  }
+
+  trait All extends Add with Contains with Size
+}
+
+
+trait SetHandle { self: Op.Add with Op.Contains with Op.Size =>
+  class Handle(key: UUID) {
+    def add(value: UUID): Future[Unit] = self.add(key, value)
+    def contains(value: UUID): Future[ContainsType] = self.contains(key, value)
+    def size(): Future[SizeType] = self.size(key)
+  }
+  def apply(key: UUID) = new Handle(key)
+}
+
+trait SetBase extends BaseSettings with SetHandle with TableGenerator {
+  self: Op.Add with Op.Contains with Op.Size =>
 
   type K = UUID
   type V = UUID
@@ -40,6 +70,27 @@ trait SetBase extends BaseSettings with Set with TableGenerator with SizeImpl {
   override def truncate(): Future[Unit] =
     entryTable.truncate.future().unit
 
+
+  def add(cons: ConsistencyLevel)(key: K, value: V): Future[Unit] = {
+    entryTable.insert()
+        .consistencyLevel_=(cons)
+        .value(_.ekey, key)
+        .value(_.evalue, value)
+        .future()
+        .instrument()
+        .unit
+  }
+
+  def contains(cons: ConsistencyLevel)(key: K, value: V): Future[Inconsistent[Boolean]] = {
+    entryTable.select(_.evalue)
+        .consistencyLevel_=(cons)
+        .where(_.ekey eqs key)
+        .and(_.evalue eqs value)
+        .one()
+        .instrument()
+        .map(o => Inconsistent(o.isDefined))
+  }
+
   def size(cons: ConsistencyLevel)(key: UUID): Future[Inconsistent[Int]] = {
     entryTable.select.count()
         .consistencyLevel_=(cons)
@@ -49,11 +100,6 @@ trait SetBase extends BaseSettings with Set with TableGenerator with SizeImpl {
         .instrument()
   }
 
-}
-
-trait SizeImpl {
-  type SizeType
-  def size(key: UUID): Future[SizeType]
 }
 
 trait RushImpl { this: BaseSettings =>
@@ -85,17 +131,28 @@ trait RushImpl { this: BaseSettings =>
   }
 }
 
-trait RushedSize extends SizeImpl with RushImpl { base: SetBase =>
+trait RushedSize extends Op.Size with RushImpl { base: SetBase =>
   def sizeBound: FiniteDuration
 
   override type SizeType = Rushed[Int]
 
   override def size(key: UUID): Future[SizeType] =
-    rush(sizeBound){ c: ConsistencyLevel => base.size(key) }
+    rush(sizeBound){ c: ConsistencyLevel => base.size(c)(key) }
 
 }
 
-trait IntervalSize extends SizeImpl {
+trait RushedContains extends Op.Contains with RushImpl { base: SetBase =>
+  def containsBound: FiniteDuration
+
+  override type ContainsType = Rushed[Boolean]
+
+  override def contains(key: UUID, value: UUID): Future[ContainsType] =
+    rush(containsBound){ c: ConsistencyLevel => base.contains(c)(key, value) }
+
+}
+
+
+trait IntervalSize extends Op.Size {
   def sizeBound: Tolerance
 
   override type SizeType = Interval[Int]
@@ -105,13 +162,15 @@ trait IntervalSize extends SizeImpl {
 
 }
 
-trait Set { self: SizeImpl =>
-  class Handle(key: UUID) {
-    def size(): Future[SizeType] = self.size(key)
-  }
-  def apply(key: UUID) = new Handle(key)
+trait WeakAdd extends Op.Add { base: SetBase =>
+  override def add(key: UUID, value: UUID): Future[Unit] =
+    base.add(ConsistencyLevel.ONE)(key, value)
 }
 
+trait StrongAdd extends Op.Add { base: SetBase =>
+  override def add(key: UUID, value: UUID): Future[Unit] =
+    base.add(ConsistencyLevel.ALL)(key, value)
+}
 
 /** Dummy tests (don't run as part of default test suite) */
 class OwlDummy extends {
@@ -120,18 +179,19 @@ class OwlDummy extends {
 
   "Dummy" should "run" in {
 
-
-    val myset = new SetBase with RushedSize {
+    val myset = new SetBase with RushedSize with RushedContains with WeakAdd {
       val name = "myset"
       val sizeBound = 50 millis
+      val containsBound = 50 millis
     }
 
     val test = myset(0.id).size().futureValue
     println(s"${test.get} with ${test.consistency}")
 
-    val iset = new SetBase with IntervalSize {
+    val iset = new SetBase with IntervalSize with RushedContains with StrongAdd {
       val name = "myset"
       val sizeBound = Tolerance(0.01)
+      val containsBound = 50 millis
     }
 
     val v2 = iset(0.id).size().futureValue

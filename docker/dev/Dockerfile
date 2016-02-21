@@ -11,6 +11,8 @@ RUN echo deb https://dl.bintray.com/sbt/debian / > /etc/apt/sources.list.d/sbt.l
 
 RUN apt-get install -y openjdk-8-jdk scala sbt
 
+RUN apt-get install -y inetutils-ping
+
 # fix java certs & pre-install latest sbt version
 RUN update-ca-certificates -f && sbt version
 

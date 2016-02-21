@@ -6,6 +6,10 @@ import ipa.LoggerService.Log
 
 import owl.Util._
 
+class ReservationService extends thrift.ReservationService {
+
+}
+
 object ReservationService {
   def main(args: Array[String]): Unit = {
     val host = "localhost:14007"

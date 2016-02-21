@@ -5,6 +5,8 @@ import java.util.concurrent.{ArrayBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
 import nl.grons.metrics.scala.Timer
 
+import com.twitter.{util => tw}
+
 import scala.collection.generic.CanBuildFrom
 import scala.concurrent.duration.{Deadline, Duration}
 import scala.concurrent.{Await, ExecutionContext, Future}
@@ -26,6 +28,10 @@ object Util {
   implicit class FuturePlus[T](f: Future[T]) {
     def await(d: Duration = Duration.Inf): T = Await.result(f, d)
     def unit(implicit ec: ExecutionContext): Future[Unit] = f.map(_ => ())
+  }
+
+  implicit class TwFuturePlus[T](f: tw.Future[T]) {
+    def await(): T = tw.Await.result(f)
   }
 
   implicit class FutureSeqPlus[A, M[X] <: TraversableOnce[X]](v: M[Future[A]]) {

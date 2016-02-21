@@ -26,11 +26,13 @@ resolvers ++= Seq(
   "Twitter Repository"               at "http://maven.twttr.com"
 )
 
-
 libraryDependencies ++= {
+  val finagleV = "6.33.0"
   Seq(
-//    "com.twitter" %% "finagle-core" % "6.33.0",
-    "io.github.finagle" %% "finagle-serial-scodec" % "0.1.0-SNAPSHOT",
-    "org.apache.cassandra" % "cassandra-all" % "2.2.4"
+    "com.twitter" %% "finagle-core" % finagleV,
+    "org.apache.cassandra" % "cassandra-all" % "2.2.4",
+    "org.apache.thrift" % "libthrift" % "0.8.0",
+    "com.twitter" %% "scrooge-core" % "4.5.0",
+    "com.twitter" %% "finagle-thrift" % finagleV
   )
 }

@@ -11,7 +11,7 @@ scalacOptions ++= Seq(
   "-language:postfixOps"
 )
 
-lazy val reservations = project.in(file("reservations"))
+// lazy val reservations = project.in(file("reservations"))
 
 // allow packaging using docker
 enablePlugins(DockerPlugin)
@@ -70,18 +70,19 @@ resolvers ++= Seq(
 
 
 libraryDependencies ++= {
-
-  val phantomV = "1.17.7"
-
+  val phantomV = "1.21.5"
+  val finagleV = "6.33.0"
   Seq(
     "com.websudos"        %% "phantom-dsl"                % phantomV,
-    "com.websudos"        %% "phantom-testkit"            % phantomV,
     "com.websudos"        %% "phantom-connectors"         % phantomV,
     "org.scalatest"       %% "scalatest"                  % "2.2.4"     % "test",
     "com.typesafe"        %  "config"                     % "1.3.0",
     "org.apache.commons"  %  "commons-math3"              % "3.5",
     "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.6.3",
     "com.codahale.metrics"       % "metrics-json"         % "3.0.2",
-    "nl.grons"                  %% "metrics-scala"        % "3.5.2"
+    "nl.grons"                  %% "metrics-scala"        % "3.5.2",
+    "com.twitter" %% "finagle-core" % finagleV,
+    "com.twitter" %% "finagle-thrift" % finagleV,
+    "com.twitter" %% "scrooge-core" % "4.5.0"
   )
 }

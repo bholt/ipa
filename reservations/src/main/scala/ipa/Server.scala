@@ -4,9 +4,9 @@ import java.net.InetSocketAddress
 
 import com.twitter.finagle.Service
 import com.twitter.{util => tw}
-import io.github.finagle.serial.scodec.ScodecSerial
-import scodec.Codec
-import scodec.codecs
+//import io.github.finagle.serial.scodec.ScodecSerial
+//import scodec.Codec
+//import scodec.codecs
 
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContext, Future, Promise}
@@ -27,9 +27,9 @@ object GreetUser extends Service[User, Greeting] {
 
 object Server {
 
-  implicit val userCodec: Codec[User] =
-    codecs.variableSizeBits(codecs.uint24, codecs.utf8).as[User]
-  implicit val greetingCodec = userCodec.as[Greeting]
+//  implicit val userCodec: Codec[User] =
+//    codecs.variableSizeBits(codecs.uint24, codecs.utf8).as[User]
+//  implicit val greetingCodec = userCodec.as[Greeting]
 
   implicit def twitterToScalaTry[T](t: tw.Try[T]): Try[T] = t match {
     case tw.Return(r) => Success(r)
@@ -48,14 +48,12 @@ object Server {
   }
 
   def main(args: Array[String]) {
-    val protocol = ScodecSerial[User, Greeting]
-    val server = protocol.serve(new InetSocketAddress(12007), GreetUser)
-
-    val client = protocol.newService("localhost:12007")
-
-    client(User("Arthur"))
-        .map { greeting => println(greeting) }
-        .await()
+//    val protocol = ScodecSerial[User, Greeting]
+//    val server = protocol.serve(new InetSocketAddress(12007), GreetUser)
+//    val client = protocol.newService("localhost:12007")
+//    client(User("Arthur"))
+//        .map { greeting => println(greeting) }
+//        .await()
 
     println("done")
   }

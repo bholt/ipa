@@ -11,6 +11,8 @@ scalacOptions ++= Seq(
   "-language:postfixOps"
 )
 
+lazy val reservations = project.in(file("reservations"))
+
 // allow packaging using docker
 enablePlugins(DockerPlugin)
 enablePlugins(JavaAppPackaging)

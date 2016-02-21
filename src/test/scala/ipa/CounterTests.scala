@@ -20,14 +20,15 @@ class CounterTests extends {
 
   "Counter with WeakOps" should {
 
-    val s = new Counter with Counter.WeakOps { override val name = "cnt_weak" }
+    val s = new Counter("weak") with Counter.WeakOps
 
     "be created" in {
       s.create().await()
     }
 
     "read default value" in {
-      s(0.id).read().futureValue shouldBe 0
+      val r = s(0.id).read().futureValue
+      r.get shouldBe 0
     }
 
     "increment" in {
@@ -38,7 +39,8 @@ class CounterTests extends {
     }
 
     "read incremented value" in {
-      s(0.id).read().futureValue shouldBe 3
+      val r = s(0.id).read().futureValue
+      r.get shouldBe 3
     }
   }
 }

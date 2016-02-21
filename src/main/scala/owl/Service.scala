@@ -16,7 +16,8 @@ import com.websudos.phantom.builder.primitives.Primitive
 import com.websudos.phantom.column.DateTimeColumn
 import com.websudos.phantom.dsl.{StringColumn, UUIDColumn, _}
 import com.websudos.phantom.keys.PartitionKey
-import nl.grons.metrics.scala.{MetricBuilder, Timer, FutureMetrics, InstrumentedBuilder}
+import ipa.CommonImplicits
+import nl.grons.metrics.scala.{FutureMetrics, InstrumentedBuilder, MetricBuilder, Timer}
 import org.joda.time.DateTime
 
 import scala.collection.JavaConversions._
@@ -132,6 +133,8 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
   implicit val cassandraOpLatency = metrics.timer("cass_op_latency")
 
   implicit val ipa_metrics = new IPAMetrics(metrics)
+
+  implicit val imp = CommonImplicits()
 
   object metric {
 

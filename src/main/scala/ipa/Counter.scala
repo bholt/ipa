@@ -60,7 +60,7 @@ object Counter {
 
 }
 
-trait Counter extends DataType {
+class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType(imps) {
   self: Counter.Ops.Incr with Counter.Ops.Read =>
 
   case class Count(key: UUID, count: Long)

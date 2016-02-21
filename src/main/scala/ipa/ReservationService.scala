@@ -18,7 +18,7 @@ import scala.collection.JavaConversions._
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 
-class ReservationService(implicit val session: Session, implicit val space: KeySpace, val cassandraOpMetric: Timer, val ipa_metrics: IPAMetrics) extends th.ReservationService[tw.Future] {
+class ReservationService(implicit imps: CommonImplicits) extends th.ReservationService[tw.Future] {
 
   val tables = new mutable.HashMap[String, Counter with Counter.ErrorTolerance]
 
@@ -30,10 +30,8 @@ class ReservationService(implicit val session: Session, implicit val space: KeyS
 
   /** Initialize new Counter table. */
   override def createCounter(table: String, error: Double): tw.Future[Unit] = {
-    val counter = new Counter with Counter.ErrorTolerance {
-      def name = table
-      def tolerance = Tolerance(error)
-    }
+    val counter = new Counter(table)
+        with Counter.ErrorTolerance { override val tolerance = Tolerance(error) }
     tables += (table -> counter)
     counter.create().asTwitter
   }

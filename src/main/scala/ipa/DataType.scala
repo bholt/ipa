@@ -12,8 +12,15 @@ import scala.concurrent._
 import scala.concurrent.duration.FiniteDuration
 import scala.math.Ordering.Implicits._
 
-abstract class DataType(implicit val session: Session, val space: KeySpace, val cassandraOpMetric: Timer, val ipa_metrics: IPAMetrics) extends TableGenerator {
+case class CommonImplicits(implicit val session: Session, val space: KeySpace, val cassandraOpMetric: Timer, val ipa_metrics: IPAMetrics)
+
+abstract class DataType(imps: CommonImplicits) extends TableGenerator {
   def name: String
+
+  implicit val session = imps.session
+  implicit val space = imps.space
+  implicit val cassandraOpMetric = imps.cassandraOpMetric
+  implicit val ipa_metrics = imps.ipa_metrics
 }
 
 trait RushImpl { this: DataType =>

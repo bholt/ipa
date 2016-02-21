@@ -3,10 +3,11 @@ package owl
 import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 
-import com.datastax.driver.core.{HostDistance, PoolingOptions, Cluster, Session}
-import com.typesafe.config.{ConfigValueType, ConfigValue, ConfigRenderOptions, ConfigFactory}
+import com.datastax.driver.core.{Cluster, HostDistance, PoolingOptions, Session}
+import com.typesafe.config.{ConfigFactory, ConfigRenderOptions, ConfigValue, ConfigValueType}
 import com.websudos.phantom.connectors.{KeySpace, SessionProvider}
 import com.websudos.phantom.dsl.ConsistencyLevel
+import ipa.CommonImplicits
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable

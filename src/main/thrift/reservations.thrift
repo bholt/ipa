@@ -14,6 +14,32 @@ exception ReservationException {
 
 typedef string uuid
 
+union Primitive {
+  1: i64 int
+  2: double dbl
+  3: string str
+}
+
+struct Inconsistent {
+  1: Primitive value
+}
+
+struct Interval {
+  1: Primitive min
+  2: Primitive max
+}
+
+struct IntervalLong {
+  1: i64 min
+  2: i64 max
+}
+
+union Result {
+  1: Inconsistent inconsistent
+  2: Interval interval
+}
+
+
 service ReservationService {
   /**
    * Initialize new UuidSet
@@ -25,5 +51,5 @@ service ReservationService {
   void createCounter(1: string name, 2: double tolerance) throws (1: ReservationException e)
 
   void incr(1: string name, uuid key, i64 by) throws (1: ReservationException e)
-  i64 read(1: string name, uuid key) throws (1: ReservationException e)
+  IntervalLong readInterval(1: string name, uuid key) throws (1: ReservationException e)
 }

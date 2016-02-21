@@ -6,6 +6,8 @@ import org.scalatest._
 
 trait OwlSpec extends FlatSpec with Matchers with Inspectors with ScalaFutures
 
+trait OwlWordSpec extends WordSpec with Matchers with Inspectors with ScalaFutures
+
 trait OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll  {
 
   /** override Tweet equality check to handle the fact when we 'getTweet',

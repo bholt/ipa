@@ -18,7 +18,7 @@ class IPASetTests extends {
   def now() = Deadline.now
 
   val timeout = 2 seconds
-  implicit override val patienceConfig =
+  implicit override val patienceConfig: PatienceConfig =
     PatienceConfig(timeout = timeout, interval = 20 millis)
 
   println(s"create keyspace ${space.name} in beforeAll")

@@ -2,79 +2,95 @@ package ipa
 
 import java.util.UUID
 
-import com.twitter.finagle.Thrift
+import com.datastax.driver.core.{ConsistencyLevel => CLevel}
+import com.datastax.driver.core.Session
+import com.twitter.finagle.{ServiceFactory, Thrift}
+import com.twitter.util.Await
 import com.twitter.{util => tw}
-import ipa.Counter.ErrorTolerance
-import owl.Tolerance
+import com.websudos.phantom.connectors.KeySpace
+import ipa.{thrift => th}
+import nl.grons.metrics.scala.Timer
+import owl.{Connector, IPAMetrics, OwlService, Tolerance}
 import owl.Util._
 
 import scala.collection.mutable
+import scala.collection.JavaConversions._
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 
-class ReservationService extends thrift.ReservationService[Future] {
+class ReservationService(implicit val session: Session, implicit val space: KeySpace, val cassandraOpMetric: Timer, val ipa_metrics: IPAMetrics) extends th.ReservationService[tw.Future] {
 
-  val tables = new mutable.HashMap[String, Counter with ErrorTolerance]
+  val tables = new mutable.HashMap[String, Counter with Counter.ErrorTolerance]
 
   /**
     * Initialize new UuidSet
     * TODO: make generic version
     */
-  override def createUuidset(name: String, sizeTolerance: Double): Future[Unit] = ???
+  override def createUuidset(name: String, sizeTolerance: Double): tw.Future[Unit] = ???
 
   /** Initialize new Counter table. */
-  override def createCounter(table: String, error: Double): Future[Unit] = {
-    val counter = new Counter with ErrorTolerance {
+  override def createCounter(table: String, error: Double): tw.Future[Unit] = {
+    val counter = new Counter with Counter.ErrorTolerance {
       def name = table
       def tolerance = Tolerance(error)
     }
     tables += (table -> counter)
-    counter.create()
+    counter.create().asTwitter
   }
 
-  override def read(name: String, key: String): Future[Long] = {
+  override def readInterval(name: String, key: String): tw.Future[th.IntervalLong] = {
     val counter = tables(name)
-    // TODO: Figure out how to return Interval[T]
-    // - See if we can return a generic Inconsistent[T] and downcast on the client
-    // - Otherwise, create Interval thrift type to shadow the real one
-    counter(UUID.fromString(key)).read() map { _.get }
+    counter.read(CLevel.ONE)(key.toUUID) map { iv =>
+      // TODO: implement this for real rather than pretending
+      val raw = iv.get
+      val tol = counter.tolerance.error
+      val epsilon = (raw/tol).toLong
+      th.IntervalLong(raw - epsilon, raw + epsilon)
+    } asTwitter // TODO: use Twitter Future directly rather than converting
   }
 
-  override def incr(name: String, key: String, by: Long): Future[Unit] = ???
+  override def incr(name: String, key: String, by: Long): tw.Future[Unit] = {
+    val counter = tables(name)
+    counter.incr(CLevel.ONE)(key.toUUID, by).asTwitter
+  }
 }
 
-object ReservationService {
-  def main(args: Array[String]): Unit = {
-    val host = "localhost:14007"
-    val server = Thrift.serveIface(
-      host,
-      new thrift.LoggerService[tw.Future] {
+object ReservationService extends OwlService {
+  override implicit val space = KeySpace(Connector.config.keyspace)
 
-        def log(message: String, logLevel: Int): tw.Future[String] = {
-          println(s"[$logLevel] Server received: '$message'")
-          tw.Future.value(s"You've sent: ('$message', $logLevel)")
-        }
+  val host = "localhost:14007"
 
-        var counter = 0
+  def main(args: Array[String]) {
 
-        // getLogSize throws ReadExceptions every other request.
-        def getLogSize(): tw.Future[Int] = {
-          counter += 1
-          if (counter % 2 == 1) {
-            println(s"Server: getLogSize ReadException")
-            tw.Future.exception(new ReadException())
-          } else {
-            println(s"Server: getLogSize Success")
-            tw.Future.value(4)
-          }
-        }
+    createKeyspace()
 
-      }
+    val server = Thrift.serveIface(host, new ReservationService)
+
+    Await.result(server)
+//    val clientService = Thrift.newServiceIface[th..ServiceIface](host, "ipa")
+//
+//    val client = Thrift.newMethodIface(clientService)
+//    client.log("hello", 1) map { println(_) } await()
+
+  }
+}
+
+object ReservationClient extends OwlService {
+  override implicit val space = KeySpace(Connector.config.keyspace)
+
+  def main(args: Array[String]) {
+    val cass_hosts = cluster.getMetadata.getAllHosts
+    println(s"cassandra hosts: ${cass_hosts.mkString(",")}")
+
+    val client = Thrift.newMethodIface(
+      Thrift.newServiceIface[th.ReservationService.ServiceIface](ReservationService.host, "ipa")
     )
 
-    val clientService = Thrift.newServiceIface[LoggerService.ServiceIface](host, "ipa")
+    val tbl = "c"
+    client.createCounter(tbl, 0.05).await()
 
-    val client = Thrift.newMethodIface(clientService)
-    client.log("hello", 1) map { println(_) } await()
+    client.incr(tbl, 0.id.toString, 1L).await()
+
+    sys.exit()
   }
 }

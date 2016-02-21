@@ -1,8 +1,8 @@
 package ipa
 
 import owl.Util._
-
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
+import com.websudos.phantom.builder.query.ExecutableStatement
 import com.websudos.phantom.dsl._
 import nl.grons.metrics.scala.Timer
 import owl.Connector.config

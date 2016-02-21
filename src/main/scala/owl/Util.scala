@@ -4,14 +4,13 @@ import java.util.UUID
 import java.util.concurrent.{ArrayBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
 import nl.grons.metrics.scala.Timer
-
 import com.twitter.{util => tw}
 
 import scala.collection.generic.CanBuildFrom
 import scala.concurrent.duration.{Deadline, Duration}
-import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.{Await, ExecutionContext, Future, Promise}
 import scala.language.higherKinds
-import scala.util.Random
+import scala.util.{Failure, Random, Success, Try}
 
 object Util {
 
@@ -34,6 +33,36 @@ object Util {
     def await(): T = tw.Await.result(f)
   }
 
+  implicit class ScalaToTwitterTry[T](t: Try[T]) {
+    def asTwitter: tw.Try[T] = t match {
+      case Success(r) => tw.Return(r)
+      case Failure(ex) => tw.Throw(ex)
+    }
+  }
+
+  implicit class TwitterToScalaTry[T](t: tw.Try[T]) {
+    def asScala: Try[T] = t match {
+      case tw.Return(r) => Success(r)
+      case tw.Throw(ex) => Failure(ex)
+    }
+  }
+
+  implicit class ScalaToTwitterFuture[T](f: Future[T])(implicit ec: ExecutionContext) {
+    def asTwitter: tw.Future[T] = {
+      val promise = tw.Promise[T]()
+      f.onComplete(t => promise update t.asTwitter)
+      promise
+    }
+  }
+
+  implicit class TwitterToScalaFuture[T](f: tw.Future[T]) {
+    def asScala: Future[T] = {
+      val promise = Promise[T]()
+      f.respond(t => promise complete t.asScala)
+      promise.future
+    }
+  }
+
   implicit class FutureSeqPlus[A, M[X] <: TraversableOnce[X]](v: M[Future[A]]) {
     /**
       * Bundle up a bunch of futures into a single future using `Future.sequence`
@@ -53,6 +82,10 @@ object Util {
 
   implicit class DeadlinePlus(d: Deadline) {
     def elapsed = -d.timeLeft
+  }
+
+  implicit class StringPlus(s: String) {
+    def toUUID = UUID.fromString(s)
   }
 
   /** from scala.concurrent.impl.ExecutionContextImpl */

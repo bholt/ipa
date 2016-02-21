@@ -90,7 +90,7 @@ trait Counter extends DataType {
     tbl.update()
         .consistencyLevel_=(c)
         .where(_.ekey eqs key)
-        .modify(_.ecount += 1)
+        .modify(_.ecount += by)
         .future()
         .instrument()
         .unit

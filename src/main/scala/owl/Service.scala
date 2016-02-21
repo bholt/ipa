@@ -27,7 +27,6 @@ import owl.Util._
 
 import scala.language.postfixOps
 
-//////////////////
 // User
 case class User(
     id: UUID = UUIDs.random(),
@@ -50,7 +49,6 @@ class Users extends CassandraTable[Users, User] {
   override def fromRow(r: Row) = User(id(r), username(r), name(r), created(r))
 }
 
-//////////////////
 // Followers
 case class Follower(user: UUID, follower: UUID)
 case class Following(user: UUID, followee: UUID)
@@ -69,8 +67,6 @@ class Followees extends CassandraTable[Followees, Following] {
   override def fromRow(r: Row) = Following(user(r), following(r))
 }
 
-
-//////////////////
 // Tweets
 case class Tweet(
   id: UUID = UUIDs.timeBased(),

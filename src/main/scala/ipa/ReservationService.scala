@@ -1,13 +1,46 @@
 package ipa
 
+import java.util.UUID
+
 import com.twitter.finagle.Thrift
 import com.twitter.{util => tw}
-import ipa.LoggerService.Log
-
+import ipa.Counter.ErrorTolerance
+import owl.Tolerance
 import owl.Util._
 
-class ReservationService extends thrift.ReservationService {
+import scala.collection.mutable
+import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
 
+class ReservationService extends thrift.ReservationService[Future] {
+
+  val tables = new mutable.HashMap[String, Counter with ErrorTolerance]
+
+  /**
+    * Initialize new UuidSet
+    * TODO: make generic version
+    */
+  override def createUuidset(name: String, sizeTolerance: Double): Future[Unit] = ???
+
+  /** Initialize new Counter table. */
+  override def createCounter(table: String, error: Double): Future[Unit] = {
+    val counter = new Counter with ErrorTolerance {
+      def name = table
+      def tolerance = Tolerance(error)
+    }
+    tables += (table -> counter)
+    counter.create()
+  }
+
+  override def read(name: String, key: String): Future[Long] = {
+    val counter = tables(name)
+    // TODO: Figure out how to return Interval[T]
+    // - See if we can return a generic Inconsistent[T] and downcast on the client
+    // - Otherwise, create Interval thrift type to shadow the real one
+    counter(UUID.fromString(key)).read() map { _.get }
+  }
+
+  override def incr(name: String, key: String, by: Long): Future[Unit] = ???
 }
 
 object ReservationService {
@@ -15,7 +48,7 @@ object ReservationService {
     val host = "localhost:14007"
     val server = Thrift.serveIface(
       host,
-      new LoggerService[tw.Future] {
+      new thrift.LoggerService[tw.Future] {
 
         def log(message: String, logLevel: Int): tw.Future[String] = {
           println(s"[$logLevel] Server received: '$message'")
@@ -42,6 +75,6 @@ object ReservationService {
     val clientService = Thrift.newServiceIface[LoggerService.ServiceIface](host, "ipa")
 
     val client = Thrift.newMethodIface(clientService)
-    client.log("hello", 1)
+    client.log("hello", 1) map { println(_) } await()
   }
 }

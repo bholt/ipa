@@ -65,9 +65,8 @@ resolvers ++= Seq(
   "Sonatype snapshots"               at "https://oss.sonatype.org/content/repositories/snapshots",
   "Sonatype staging"                 at "http://oss.sonatype.org/content/repositories/staging",
   "Java.net Maven2 Repository"       at "http://download.java.net/maven/2/",
-  "Twitter Repository"               at "https://maven.twttr.com"
+  "Twitter Repository"               at "http://maven.twttr.com"
 )
-
 
 libraryDependencies ++= {
   val phantomV = "1.21.5"

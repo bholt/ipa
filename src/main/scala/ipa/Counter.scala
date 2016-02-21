@@ -60,7 +60,7 @@ object Counter {
 
 }
 
-class Counter(val name: String)(override implicit val session: Session, override val space: KeySpace, override val cassandraOpMetric: Timer, override val ipa_metrics: IPAMetrics) extends DataType {
+trait Counter extends DataType {
   self: Counter.Ops.Incr with Counter.Ops.Read =>
 
   case class Count(key: UUID, count: Long)

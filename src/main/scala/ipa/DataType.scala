@@ -13,7 +13,7 @@ import scala.concurrent.duration.FiniteDuration
 import scala.math.Ordering.Implicits._
 
 abstract class DataType(implicit val session: Session, val space: KeySpace, val cassandraOpMetric: Timer, val ipa_metrics: IPAMetrics) extends TableGenerator {
-
+  def name: String
 }
 
 trait RushImpl { this: DataType =>

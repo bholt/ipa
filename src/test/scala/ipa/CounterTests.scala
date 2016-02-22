@@ -43,4 +43,30 @@ class CounterTests extends {
       r.get shouldBe 3
     }
   }
+
+  "Counter with StrongOps" should {
+
+    val s = new Counter("strong") with Counter.StrongOps
+
+    "be created" in {
+      s.create().await()
+    }
+
+    "read default value" in {
+      val r = s(0.id).read().futureValue
+      r shouldBe 0
+    }
+
+    "increment" in {
+      Seq(
+        s(0.id).incr(1),
+        s(0.id).incr(2)
+      ).bundle.await(timeout)
+    }
+
+    "read incremented value" in {
+      val r = s(0.id).read().futureValue
+      r shouldBe 3
+    }
+  }
 }

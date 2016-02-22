@@ -36,6 +36,13 @@ object Counter {
     override def read(key: UUID) = base.read(CLevel.ONE)(key)
   }
 
+  trait StrongOps extends Ops.Incr with Ops.Read { base: Counter =>
+    override def incr(key: UUID, by: Long) = base.incr(CLevel.ALL)(key, by)
+
+    type ReadType = Long
+    override def read(key: UUID) = base.read(CLevel.ALL)(key).map(_.get)
+  }
+
   trait LatencyBound extends Ops.Incr with Ops.Read with RushImpl {
     base: Counter =>
 

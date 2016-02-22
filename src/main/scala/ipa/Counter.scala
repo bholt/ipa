@@ -95,9 +95,9 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
 
   def incr(c: CLevel)(key: UUID, by: Long): Future[Unit] = {
     tbl.update()
-        .consistencyLevel_=(c)
         .where(_.ekey eqs key)
         .modify(_.ecount += by)
+        .consistencyLevel_=(c)
         .future()
         .instrument()
         .unit
@@ -105,8 +105,8 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
 
   def read(c: CLevel)(key: UUID): Future[Inconsistent[Long]] = {
     tbl.select(_.ecount)
-        .consistencyLevel_=(c)
         .where(_.ekey eqs key)
+        .consistencyLevel_=(c)
         .one()
         .map(o => Inconsistent(o.getOrElse(0L)))
         .instrument()

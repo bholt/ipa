@@ -66,9 +66,9 @@ class IPASetImplCollection[K, V](val name: String, val consistency: ConsistencyL
 
   override def contains(key: K, value: V): Future[Boolean] = {
     entryTable.select.count()
-        .consistencyLevel_=(consistency)
         .where(_.ekey eqs key)
         .and(_.evalue contains value)
+        .consistencyLevel_=(consistency)
         .one()
         .instrument()
         .map { ctOpt => ctOpt.exists(_ > 0) }
@@ -76,9 +76,9 @@ class IPASetImplCollection[K, V](val name: String, val consistency: ConsistencyL
 
   override def add(key: K, value: V): Future[Unit] = {
     entryTable.update()
-        .consistencyLevel_=(consistency)
         .where(_.ekey eqs key)
         .modify(_.evalue.add(value))
+        .consistencyLevel_=(consistency)
         .future()
         .instrument()
         .unit
@@ -86,9 +86,9 @@ class IPASetImplCollection[K, V](val name: String, val consistency: ConsistencyL
 
   override def remove(key: K, value: V): Future[Unit] = {
     entryTable.update()
-        .consistencyLevel_=(consistency)
         .where(_.ekey eqs key)
         .modify(_.evalue.remove(value))
+        .consistencyLevel_=(consistency)
         .future()
         .instrument()
         .unit
@@ -96,8 +96,8 @@ class IPASetImplCollection[K, V](val name: String, val consistency: ConsistencyL
 
   override def size(key: K): Future[Int] = {
     entryTable.select(_.evalue)
-        .consistencyLevel_=(consistency)
         .where(_.ekey eqs key)
+        .consistencyLevel_=(consistency)
         .one()
         .instrument()
         .map { _.map(set => set.size).getOrElse(0) }
@@ -105,8 +105,8 @@ class IPASetImplCollection[K, V](val name: String, val consistency: ConsistencyL
 
   def get(key: K): Future[Set[V]] = {
     entryTable.select(_.evalue)
-        .consistencyLevel_=(consistency)
         .where(_.ekey eqs key)
+        .consistencyLevel_=(consistency)
         .one()
         .map(_.getOrElse(Set[V]()))
   }
@@ -137,9 +137,9 @@ class IPASetImplPlain[K, V](val name: String, val consistency: ConsistencyLevel)
 
   override def contains(key: K, value: V): Future[Boolean] = {
     entryTable.select(_.evalue)
-        .consistencyLevel_=(consistency)
         .where(_.ekey eqs key)
         .and(_.evalue eqs value)
+        .consistencyLevel_=(consistency)
         .one()
         .instrument()
         .map(_.isDefined)
@@ -147,8 +147,8 @@ class IPASetImplPlain[K, V](val name: String, val consistency: ConsistencyLevel)
 
   def get(key: K, limit: Int = 0): Future[Iterator[V]] = {
     val q = entryTable.select
-        .consistencyLevel_=(consistency)
         .where(_.ekey eqs key)
+        .consistencyLevel_=(consistency)
 
     val qlim = if (limit > 0) q.limit(limit) else q
 
@@ -161,9 +161,9 @@ class IPASetImplPlain[K, V](val name: String, val consistency: ConsistencyLevel)
 
   override def add(key: K, value: V): Future[Unit] = {
     entryTable.insert()
-        .consistencyLevel_=(consistency)
         .value(_.ekey, key)
         .value(_.evalue, value)
+        .consistencyLevel_=(consistency)
         .future()
         .instrument()
         .unit
@@ -171,9 +171,9 @@ class IPASetImplPlain[K, V](val name: String, val consistency: ConsistencyLevel)
 
   override def remove(key: K, value: V): Future[Unit] = {
     entryTable.delete()
-        .consistencyLevel_=(consistency)
         .where(_.ekey eqs key)
         .and(_.evalue eqs value)
+        .consistencyLevel_=(consistency)
         .future()
         .instrument()
         .unit
@@ -181,8 +181,8 @@ class IPASetImplPlain[K, V](val name: String, val consistency: ConsistencyLevel)
 
   override def size(key: K): Future[Int] = {
     entryTable.select.count()
-        .consistencyLevel_=(consistency)
         .where(_.ekey eqs key)
+        .consistencyLevel_=(consistency)
         .one()
         .map(_.getOrElse(0l).toInt)
         .instrument()
@@ -226,9 +226,9 @@ class IPASetImplWithCounter[K, V](val name: String, val consistency: Consistency
 
   override def contains(key: K, value: V): Future[Boolean] = {
     entryTable.select(_.evalue)
-        .consistencyLevel_=(consistency)
         .where(_.ekey eqs key)
         .and(_.evalue eqs value)
+        .consistencyLevel_=(consistency)
         .one()
         .instrument()
         .map(_.isDefined)
@@ -236,8 +236,8 @@ class IPASetImplWithCounter[K, V](val name: String, val consistency: Consistency
 
   def get(key: K, limit: Int = 0): Future[Iterator[V]] = {
     val q = entryTable.select
-        .consistencyLevel_=(consistency)
         .where(_.ekey eqs key)
+        .consistencyLevel_=(consistency)
 
     val qlim = if (limit > 0) q.limit(limit) else q
 
@@ -255,15 +255,15 @@ class IPASetImplWithCounter[K, V](val name: String, val consistency: Consistency
       else {
         for {
           _ <- countTable.update()
-              .consistencyLevel_=(consistency)
               .where(_.ekey eqs key)
               .modify(_.ecount += 1)
+              .consistencyLevel_=(consistency)
               .future()
               .instrument()
           _ <- entryTable.insert()
-              .consistencyLevel_=(consistency)
               .value(_.ekey, key)
               .value(_.evalue, value)
+              .consistencyLevel_=(consistency)
               .future()
               .instrument()
         } yield ()
@@ -276,16 +276,16 @@ class IPASetImplWithCounter[K, V](val name: String, val consistency: Consistency
       for {
         removed <- this.contains(key, value)
         _ <- entryTable.delete()
-            .consistencyLevel_=(consistency)
             .where(_.ekey eqs key)
             .and(_.evalue eqs value)
+            .consistencyLevel_=(consistency)
             .future()
             .instrument()
         if removed
         _ <- countTable.update()
-            .consistencyLevel_=(consistency)
             .where(_.ekey eqs key)
             .modify(_.ecount -= 1)
+            .consistencyLevel_=(consistency)
             .future()
             .instrument()
       } yield ()
@@ -296,8 +296,8 @@ class IPASetImplWithCounter[K, V](val name: String, val consistency: Consistency
 
   def size(key: K): Future[Int] = {
     countTable.select(_.ecount)
-        .consistencyLevel_=(consistency)
         .where(_.ekey eqs key)
+        .consistencyLevel_=(consistency)
         .one()
         .map(o => o.getOrElse(0l).toInt)
         .instrument()

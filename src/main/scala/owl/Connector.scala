@@ -35,6 +35,10 @@ object Connector {
 
     def consistency = consistencyFromString(c.getString("ipa.consistency"))
 
+    object reservations {
+      val port = c.getInt("ipa.reservations.port")
+    }
+
     object rawmix {
       val nsets = c.getInt("ipa.rawmix.nsets")
       val mix = c.getObject("ipa.rawmix.mix").toMap.map {

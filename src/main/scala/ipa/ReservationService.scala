@@ -1,21 +1,17 @@
 package ipa
 
-import java.util.UUID
-
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
-import com.datastax.driver.core.Session
-import com.twitter.finagle.{ServiceFactory, Thrift}
+import com.twitter.finagle.Thrift
+import com.twitter.finagle.loadbalancer.Balancers
 import com.twitter.util.Await
 import com.twitter.{util => tw}
 import com.websudos.phantom.connectors.KeySpace
 import ipa.{thrift => th}
-import nl.grons.metrics.scala.Timer
-import owl.{Connector, IPAMetrics, OwlService, Tolerance}
 import owl.Util._
+import owl.{Connector, OwlService, Tolerance}
 
-import scala.collection.mutable
 import scala.collection.JavaConversions._
-import scala.concurrent.Future
+import scala.collection.mutable
 import scala.concurrent.ExecutionContext.Implicits.global
 
 class ReservationService(implicit imps: CommonImplicits) extends th.ReservationService[tw.Future] {
@@ -53,13 +49,14 @@ class ReservationService(implicit imps: CommonImplicits) extends th.ReservationS
   }
 }
 
-object ReservationService extends OwlService {
+object ReservationService extends {
   override implicit val space = KeySpace(Connector.config.keyspace)
+} with OwlService {
 
   val host = "localhost:14007"
 
   def main(args: Array[String]) {
-
+    if (config.do_reset) dropKeyspace()
     createKeyspace()
 
     val server = Thrift.serveIface(host, new ReservationService)
@@ -73,22 +70,32 @@ object ReservationService extends OwlService {
   }
 }
 
-object ReservationClient extends OwlService {
+object ReservationClient extends {
   override implicit val space = KeySpace(Connector.config.keyspace)
+} with OwlService {
 
   def main(args: Array[String]) {
-    val cass_hosts = cluster.getMetadata.getAllHosts
-    println(s"cassandra hosts: ${cass_hosts.mkString(",")}")
+    val cass_hosts = cluster.getMetadata.getAllHosts map { _.getAddress.getHostAddress }
+    println(s"cassandra hosts: ${cass_hosts.mkString(", ")}")
 
-    val client = Thrift.newMethodIface(
-      Thrift.newServiceIface[th.ReservationService.ServiceIface](ReservationService.host, "ipa")
-    )
+    val port = config.reservations.port
+    val hosts = cass_hosts.map(h => s"$h:$port").mkString(",")
+
+    val service = Thrift.client
+        .withSessionPool.maxSize(4)
+        .withLoadBalancer(Balancers.aperture())
+        .newServiceIface[th.ReservationService.ServiceIface](hosts, "ipa")
+
+    val client = Thrift.newMethodIface(service)
 
     val tbl = "c"
+    println(s"create counter")
     client.createCounter(tbl, 0.05).await()
 
+    println(s"incr counter")
     client.incr(tbl, 0.id.toString, 1L).await()
 
+    println(s"done")
     sys.exit()
   }
 }

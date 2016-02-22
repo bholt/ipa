@@ -69,4 +69,35 @@ class CounterTests extends {
       r shouldBe 3
     }
   }
+
+  "Counter with LatencyBound" should {
+
+    val s = new Counter("latencybound")
+        with Counter.LatencyBound { override val bound = 50 millis }
+
+    "be created" in {
+      s.create().await()
+    }
+
+    "read default value" in {
+      val r = s(0.id).read().futureValue
+      r.get shouldBe 0
+      println(s"read with ${r.consistency}")
+    }
+
+    "increment" in {
+      Seq(
+        s(0.id).incr(1),
+        s(0.id).incr(2)
+      ).bundle.await(timeout)
+    }
+
+    "read incremented value" in {
+      val r = s(0.id).read().futureValue
+      r.get shouldBe 3
+      println(s"read with ${r.consistency}")
+    }
+
+  }
+
 }

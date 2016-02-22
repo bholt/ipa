@@ -7,7 +7,7 @@ FROM cassandra:3.3
 MAINTAINER Brandon Holt <holt.bg@gmail.com>
 
 # Manually download and install latest scala and sbt.
-RUN apt-get remove -y scala-library scala
+RUN apt-get remove -y scala-library scala; \
     apt-get update && \
     apt-get install -y inetutils-ping wget && \
     wget http://www.scala-lang.org/files/archive/scala-2.11.6.deb && \

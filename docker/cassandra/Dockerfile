@@ -6,15 +6,14 @@
 FROM cassandra:3.3
 MAINTAINER Brandon Holt <holt.bg@gmail.com>
 
-# Add source for latest sbt to apt
-RUN apt-get update && \
-    apt-get install -y apt-transport-https && \
-    echo deb https://dl.bintray.com/sbt/debian / > /etc/apt/sources.list.d/sbt.list && \
-    apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 642AC823 && \
-    apt-get update
-
-# Install latest scala & sbt
-RUN apt-get install -y scala sbt inetutils-ping
+# Manually download and install latest scala and sbt.
+RUN apt-get remove -y scala-library scala
+    apt-get update && \
+    apt-get install -y inetutils-ping wget && \
+    wget http://www.scala-lang.org/files/archive/scala-2.11.6.deb && \
+    dpkg -i scala-2.11.6.deb && \
+    wget http://dl.bintray.com/sbt/debian/sbt-0.13.9.deb && \
+    dpkg -i sbt-0.13.9.deb
 
 # Fix java certs & pre-install latest sbt version
 RUN update-ca-certificates -f && sbt version

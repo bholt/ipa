@@ -4,15 +4,20 @@ import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 
 import com.datastax.driver.core.{Cluster, HostDistance, PoolingOptions, Session}
+import com.twitter.finagle.Thrift
+import com.twitter.finagle.loadbalancer.Balancers
 import com.typesafe.config.{ConfigFactory, ConfigRenderOptions, ConfigValue, ConfigValueType}
 import com.websudos.phantom.connectors.{KeySpace, SessionProvider}
 import com.websudos.phantom.dsl.ConsistencyLevel
 import ipa.CommonImplicits
+import ipa.thrift.ReservationService
+import ipa.{thrift => th}
+import com.twitter.{util => tw}
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable
 import scala.concurrent.duration._
-import scala.concurrent.blocking
+import scala.concurrent.{Future, blocking}
 import scala.util.Try
 
 object Connector {
@@ -112,6 +117,21 @@ trait Connector extends SessionProvider {
   override implicit lazy val session = {
     println(">>> initializing session")
     cluster.newSession().init()
+  }
+
+  implicit lazy val reservations: ReservationService[tw.Future] = {
+    val cass_hosts = session.getCluster.getMetadata.getAllHosts.map(_.getAddress.getHostAddress)
+    println(s"cassandra hosts: ${cass_hosts.mkString(", ")}")
+
+    val port = config.reservations.port
+    val hosts = cass_hosts.map(h => s"$h:$port").mkString(",")
+
+    val service = Thrift.client
+        .withSessionPool.maxSize(4)
+        .withLoadBalancer(Balancers.aperture())
+        .newServiceIface[th.ReservationService.ServiceIface](hosts, "ipa")
+
+    Thrift.newMethodIface(service)
   }
 
 //  {

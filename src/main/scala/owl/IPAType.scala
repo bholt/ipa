@@ -2,7 +2,13 @@ package owl
 
 import com.datastax.driver.core.ConsistencyLevel
 import org.joda.time.DateTime
+
 import scala.math.Ordering.Implicits._
+import ipa.thrift
+import com.twitter.{util => tw}
+
+import scala.concurrent.{ExecutionContext, Future}
+import scala.language.implicitConversions
 
 /** Define ordering over consistency levels */
 trait ConsistencyOrder extends Ordering[ConsistencyLevel] {
@@ -58,4 +64,13 @@ class Interval[T](val min: T, val max: T)(implicit ev: Numeric[T]) extends Incon
 }
 object Interval {
   def apply[T](min: T, max: T)(implicit ev: Numeric[T]) = new Interval[T](min, max)
+}
+
+object Conversions {
+  implicit def thriftIntervalLongToNative(v: thrift.IntervalLong): Interval[Long] =
+    Interval[Long](v.min, v.max)
+
+  implicit def thriftTwFutureToNative[A, B](f: tw.Future[A])(implicit ev: A => B): tw.Future[B] = f map { v => v: B }
+
+  implicit def thriftFutureToNative[A, B](f: Future[A])(implicit ev: A => B, ec: ExecutionContext): Future[B] = f map { v => v: B }
 }

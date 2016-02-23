@@ -3,8 +3,11 @@ package ipa
 import java.util.UUID
 
 import com.datastax.driver.core.{Row, ConsistencyLevel => CLevel}
+import com.twitter.{util => tw}
+import com.websudos.phantom.builder.query.{ExecutableQuery, ExecutableStatement, SelectQuery}
 import com.websudos.phantom.dsl._
 import com.websudos.phantom.keys.PartitionKey
+import ipa.thrift.IntervalLong
 import nl.grons.metrics.scala.Timer
 import owl._
 
@@ -12,6 +15,7 @@ import scala.concurrent.Future
 import owl.Util._
 
 import scala.concurrent.duration.FiniteDuration
+import owl.Conversions._
 
 object Counter {
 
@@ -30,17 +34,16 @@ object Counter {
   }
 
   trait WeakOps extends Ops.Incr with Ops.Read { base: Counter =>
-    override def incr(key: UUID, by: Long) = base.incr(CLevel.ONE)(key, by)
-
     type ReadType = Inconsistent[Long]
-    override def read(key: UUID) = base.read(CLevel.ONE)(key)
+    override def read(key: UUID) =
+      base.read(CLevel.ONE)(key).map(Inconsistent(_))
+    override def incr(key: UUID, by: Long) = base.incr(CLevel.ONE)(key, by)
   }
 
   trait StrongOps extends Ops.Incr with Ops.Read { base: Counter =>
-    override def incr(key: UUID, by: Long) = base.incr(CLevel.ALL)(key, by)
-
     type ReadType = Long
-    override def read(key: UUID) = base.read(CLevel.ALL)(key).map(_.get)
+    override def read(key: UUID) = base.read(CLevel.ALL)(key)
+    override def incr(key: UUID, by: Long) = base.incr(CLevel.ALL)(key, by)
   }
 
   trait LatencyBound extends Ops.Incr with Ops.Read with RushImpl {
@@ -58,11 +61,27 @@ object Counter {
   }
 
   trait ErrorTolerance extends Ops.Incr with Ops.Read {
+    base: Counter =>
+
     def tolerance: Tolerance
 
+    override def create(): Future[Unit] = {
+      base.create() flatMap { _ =>
+        reservations.createCounter(name, space.name, tolerance.error).asScala
+      }
+    }
+
     type ReadType = Interval[Long]
-    override def incr(key: UUID, by: Long) = ???
-    override def read(key: UUID) = ???
+
+    override def incr(key: UUID, by: Long): Future[Unit] = {
+      reservations.incr(name, key.toString, by).asScala
+    }
+
+    override def read(key: UUID): Future[Interval[Long]] = {
+      reservations.readInterval(name, key.toString)
+          .map(v => v: Interval[Long])
+          .asScala
+    }
   }
 
 }
@@ -93,23 +112,29 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
   def apply(key: UUID) = new Handle(key)
 
 
-  def incr(c: CLevel)(key: UUID, by: Long): Future[Unit] = {
+  def incrStmt(c: CLevel)(key: UUID, by: Long): ExecutableStatement = {
     tbl.update()
         .where(_.ekey eqs key)
         .modify(_.ecount += by)
         .consistencyLevel_=(c)
-        .future()
-        .instrument()
-        .unit
   }
 
-  def read(c: CLevel)(key: UUID): Future[Inconsistent[Long]] = {
+  def incr(c: CLevel)(key: UUID, by: Long) =
+    incrStmt(c)(key, by).future().instrument().unit
+
+  def incrTwitter(c: CLevel)(key: UUID, by: Long): tw.Future[Unit] =
+    incrStmt(c)(key, by).execute().instrument().unit
+
+  def readStmt(c: CLevel)(key: UUID) = {
     tbl.select(_.ecount)
         .where(_.ekey eqs key)
         .consistencyLevel_=(c)
-        .one()
-        .map(o => Inconsistent(o.getOrElse(0L)))
-        .instrument()
   }
+
+  def read(c: CLevel)(key: UUID) =
+    readStmt(c)(key).one().instrument().map(_.getOrElse(0L))
+
+  def readTwitter(c: CLevel)(key: UUID): tw.Future[Long] =
+    readStmt(c)(key).get().instrument().map(_.getOrElse(0L))
 
 }

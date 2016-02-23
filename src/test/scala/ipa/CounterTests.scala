@@ -2,7 +2,7 @@ package ipa
 
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
-import owl.{Connector, OwlService, OwlWordSpec}
+import owl.{Connector, OwlService, OwlWordSpec, Tolerance}
 import owl.Util._
 
 import scala.concurrent.duration._
@@ -96,5 +96,46 @@ class CounterTests extends {
     }
 
   }
+
+  "Counter with ErrorTolerance" should {
+
+    val error = 0.05
+    val large = 1000L
+    val large_eps = (large * error).toLong
+
+    val s = new Counter("latencybound")
+        with Counter.ErrorTolerance { override val tolerance = Tolerance(error) }
+
+    "be created" in { s.create().await() }
+    "be truncated" in { s.truncate().await() }
+
+    "read default value" in {
+      val r = s(0.id).read().futureValue
+      r.min shouldBe 0
+      r.max shouldBe 0
+    }
+
+    "increment" in {
+      Seq(
+        s(0.id).incr(1),
+        s(0.id).incr(2),
+        s(1.id).incr(large)
+      ).bundle.await(timeout)
+    }
+
+    "read small value" in {
+      val r = s(0.id).read().futureValue
+      r.min shouldBe 3
+      r.max shouldBe 3
+    }
+
+    "read large value" in {
+      val r = s(0.id).read().futureValue
+      r.min should be >= (large - large_eps)
+      r.max should be <= (large + large_eps)
+    }
+
+  }
+
 
 }

@@ -136,9 +136,9 @@ def reservations(args=None, opt=None):
         args = ' '.join(args)
 
     for c in containers('owl_cass'):
-        puts(colored.yellow("#{c}>> ") + "ipa.ReservationService #{args}")
-        swarm_exec(c).sh(c='pkill -f ipa.ReservationService', _ok_code=[0,143])
-        script = fmt('source ~/.bashrc; up; cd /src/owl; exec sbt "run-main ipa.ReservationService" #{args} >/opt/docker/service.log 2>&1')
+        puts(colored.yellow("#{c}>> ") + "ipa.ReservationServer #{args}")
+        swarm_exec(c).sh(c='pkill -f ipa.ReservationServer', _ok_code=[0,143])
+        script = fmt('source ~/.bashrc; up; cd /src/owl; exec sbt "run-main ipa.ReservationServer" #{args} >/opt/docker/service.log 2>&1')
         o = swarm("exec", "-d", c, "bash", "-c", script)
 
 

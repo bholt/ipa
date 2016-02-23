@@ -31,6 +31,11 @@ object Util {
 
   implicit class TwFuturePlus[T](f: tw.Future[T]) {
     def await(): T = tw.Await.result(f)
+
+    def instrument(timer: Timer = null)(implicit default: Timer): tw.Future[T] = {
+      val ctx = if (timer != null) timer.timerContext() else default.timerContext()
+      f.onSuccess(_ => ctx.stop()).onFailure(_ => ctx.stop())
+    }
   }
 
   implicit class ScalaToTwitterTry[T](t: Try[T]) {

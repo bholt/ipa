@@ -2,17 +2,18 @@ package ipa
 
 import owl.Util._
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
-import com.websudos.phantom.builder.query.ExecutableStatement
 import com.websudos.phantom.dsl._
 import nl.grons.metrics.scala.Timer
 import owl.Connector.config
 import owl.{IPAMetrics, Inconsistent, Rushed, TableGenerator}
+import com.twitter.{util => tw}
+import ipa.thrift.ReservationService
 
 import scala.concurrent._
 import scala.concurrent.duration.FiniteDuration
 import scala.math.Ordering.Implicits._
 
-case class CommonImplicits(implicit val session: Session, val space: KeySpace, val cassandraOpMetric: Timer, val ipa_metrics: IPAMetrics)
+case class CommonImplicits(implicit val session: Session, val space: KeySpace, val cassandraOpMetric: Timer, val ipa_metrics: IPAMetrics, val reservations: ReservationService[tw.Future])
 
 abstract class DataType(imps: CommonImplicits) extends TableGenerator {
   def name: String
@@ -21,15 +22,16 @@ abstract class DataType(imps: CommonImplicits) extends TableGenerator {
   implicit val space = imps.space
   implicit val cassandraOpMetric = imps.cassandraOpMetric
   implicit val ipa_metrics = imps.ipa_metrics
+  implicit val reservations = imps.reservations
 }
 
 trait RushImpl { this: DataType =>
-  def rush[T](latencyBound: FiniteDuration)(op: CLevel => Future[Inconsistent[T]]): Future[Rushed[T]] = {
+  def rush[T](latencyBound: FiniteDuration)(op: CLevel => Future[T]): Future[Rushed[T]] = {
     val deadline = latencyBound.fromNow
 
     val ops =
       Seq(ConsistencyLevel.ALL, ConsistencyLevel.ONE) map { c =>
-        op(c) map { r => Rushed(r.get, c) }
+        op(c) map { r => Rushed(r, c) }
       }
 
     ops.firstCompleted flatMap { r1 =>

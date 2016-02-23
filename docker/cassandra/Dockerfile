@@ -10,7 +10,7 @@ MAINTAINER Brandon Holt <holt.bg@gmail.com>
 RUN apt-get remove -y scala-library scala; \
     apt-get update && \
     apt-get install -y inetutils-ping wget && \
-    wget http://www.scala-lang.org/files/archive/scala-2.11.6.deb && \
+    wget http://www.scala-lang.org/files/archive/scala-2.11.7.deb && \
     dpkg -i scala-2.11.6.deb && \
     wget http://dl.bintray.com/sbt/debian/sbt-0.13.9.deb && \
     dpkg -i sbt-0.13.9.deb

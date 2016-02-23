@@ -25,11 +25,14 @@ mainClass in Compile := Some("owl.All") // set main for docker
 import com.typesafe.sbt.packager.docker._
 // dockerCommands += Cmd("ENV", "CASSANDRA_HOST", "cassandra")
 
+dockerBaseImage := "bholt/cassandra:2.2.4"
+
 // Allow overriding default command by rewriting dockerCommands.
 // make 'ENTRYPOINT' an (optional) CMD instead, remove (empty) CMD, & keep the rest
 dockerCommands := dockerCommands.value.flatMap {
   case ExecCmd("ENTRYPOINT", args @ _*) => Some(ExecCmd("CMD", args:_*))
   case ExecCmd("CMD", _*) => None
+  case Cmd("USER", _) => None
   case other => Some(other)
 }
 

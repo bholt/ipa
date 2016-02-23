@@ -14,11 +14,12 @@ services:
 #    cpu_shares: 6
 
   cass:
-    image: bholt/cassandra
+    image: bholt/owl
     command: cassandra -f
     environment:
       - "JVM_OPTS=-Dcassandra.consistent.rangemovement=false"
       - "CASSANDRA_SEEDS=owl_cass_1"
+      - "CASSANDRA_HOST=owl_cass_1"
 #      - "constraint:node==ibex"
     privileged: true
     networks:

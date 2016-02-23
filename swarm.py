@@ -4,6 +4,7 @@ import sys
 from sh import sudo, ssh, docker
 import time
 from util import *
+from os.path import expanduser as expand
 
 MASTER = 'ibex'
 AGENTS = ['platypus', 'sloth', 'rhinoceros']
@@ -99,16 +100,49 @@ def compose(args=None, opt=None):
 def swarm_exec(node):
     return swarm.bake("exec", "-i", node)
 
-
 owl_exec = swarm_exec("owl_owl_1")
 
 
-def cass_nodes():
+def containers(filter):
     ps = swarm.ps()
-    return [ l.split()[-1] for l in ps.split('\n') if 'owl_cass_' in l ]
+    return [ line.split()[-1] for line in ps.split('\n') if filter in line ]
 
 
-def containers(prefix='owl_'):
+def add_keys(args=None, opt=None):
+    if 'cass' in opt.containers:
+        cons = containers('owl_cass')
+    elif 'all' in opt.containers:
+        cons = containers('owl_')
+    else:
+        cons = opt.containers
+
+    for c in cons:
+        puts(colored.yellow("#{c}>> ") + "add keys")
+        ex = swarm_exec(c)
+        ex.sh(c='mkdir -p ~/.ssh')
+        ex.sh(c='cat > ~/.ssh/id_rsa.pub', _in=open(expand("~/.ssh/id_rsa.pub")))
+        ex.sh(c='cat > ~/.ssh/id_rsa; chmod go-r ~/.ssh/id_rsa', _in=open(expand("~/.ssh/id_rsa")))
+        ex.sh(c='cat >> ~/.ssh/config', _in=open(expand("~/.ssh/bistromath.config")))
+        ex.sh(c='cat >> ~/.bashrc', _in="up(){ pushd /src >/dev/null; rsync -a bistromath:/sync/ipa/owl . --exclude=target/ --exclude=.idea/; popd >/dev/null; };\n")
+
+def cass_exec(args=None, opt=None):
+    for node in containers('owl_cass'):
+        ex = swarm_exec(node)
+        puts(colored.yellow("#{node}>> ") + ' '.join(args))
+        swarm_exec(node)(*args)
+
+def reservations(args=None, opt=None):
+    if args is not None:
+        args = ' '.join(args)
+
+    for c in containers('owl_cass'):
+        puts(colored.yellow("#{c}>> ") + "ipa.ReservationService #{args}")
+        swarm_exec(c).sh(c='pkill -f ipa.ReservationService', _ok_code=[0,143])
+        script = fmt('source ~/.bashrc; up; cd /src/owl; exec sbt "run-main ipa.ReservationService" #{args} >/opt/docker/service.log 2>&1')
+        o = swarm("exec", "-d", c, "bash", "-c", script)
+
+
+def containers_str(prefix='owl_'):
     containers = [ l.split()[-1] for l in swarm.ps().split('\n') if '/owl_' in l ]
     cmap = {c: n for n, c in [c.split('/') for c in containers]}
     return yaml.safe_dump(cmap).strip()
@@ -134,6 +168,13 @@ if __name__ == '__main__':
     add_command('status', status)
     add_command('env', env)
     add_command('compose', compose)
+
+    cmd = add_command('add_keys', add_keys)
+    cmd.add_argument('containers', type=str,
+                      help='Names of containers to add keys to (or "all" or "cass").')
+
+    add_command('cass_exec', cass_exec)
+    add_command('reservations', reservations)
 
     opt, extra = parser.parse_known_args()
     if opt.command in commands:

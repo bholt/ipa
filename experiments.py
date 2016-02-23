@@ -238,7 +238,7 @@ class RawMix:
 def run_rawmix():
     nexp = 0
 
-    containers = swarm.containers()
+    containers = swarm.containers_str()
 
     mixes = {
         'no_size': RawMix(add=0.2, contains=0.8, size=0.0),

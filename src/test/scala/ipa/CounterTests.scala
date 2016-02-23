@@ -130,7 +130,7 @@ class CounterTests extends {
     }
 
     "read large value" in {
-      val r = s(0.id).read().futureValue
+      val r = s(1.id).read().futureValue
       r.min should be >= (large - large_eps)
       r.max should be <= (large + large_eps)
     }

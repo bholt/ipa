@@ -125,8 +125,9 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
   def incr(c: CLevel)(key: UUID, by: Long) =
     incrStmt(c)(key, by).future().instrument().unit
 
-  def incrTwitter(c: CLevel)(key: UUID, by: Long): tw.Future[Unit] =
+  def incrTwitter(c: CLevel)(key: UUID, by: Long): tw.Future[Unit] = {
     incrStmt(c)(key, by).execute().instrument().unit
+  }
 
   def readStmt(c: CLevel)(key: UUID) = {
     tbl.select(_.ecount)
@@ -137,7 +138,8 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
   def read(c: CLevel)(key: UUID) =
     readStmt(c)(key).one().instrument().map(_.getOrElse(0L))
 
-  def readTwitter(c: CLevel)(key: UUID): tw.Future[Long] =
+  def readTwitter(c: CLevel)(key: UUID): tw.Future[Long] = {
     readStmt(c)(key).get().instrument().map(_.getOrElse(0L))
+  }
 
 }

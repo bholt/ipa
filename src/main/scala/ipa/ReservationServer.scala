@@ -18,6 +18,7 @@ import scala.collection.mutable
 import scala.concurrent.ExecutionContext.Implicits.global
 
 class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationService[tw.Future] {
+  import imps._
 
   case class Entry(
       table: Counter with WeakOps,
@@ -36,6 +37,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   /** Initialize new Counter table. */
   override def createCounter(table: String, keyspace: String, error: Double): tw.Future[Unit] = {
     implicit val space = KeySpace(keyspace)
+    implicit val imps = CommonImplicits()
     val counter = new Counter(table) with WeakOps
     tables += (table -> Entry(counter, space, Tolerance(error)))
     tw.Future.Unit
@@ -43,12 +45,12 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
 
   override def readInterval(name: String, key: String): tw.Future[th.IntervalLong] = {
     val e = tables(name)
-
     e.table.readTwitter(CLevel.ONE)(key.toUUID) map { iv =>
       // TODO: implement this for real rather than pretending
       val raw = iv
       val tol = e.tolerance.error
-      val epsilon = (raw/tol).toLong
+      val epsilon = (raw * tol).toLong
+      println(s"raw: $raw, epsilon: $epsilon".cyan)
       th.IntervalLong(raw - epsilon, raw + epsilon)
     }
   }

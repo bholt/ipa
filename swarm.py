@@ -43,7 +43,7 @@ def on(host):
 
 def start(args=None, opt=None):
     # start Consul key/value store for service discovery
-    on(MASTER).sudo(fmt("sh -c 'rm -rf /tmp/consul; nohup /homes/sys/bholt/bin/consul agent -server -bootstrap -data-dir /tmp/consul -node=master -bind=#{CONSUL} -client #{CONSUL} >#{CONSUL_LOG} 2>&1 &'"))
+    on(MASTER).sudo(fmt("sh -c 'rm -rf /scratch/consul; nohup /homes/sys/bholt/bin/consul agent -server -bootstrap -data-dir /scratch/consul -node=master -bind=#{CONSUL} -client #{CONSUL} >#{CONSUL_LOG} 2>&1 &'"))
 
     time.sleep(4)
     
@@ -79,7 +79,7 @@ def stop(args=None, opt=None):
         
         on(host).sudo.pkill("-f", "[d]ocker.*tcp://", _ok_code=[0,1])
     
-    on(MASTER).pkill("consul", _ok_code=[0,1])
+    on(MASTER).sudo.pkill("consul", _ok_code=[0,1])
 
 
 def status(args=None, opt=None):

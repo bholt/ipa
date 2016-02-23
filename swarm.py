@@ -170,7 +170,7 @@ if __name__ == '__main__':
     add_command('compose', compose)
 
     cmd = add_command('add_keys', add_keys)
-    cmd.add_argument('containers', type=str,
+    cmd.add_argument('containers', type=str, nargs='+',
                       help='Names of containers to add keys to (or "all" or "cass").')
 
     add_command('cass_exec', cass_exec)

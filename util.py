@@ -30,8 +30,8 @@ def fmt(s, context=None):
     return re.compile(r"#{(.*?)}").sub(lambda m: str(eval(m.group(1), *context)), str(s))
 
 
-def puts(s):
-    clint.textui.puts(fmt(s, caller()))
+def puts(s, newline=True):
+    clint.textui.puts(fmt(s, caller()), newline)
 
 
 def puts_err(s):

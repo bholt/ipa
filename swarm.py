@@ -131,15 +131,29 @@ def cass_exec(args=None, opt=None):
         puts(colored.yellow("#{node}>> ") + ' '.join(args))
         swarm_exec(node)(*args)
 
+def reservation_server_ready(container):
+    return swarm_exec(container).sh(c="grep '\[ready\]' /opt/docker/service.log | wc -l").stdout.strip() == '1'
+
 def reservations(args=None, opt=None):
     if args is not None:
         args = ' '.join(args)
 
-    for c in containers('owl_cass'):
+    cons = containers('owl_cass')
+
+    for c in cons:
         puts(colored.yellow("#{c}>> ") + "ipa.ReservationServer #{args}")
         swarm_exec(c).sh(c='pkill -f ipa.ReservationServer', _ok_code=[0,143])
         script = fmt('source ~/.bashrc; up; cd /src/owl; exec sbt "run-main ipa.ReservationServer" #{args} >/opt/docker/service.log 2>&1')
         o = swarm("exec", "-d", c, "bash", "-c", script)
+
+    # wait for all reservations to be started
+    for c in cons:
+        puts(colored.yellow("#{c}>> "), newline=False)
+        while not reservation_server_ready(c):
+            time.sleep(0.5)
+            puts(".", newline=False)
+        puts("ready")
+
 
 
 def containers_str(prefix='owl_'):

@@ -73,6 +73,7 @@ object ReservationServer extends {
 
     val server = Thrift.serveIface(host, new ReservationServer)
 
+    println("[ready]")
     Await.result(server)
 //    val clientService = Thrift.newServiceIface[th..ServiceIface](host, "ipa")
 //

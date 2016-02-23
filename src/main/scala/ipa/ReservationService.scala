@@ -1,5 +1,7 @@
 package ipa
 
+import java.net.InetAddress
+
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
 import com.twitter.finagle.Thrift
 import com.twitter.finagle.loadbalancer.Balancers
@@ -53,7 +55,7 @@ object ReservationService extends {
   override implicit val space = KeySpace(Connector.config.keyspace)
 } with OwlService {
 
-  val host = "localhost:14007"
+  val host = s"${InetAddress.getLocalHost.getHostAddress}:${config.reservations.port}"
 
   def main(args: Array[String]) {
     if (config.do_reset) dropKeyspace()

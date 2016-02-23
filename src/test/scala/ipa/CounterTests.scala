@@ -22,9 +22,8 @@ class CounterTests extends {
 
     val s = new Counter("weak") with Counter.WeakOps
 
-    "be created" in {
-      s.create().await()
-    }
+    "be created" in { s.create().await() }
+    "be truncated" in { s.truncate().await() }
 
     "read default value" in {
       val r = s(0.id).read().futureValue
@@ -48,9 +47,8 @@ class CounterTests extends {
 
     val s = new Counter("strong") with Counter.StrongOps
 
-    "be created" in {
-      s.create().await()
-    }
+    "be created" in { s.create().await() }
+    "be truncated" in { s.truncate().await() }
 
     "read default value" in {
       val r = s(0.id).read().futureValue
@@ -75,9 +73,8 @@ class CounterTests extends {
     val s = new Counter("latencybound")
         with Counter.LatencyBound { override val bound = 50 millis }
 
-    "be created" in {
-      s.create().await()
-    }
+    "be created" in { s.create().await() }
+    "be truncated" in { s.truncate().await() }
 
     "read default value" in {
       val r = s(0.id).read().futureValue

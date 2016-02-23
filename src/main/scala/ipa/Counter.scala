@@ -66,9 +66,9 @@ object Counter {
     def tolerance: Tolerance
 
     override def create(): Future[Unit] = {
-      base.create() flatMap { _ =>
-        reservations.createCounter(name, space.name, tolerance.error).asScala
-      }
+      createTwitter() flatMap { _ =>
+        reservations.createCounter(name, space.name, tolerance.error)
+      } asScala
     }
 
     type ReadType = Interval[Long]
@@ -98,6 +98,9 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
   }
 
   val tbl = new CountTable
+
+  def createTwitter(): tw.Future[Unit] =
+    tbl.create.ifNotExists.execute().unit
 
   override def create(): Future[Unit] =
     tbl.create.ifNotExists.future().unit

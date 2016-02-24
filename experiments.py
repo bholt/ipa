@@ -176,7 +176,7 @@ def run(logfile, *args, **flags):
 
         # filter out extra finagle junk from stderr
         filtered = ''.join([ line for line in cmd.stderr.split('\n') if 'inagle' not in line ])
-        
+
         # flatten & clean up metrics a bit
         metrics = {
             re.sub(r"owl\.\w+\.", "", k): v
@@ -284,7 +284,7 @@ def run_rawmix(datatype):
             # only need to do one 'trial' to get all the counts if doing dry run
             continue
         for a in cartesian(
-            datatype = datatype,
+            datatype = [datatype],
             ipa_version               = [version],
             ipa_output_json           = ['true'],
 

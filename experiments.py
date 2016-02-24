@@ -174,10 +174,13 @@ def run(logfile, *args, **flags):
 
         puts("#{colored.black('>')} exit code: #{colored.red(cmd.exit_code)}")
 
+        # filter out extra finagle junk from stderr
+        filtered = ''.join([ line for line in cmd.stderr.split('\n') if 'inagle' not in line ])
+        
         # flatten & clean up metrics a bit
         metrics = {
             re.sub(r"owl\.\w+\.", "", k): v
-            for k, v in flatten_json(json.loads(cmd.stderr)).items()
+            for k, v in flatten_json(json.loads(filtered)).items()
         }
 
         flags.update(metrics)
@@ -270,6 +273,10 @@ def run_rawmix(datatype):
         }
     }
 
+    main_class = 'owl.RawMix'
+    if datatype == 'counter':
+        main_class = 'owl.RawMixCounter'
+
     for trial in range(1, opt.target+1):
         if not opt.dry:
             print '---------------------------------\n# starting trial', trial
@@ -306,7 +313,7 @@ def run_rawmix(datatype):
             if opt.dry:
                 continue
             if ct < trial:
-                run(log, *['-main', 'owl.RawMix'] , **a)
+                run(log, *['-main', main_class] , **a)
                 nexp += 1
     return nexp
 

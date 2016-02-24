@@ -81,9 +81,10 @@ class RawMixCounter(val duration: FiniteDuration) extends OwlService {
     }
   }
 
-  def run() {
+  def run(truncate: Boolean = false) {
 
     counter.create().await()
+    if (truncate) counter.truncate().await()
 
     val actualDurationStart = Deadline.now
     val deadline = duration.fromNow
@@ -121,7 +122,7 @@ object RawMixCounter extends {
 
     val warmup = new RawMixCounter(5 seconds)
     println(s">>> warmup (${warmup.duration})")
-    warmup.run()
+    warmup.run(truncate = true)
 
     val workload = new RawMixCounter(config.duration)
     println(s">>> workload (${workload.duration})")

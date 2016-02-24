@@ -12,13 +12,14 @@ import scala.concurrent.duration._
 import Util._
 import java.util.concurrent.Semaphore
 
-import ipa.Counter
+import ipa.{CommonImplicits, Counter}
 import owl.Connector.config.bound._
 
 import scala.util.{Random, Success, Try}
 
 class RawMixCounter(val duration: FiniteDuration) extends OwlService {
   override implicit val space = RawMix.space
+  implicit val imps = CommonImplicits()
   val nsets = config.rawmix.nsets
   val mix = config.rawmix.counter.mix
 
@@ -110,19 +111,19 @@ class RawMixCounter(val duration: FiniteDuration) extends OwlService {
 
 }
 
-object RawMixCounter extends Connector {
-
+object RawMixCounter extends {
   override implicit val space = KeySpace("rawmix")
+} with Connector {
 
   def main(args: Array[String]): Unit = {
     if (config.do_reset) dropKeyspace()
     createKeyspace()
 
-    val warmup = new RawMix(5 seconds)
+    val warmup = new RawMixCounter(5 seconds)
     println(s">>> warmup (${warmup.duration})")
     warmup.run()
 
-    val workload = new RawMix(config.duration)
+    val workload = new RawMixCounter(config.duration)
     println(s">>> workload (${workload.duration})")
     workload.run()
     workload.dumpMetrics()

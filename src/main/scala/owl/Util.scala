@@ -3,6 +3,7 @@ package owl
 import java.util.UUID
 import java.util.concurrent.{ArrayBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
+import com.datastax.driver.core.Session
 import nl.grons.metrics.scala.Timer
 import com.twitter.{util => tw}
 
@@ -29,9 +30,11 @@ object Util {
     def unit(implicit ec: ExecutionContext): Future[Unit] = f.map(_ => ())
   }
 
-  implicit class TwFuturePlus[T](f: tw.Future[T]) {
+  implicit class TwAwaitablePlus[T](f: tw.Awaitable[T]) {
     def await(): T = tw.Await.result(f)
+  }
 
+  implicit class TwFuturePlus[T](f: tw.Future[T]) {
     def instrument(timer: Timer = null)(implicit default: Timer): tw.Future[T] = {
       val ctx = if (timer != null) timer.timerContext() else default.timerContext()
       f.onSuccess(_ => ctx.stop()).onFailure(_ => ctx.stop())
@@ -91,6 +94,10 @@ object Util {
 
   implicit class StringPlus(s: String) {
     def toUUID = UUID.fromString(s)
+  }
+
+  implicit class SessionPlus(s: Session) {
+    def nreplicas = s.getCluster.getMetadata.getAllHosts.size
   }
 
   /** from scala.concurrent.impl.ExecutionContextImpl */

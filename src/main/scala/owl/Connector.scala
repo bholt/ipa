@@ -119,6 +119,8 @@ trait Connector extends SessionProvider {
     cluster.newSession().init()
   }
 
+  def nreplicas = session.getCluster.getMetadata.getAllHosts.size
+
   implicit lazy val reservations: ReservationService[tw.Future] = {
     val cass_hosts = session.getCluster.getMetadata.getAllHosts.map(_.getAddress.getHostAddress)
     println(s"cassandra hosts: ${cass_hosts.mkString(", ")}")

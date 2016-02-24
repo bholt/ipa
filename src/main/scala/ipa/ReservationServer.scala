@@ -1,11 +1,11 @@
 package ipa
 
 import java.net.InetAddress
+import java.util.UUID
 
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
 import com.twitter.finagle.Thrift
 import com.twitter.finagle.loadbalancer.Balancers
-import com.twitter.util.Await
 import com.twitter.{util => tw}
 import com.websudos.phantom.connectors.KeySpace
 import ipa.Counter.WeakOps
@@ -16,6 +16,7 @@ import owl.{Connector, OwlService, Tolerance}
 import scala.collection.JavaConversions._
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.util.{Failure, Success, Try}
 
 class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationService[tw.Future] {
   import imps._
@@ -24,7 +25,57 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
       table: Counter with WeakOps,
       space: KeySpace,
       tolerance: Tolerance
-  )
+  ) {
+    val reservations = new mutable.HashMap[UUID, Reservation]
+
+    def reservation(key: UUID, lastRead: => Long) =
+      reservations.getOrElseUpdate(key, Reservation(this, lastRead))
+
+    def refresh(key: UUID): tw.Future[Reservation] = {
+      // read strong always performs read repair so this suffices to ensure that everyone is up-to-date and we can start using our reservations again
+      // TODO: verify read repair is happening
+      // TODO: check reservations table rather than assuming `allocated` is constant
+      table.readTwitter(CLevel.ALL)(key) map { v =>
+        val res = reservation(key, v)
+
+        // now that we've synchronized with everyone, we get our tokens back
+        res.available = res.allocated
+        res.lastRead = v
+        res
+      }
+    }
+
+  }
+
+  class Reservation {
+    var lastRead: Long = 0L
+    var total: Long = 0L      // tokens allocated globally (currently assumed to be the max possible given the error tolerance)
+    var allocated: Long = 0L  // tokens allocated to this replica locally
+    var available: Long = 0L // local tokens remaining
+
+    def update(_lastRead: Long, tol: Tolerance): Unit = {
+      lastRead = _lastRead
+
+      // TODO: assuming that maximum possible are allocated
+      total = tol.delta(lastRead)
+
+      // TODO: assuming that each replica gets lower bound of its fair share
+      allocated = total / session.nreplicas
+      available = allocated
+    }
+
+    def used = available - allocated
+    def delta = total - used
+
+  }
+
+  object Reservation {
+    def apply(entry: Entry, lastRead: Long): Reservation = {
+      val r = new Reservation()
+      r.update(lastRead, entry.tolerance)
+      r
+    }
+  }
 
   val tables = new mutable.HashMap[String, Entry]
 
@@ -43,21 +94,42 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     tw.Future.Unit
   }
 
-  override def readInterval(name: String, key: String): tw.Future[th.IntervalLong] = {
+  override def readInterval(name: String, keyStr: String): tw.Future[th.IntervalLong] = {
+    val key = keyStr.toUUID
     val e = tables(name)
-    e.table.readTwitter(CLevel.ONE)(key.toUUID) map { iv =>
-      // TODO: implement this for real rather than pretending
-      val raw = iv
-      val tol = e.tolerance.error
-      val epsilon = (raw * tol).toLong
-      println(s"raw: $raw, epsilon: $epsilon".cyan)
-      th.IntervalLong(raw - epsilon, raw + epsilon)
+    e.table.readTwitter(CLevel.ONE)(key) map { raw =>
+      // first time, create new Reservation and store in hashmap
+      val res = e.reservation(key, raw)
+      th.IntervalLong(raw - res.delta, raw + res.delta)
     }
   }
 
-  override def incr(name: String, key: String, by: Long): tw.Future[Unit] = {
+  override def incr(name: String, keyStr: String, n: Long): tw.Future[Unit] = {
+    val key = keyStr.toUUID
     val e = tables(name)
-    e.table.incrTwitter(CLevel.ONE)(key.toUUID, by)
+    // may need to get the latest value of the counter if we haven't created a reservation for this record yet
+    val get = { () => e.table.readTwitter(CLevel.ALL)(key).await() }
+    val res = e.reservation(key, get())
+
+    // consume
+    val exec = { cons: CLevel => e.table.incrTwitter(cons)(key, n) }
+
+    if (n > res.allocated) {
+      // cannot execute within error bounds, so must execute with strong consistency
+      exec(CLevel.ALL)
+    } else {
+      if (res.available < n) {
+        // need to get more
+        e.refresh(key) flatMap { _ =>
+          assert(res.available >= n)
+          res.available -= n
+          exec(CLevel.ONE)
+        }
+      } else {
+        res.available -= n
+        exec(CLevel.ONE)
+      }
+    }
   }
 }
 
@@ -74,12 +146,7 @@ object ReservationServer extends {
     val server = Thrift.serveIface(host, new ReservationServer)
 
     println("[ready]")
-    Await.result(server)
-//    val clientService = Thrift.newServiceIface[th..ServiceIface](host, "ipa")
-//
-//    val client = Thrift.newMethodIface(clientService)
-//    client.log("hello", 1) map { println(_) } await()
-
+    server.await()
   }
 }
 

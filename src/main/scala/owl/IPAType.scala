@@ -55,7 +55,9 @@ class Stale[T](
 ) extends Rushed[T](value, consistency)
 
 
-case class Tolerance(error: Double)
+case class Tolerance(error: Double) {
+  def delta(value: Long) = (value * error).toLong
+}
 
 class Interval[T](val min: T, val max: T)(implicit ev: Numeric[T]) extends Inconsistent[T](min) {
   override def get = median

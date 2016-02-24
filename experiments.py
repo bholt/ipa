@@ -127,6 +127,8 @@ def before_all():
             print line,
 
     print note("> initializing cluster")
+    swarm.compose(["down"])
+    swarm.swarm.pull("bholt/owl", **LIVE)
     swarm.compose(["up", "-d"])
     swarm.compose(["scale", "owl=1", "cass=3"])
 
@@ -141,8 +143,9 @@ def before_all():
         time.sleep(1)
     print "done"
 
-    time.sleep(5) # make sure Cassandra has finished initializing
+    # time.sleep(5) # make sure Cassandra has finished initializing
     # blockade.status(**LIVE)
+    swarm.reservations(['-Dipa.replication.factor=3'], {'experiments': True})
 
 
 def run(logfile, *args, **flags):
@@ -235,14 +238,36 @@ class RawMix:
         self.contains = str(contains)
         self.size = str(size)
 
-def run_rawmix():
+    def merge_into(self, a):
+        a['ipa_rawmix_mix_add']      = self.add
+        a['ipa_rawmix_mix_contains'] = self.contains
+        a['ipa_rawmix_mix_size']     = self.size
+
+
+class RawMixCounter:
+    def __init__(self, read, incr):
+        self.read = read
+        self.incr = incr
+
+    def merge_into(self, a):
+        a['ipa_rawmix_counter_mix_read'] = self.read
+        a['ipa_rawmix_counter_mix_incr'] = self.incr
+
+
+def run_rawmix(datatype):
     nexp = 0
 
     containers = swarm.containers_str()
 
     mixes = {
-        'no_size': RawMix(add=0.2, contains=0.8, size=0.0),
-        'default': RawMix(add=0.3, contains=0.6, size=0.1)
+        'set': {
+            'no_size': RawMix(add=0.2, contains=0.8, size=0.0),
+            'default': RawMix(add=0.3, contains=0.6, size=0.1)
+        },
+        'counter': {
+            'no_size': RawMixCounter(read=0.8, incr=0.2),
+            'default': RawMixCounter(read=0.8, incr=0.2)
+        }
     }
 
     for trial in range(1, opt.target+1):
@@ -252,6 +277,7 @@ def run_rawmix():
             # only need to do one 'trial' to get all the counts if doing dry run
             continue
         for a in cartesian(
+            datatype = datatype,
             ipa_version               = [version],
             ipa_output_json           = ['true'],
 
@@ -263,16 +289,15 @@ def run_rawmix():
 
             ipa_concurrent_requests   = [16, 128, 512, 2*K, 4*K],
 
-            ipa_bound = ['latency:50ms', 'latency:10ms', 'consistency:strong', 'consistency:weak'],
+            # 'latency:50ms', 'latency:10ms'
+            ipa_bound = ['error:0.1', 'consistency:strong', 'consistency:weak'],
             honeycomb_mode = ['normal', 'slowpoke_flat'],
             mix = ['no_size']
 
         ):
             a['containers'] = containers
 
-            a['ipa_rawmix_mix_add']      = mixes[a['mix']].add
-            a['ipa_rawmix_mix_contains'] = mixes[a['mix']].contains
-            a['ipa_rawmix_mix_size']     = mixes[a['mix']].size
+            mixes[datatype][a['mix']].merge_into(a)
 
             ct = count_records(table, ignore=[],
                                valid='meters_retwis_op_count is not null', **a)
@@ -292,6 +317,7 @@ if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('-t', '--target', type=int, default=1)
     parser.add_argument('-m', '--mode', type=str, default='owl')
+    parser.add_argument('-d', '--type', type=str, default='set')
     parser.add_argument('-f', '--failures', type=int, default=0)
     parser.add_argument('-n', '--machines', type=str, default="")
     parser.add_argument('--manual', type=str, default=None)
@@ -336,6 +362,6 @@ if __name__ == '__main__':
     if opt.mode == 'owl':
         n = run_retwis()
     elif opt.mode == 'rawmix':
-        n = run_rawmix()
+        n = run_rawmix(opt.type)
 
     notify_slack(fmt("Finished #{n} experiments. :success:"))

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import yaml
 from util import *
-from swarm import swarm, swarm_exec, cass_nodes
+from swarm import swarm_exec, containers
 
 config = yaml.load(open('honeycomb.yml','r'))
 
@@ -38,15 +38,15 @@ def cmd_set(extra=None, opt=None):
 def cmd_status(extra=None, opt=None):
     print pretty_yaml({
         node: yaml.load(swarm_exec(node)("cat", "/honeycomb.yml").stdout)
-        for node in cass_nodes()
+        for node in containers('owl_cass')
     })
 
 
 def cmd_modes(extra=None, opt=None):
     print pretty_yaml({
-                          node: yaml.load(swarm_exec(node)("cat", "/honeycomb.yml").stdout)
-                          for node in cass_nodes()
-                          })
+        node: yaml.load(swarm_exec(node)("cat", "/honeycomb.yml").stdout)
+        for node in containers('owl_cass')
+    })
 
 
 if __name__ == '__main__':

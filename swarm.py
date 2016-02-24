@@ -136,39 +136,47 @@ def cass(args=None, opt=None):
     elif args[0] == 'exec':
         for node in containers('owl_cass'):
             puts(colored.yellow("#{node}>> ") + ' '.join(args))
-            for line in swarm_exec(node)(*args[1:], _iter=True):
-                puts(line.strip())
+            swarm_exec(node)(*args[1:], _ok_code=[0,1], **LIVE)
 
 
 def reservation_server_ready(container):
     return swarm_exec(container).sh(c="grep '\[ready\]' /opt/docker/service.log | wc -l").stdout.strip() == '1'
 
 def reservations(args=None, opt=None):
-    if args is not None:
-        args = ' '.join(args)
+    opt = opt or {}
+    defaults = {'experiments': False, 'verbose': True}
+    defaults.update(opt)
+    opt = defaults
+    args = args or []
+    args = ' '.join(args)
 
+    verbose = opt['verbose']
     cons = containers('owl_cass')
 
     for c in cons:
-        puts(colored.yellow("#{c}>> ") + "ipa.ReservationServer #{args}")
         swarm_exec(c).sh(c='cat /dev/null > /opt/docker/service.log; pkill -f ipa.ReservationServer', _ok_code=[0,143])
-        script = fmt('source ~/.bashrc; up; cd /src/owl; exec sbt "run-main ipa.ReservationServer" #{args} >/opt/docker/service.log 2>&1')
-        o = swarm("exec", "-d", c, "bash", "-c", script)
+
+        if opt['experiments']:
+            # when running as experiment, run with whatever's built-in to the image
+            swarm("exec", "-d", c, "bash", "-c", fmt("exec bin/owl -main ipa.ReservationServer #{args} >/opt/docker/service.log 2>&1"))
+        else:
+            puts(colored.yellow("#{c}>> ") + "ipa.ReservationServer #{args}")
+            script = fmt('source ~/.bashrc; up; cd /src/owl; exec sbt "run-main ipa.ReservationServer" #{args} >/opt/docker/service.log 2>&1')
+            o = swarm("exec", "-d", c, "bash", "-c", script)
 
     # wait for all reservations to be started
     for c in cons:
-        puts(colored.yellow("#{c}>> "), newline=False, flush=True)
+        if verbose: puts(colored.yellow("#{c}>> "), newline=False, flush=True)
         while not reservation_server_ready(c):
             time.sleep(0.5)
-            puts(".", newline=False, flush=True)
-        puts("ready")
+            if verbose: puts(".", newline=False, flush=True)
+        if verbose: puts("ready")
 
 
 def owl_sbt(args=None, opt=None):
     cmd = args[0]
     remain = ' '.join(args[1:])
-    for line in swarm_exec("owl_owl_1").bash(c=fmt("source ~/.bashrc; up; cd /src/owl; sbt '#{cmd}' #{remain}"), _iter=True, _ok_code=[0,1]):
-        puts(line.strip())
+    swarm_exec("owl_owl_1").bash(c=fmt("source ~/.bashrc; up; cd /src/owl; sbt '#{cmd}' #{remain}"), _ok_code=[0,1], **LIVE)
 
 
 def containers_str(prefix='/owl_'):

@@ -136,7 +136,8 @@ def cass(args=None, opt=None):
     elif args[0] == 'exec':
         for node in containers('owl_cass'):
             puts(colored.yellow("#{node}>> ") + ' '.join(args))
-            swarm_exec(node)(*args[1:])
+            for line in swarm_exec(node)(*args[1:], _iter=True):
+                puts(line.strip())
 
 
 def reservation_server_ready(container):

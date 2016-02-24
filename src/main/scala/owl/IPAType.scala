@@ -63,6 +63,7 @@ class Interval[T](val min: T, val max: T)(implicit ev: Numeric[T]) extends Incon
   override def get = median
   def median: T = { min } // FIXME
   def contains(o: T): Boolean = { o >= min && o <= max }
+  override def toString = s"Interval($min..$max)"
 }
 object Interval {
   def apply[T](min: T, max: T)(implicit ev: Numeric[T]) = new Interval[T](min, max)

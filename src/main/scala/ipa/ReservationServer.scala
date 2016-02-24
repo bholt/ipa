@@ -39,8 +39,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
         val res = reservation(key, v)
 
         // now that we've synchronized with everyone, we get our tokens back
-        res.available = res.allocated
-        res.lastRead = v
+        res.update(v, tolerance)
         res
       }
     }
@@ -62,9 +61,11 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
       // TODO: assuming that each replica gets lower bound of its fair share
       allocated = total / session.nreplicas
       available = allocated
+
+      println(s">> update => $this")
     }
 
-    def used = available - allocated
+    def used = allocated - available
     def delta = total - used
 
     override def toString = s"Reservation(read: $lastRead, total: $total, alloc: $allocated, avail: $available)"
@@ -101,6 +102,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     e.table.readTwitter(CLevel.ONE)(key) map { raw =>
       // first time, create new Reservation and store in hashmap
       val res = e.reservation(key, raw)
+      println(s">> raw = $raw, res.delta = ${res.delta}; $res")
       th.IntervalLong(raw - res.delta, raw + res.delta)
     }
   }
@@ -118,7 +120,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     if (n > res.allocated) {
       println(s">> incr($n) outside error bounds $res, executing with strong consistency")
       // cannot execute within error bounds, so must execute with strong consistency
-      exec(CLevel.ALL)
+      exec(CLevel.ALL) flatMap { _ => e.refresh(key).unit }
     } else {
       if (res.available < n) {
         println(s">> incr($n) need to refresh: $res")

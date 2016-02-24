@@ -163,6 +163,12 @@ def reservations(args=None, opt=None):
         puts("ready")
 
 
+def owl_sbt(args=None, opt=None):
+    cmd = args[0]
+    remain = ' '.join(args[1:])
+    for line in swarm_exec("owl_owl_1").bash(c=fmt("source ~/.bashrc; up; cd /src/owl; sbt '#{cmd}' #{remain}"), _iter=True, _ok_code=[0,1]):
+        puts(line.strip())
+
 
 def containers_str(prefix='/owl_'):
     containers = [ l.split()[-1] for l in swarm.ps().split('\n') if prefix in l ]
@@ -196,8 +202,8 @@ if __name__ == '__main__':
                       help='Names of containers to add keys to (or "all" or "cass").')
 
     add_command('cass', cass)
-
     add_command('reservations', reservations)
+    add_command('owl_sbt', owl_sbt)
 
     opt, extra = parser.parse_known_args()
     if opt.command in commands:

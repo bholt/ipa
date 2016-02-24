@@ -135,6 +135,21 @@ class CounterTests extends {
       r.max should be <= (large + large_eps)
     }
 
+    "smaller increments to large value" in {
+      val f = for {
+        _ <- s(1.id).incr()
+        _ <- s(1.id).incr()
+        _ <- s(1.id).incr()
+        r <- s(1.id).read()
+      } yield {
+        r.min should be <= (large + 3)
+        r.min should be >= (large + 3 - large_eps)
+        r.max should be >= (large + 3)
+        r.max should be <= (large + 3 + large_eps)
+      }
+      f.await()
+    }
+
   }
 
 

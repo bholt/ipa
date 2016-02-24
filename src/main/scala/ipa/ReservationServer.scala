@@ -67,6 +67,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     def used = available - allocated
     def delta = total - used
 
+    override def toString = s"Reservation(read: $lastRead, total: $total, alloc: $allocated, avail: $available)"
   }
 
   object Reservation {
@@ -115,18 +116,22 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     val exec = { cons: CLevel => e.table.incrTwitter(cons)(key, n) }
 
     if (n > res.allocated) {
+      println(s">> incr($n) outside error bounds $res, executing with strong consistency")
       // cannot execute within error bounds, so must execute with strong consistency
       exec(CLevel.ALL)
     } else {
       if (res.available < n) {
+        println(s">> incr($n) need to refresh: $res")
         // need to get more
         e.refresh(key) flatMap { _ =>
           assert(res.available >= n)
           res.available -= n
+          println(s">> incr($n) => $res")
           exec(CLevel.ONE)
         }
       } else {
         res.available -= n
+        println(s">> incr($n) => $res")
         exec(CLevel.ONE)
       }
     }

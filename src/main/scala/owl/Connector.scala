@@ -3,7 +3,7 @@ package owl
 import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 
-import com.datastax.driver.core.{Cluster, HostDistance, PoolingOptions, Session}
+import com.datastax.driver.core._
 import com.twitter.finagle.Thrift
 import com.twitter.finagle.loadbalancer.Balancers
 import com.typesafe.config.{ConfigFactory, ConfigRenderOptions, ConfigValue, ConfigValueType}
@@ -44,22 +44,40 @@ object Connector {
       val port = c.getInt("ipa.reservations.port")
     }
 
-    object rawmix {
-      val nsets = c.getInt("ipa.rawmix.nsets")
-      val mix = c.getObject("ipa.rawmix.mix").toMap.map {
+    private def getMixMap(field: String) =
+      c.getObject(field).toMap.map {
         case (key, value) => {
           (Symbol(key), value.unwrapped().toString.toDouble)
         }
       }
+
+    object rawmix {
+      val nsets = c.getInt("ipa.rawmix.nsets")
+      val mix = getMixMap("ipa.rawmix.mix")
       // probability of doing consistency check
       // (only happens after adds, so scale up accordingly)
       val check_probability = c.getDouble("ipa.rawmix.check.probability") / mix('add)
+
+      object counter {
+        val mix = getMixMap("ipa.rawmix.counter.mix")
+      }
     }
 
     object bound {
       private val split = c.getString("ipa.bound").split(":")
 
       val kind = split(0)
+
+      sealed trait Kind
+      final case class Latency(d: FiniteDuration) extends Kind
+      final case class Consistency(c: ConsistencyLevel) extends Kind
+      final case class Error(t: Tolerance) extends Kind
+
+      val parsed: Kind = split(0) match {
+        case "latency" => Latency(Duration(split(1)).asInstanceOf[FiniteDuration])
+        case "consistency" => Consistency(consistencyFromString(split(1)))
+        case "error" => Error(Tolerance(split(1).toDouble))
+      }
 
       val latency = kind match {
         case "latency" => Some(Duration(split(1)).asInstanceOf[FiniteDuration])
@@ -68,6 +86,11 @@ object Connector {
 
       val consistency = kind match {
         case "consistency" => Some(consistencyFromString(split(1)))
+        case _ => None
+      }
+
+      val error = kind match {
+        case "error" => Some(split(1).toDouble)
         case _ => None
       }
 

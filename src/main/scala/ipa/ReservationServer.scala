@@ -62,7 +62,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
       allocated = total / session.nreplicas
       available = allocated
 
-      println(s">> update => $this")
+      // println(s">> update => $this")
     }
 
     def used = allocated - available
@@ -102,7 +102,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     e.table.readTwitter(CLevel.ONE)(key) map { raw =>
       // first time, create new Reservation and store in hashmap
       val res = e.reservation(key, raw)
-      println(s">> raw = $raw, res.delta = ${res.delta}; $res")
+      // println(s">> raw = $raw, res.delta = ${res.delta}; $res")
       th.IntervalLong(raw - res.delta, raw + res.delta)
     }
   }
@@ -118,22 +118,22 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     val exec = { cons: CLevel => e.table.incrTwitter(cons)(key, n) }
 
     if (n > res.allocated) {
-      println(s">> incr($n) outside error bounds $res, executing with strong consistency")
+      // println(s">> incr($n) outside error bounds $res, executing with strong consistency")
       // cannot execute within error bounds, so must execute with strong consistency
       exec(CLevel.ALL) flatMap { _ => e.refresh(key).unit }
     } else {
       if (res.available < n) {
-        println(s">> incr($n) need to refresh: $res")
+        // println(s">> incr($n) need to refresh: $res")
         // need to get more
         e.refresh(key) flatMap { _ =>
           assert(res.available >= n)
           res.available -= n
-          println(s">> incr($n) => $res")
+          // println(s">> incr($n) => $res")
           exec(CLevel.ONE)
         }
       } else {
         res.available -= n
-        println(s">> incr($n) => $res")
+        // println(s">> incr($n) => $res")
         exec(CLevel.ONE)
       }
     }

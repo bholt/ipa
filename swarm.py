@@ -125,11 +125,19 @@ def add_keys(args=None, opt=None):
         ex.sh(c='cat >> ~/.ssh/config', _in=open(expand("~/.ssh/bistromath.config")))
         ex.sh(c='cat >> ~/.bashrc', _in="up(){ pushd /src >/dev/null; rsync -a bistromath:/sync/ipa/owl . --exclude=target/ --exclude=.idea/; popd >/dev/null; };\n")
 
-def cass_exec(args=None, opt=None):
-    for node in containers('owl_cass'):
-        ex = swarm_exec(node)
-        puts(colored.yellow("#{node}>> ") + ' '.join(args))
-        swarm_exec(node)(*args)
+
+def cass(args=None, opt=None):
+    if args[0] == 'grep':
+        for node in containers('owl_cass'):
+            puts(colored.yellow("[#{node}]"))
+            for line in swarm_exec(node).egrep(*args[1:], _ok_code=[0,1], _iter=True):
+                pattern = args[1]
+                puts(re.sub(pattern, "#{colored.red(pattern)}", line.strip()))
+    elif args[0] == 'exec':
+        for node in containers('owl_cass'):
+            puts(colored.yellow("#{node}>> ") + ' '.join(args))
+            swarm_exec(node)(*args[1:])
+
 
 def reservation_server_ready(container):
     return swarm_exec(container).sh(c="grep '\[ready\]' /opt/docker/service.log | wc -l").stdout.strip() == '1'
@@ -142,22 +150,22 @@ def reservations(args=None, opt=None):
 
     for c in cons:
         puts(colored.yellow("#{c}>> ") + "ipa.ReservationServer #{args}")
-        swarm_exec(c).sh(c='pkill -f ipa.ReservationServer', _ok_code=[0,143])
+        swarm_exec(c).sh(c='cat /dev/null > /opt/docker/service.log; pkill -f ipa.ReservationServer', _ok_code=[0,143])
         script = fmt('source ~/.bashrc; up; cd /src/owl; exec sbt "run-main ipa.ReservationServer" #{args} >/opt/docker/service.log 2>&1')
         o = swarm("exec", "-d", c, "bash", "-c", script)
 
     # wait for all reservations to be started
     for c in cons:
-        puts(colored.yellow("#{c}>> "), newline=False)
+        puts(colored.yellow("#{c}>> "), newline=False, flush=True)
         while not reservation_server_ready(c):
             time.sleep(0.5)
-            puts(".", newline=False)
+            puts(".", newline=False, flush=True)
         puts("ready")
 
 
 
-def containers_str(prefix='owl_'):
-    containers = [ l.split()[-1] for l in swarm.ps().split('\n') if '/owl_' in l ]
+def containers_str(prefix='/owl_'):
+    containers = [ l.split()[-1] for l in swarm.ps().split('\n') if prefix in l ]
     cmap = {c: n for n, c in [c.split('/') for c in containers]}
     return yaml.safe_dump(cmap).strip()
 
@@ -187,7 +195,8 @@ if __name__ == '__main__':
     cmd.add_argument('containers', type=str, nargs='+',
                       help='Names of containers to add keys to (or "all" or "cass").')
 
-    add_command('cass_exec', cass_exec)
+    add_command('cass', cass)
+
     add_command('reservations', reservations)
 
     opt, extra = parser.parse_known_args()

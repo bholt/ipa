@@ -1,6 +1,7 @@
 import inspect
 import re
 import clint.textui
+import sys
 import yaml
 from clint.textui import colored
 import json
@@ -30,8 +31,10 @@ def fmt(s, context=None):
     return re.compile(r"#{(.*?)}").sub(lambda m: str(eval(m.group(1), *context)), str(s))
 
 
-def puts(s, newline=True):
+def puts(s, newline=True, flush=False):
     clint.textui.puts(fmt(s, caller()), newline)
+    if flush:
+        sys.stdout.flush()
 
 
 def puts_err(s):

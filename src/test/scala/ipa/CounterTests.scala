@@ -142,9 +142,10 @@ class CounterTests extends {
         _ <- s(1.id).incr()
         r <- s(1.id).read()
       } yield {
-        r.min should be <= (large + 3)
-        r.min should be >= (large + 3 - large_eps)
-        r.max should be >= (large + 3)
+        println(r)
+        r.contains(large+3) shouldBe true
+        r.max - r.min should be <= 2*large_eps
+        r.min should be >= (large - large_eps)
         r.max should be <= (large + 3 + large_eps)
       }
       f.await()

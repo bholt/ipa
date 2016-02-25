@@ -2,21 +2,21 @@ package owl
 
 import java.util.concurrent.TimeoutException
 
-import com.datastax.driver.core.{Row, ConsistencyLevel}
+import com.datastax.driver.core.{ConsistencyLevel, Row}
 import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.builder.primitives.Primitive
-import com.websudos.phantom.column.{CounterColumn, SetColumn, PrimitiveColumn}
+import com.websudos.phantom.column.{CounterColumn, PrimitiveColumn, SetColumn}
 import com.websudos.phantom.dsl._
 import com.websudos.phantom.keys.PartitionKey
 import nl.grons.metrics.scala.Timer
 
 import scala.collection.JavaConversions._
 import scala.concurrent.{Await, Future}
-
 import Util._
+import ipa.CommonImplicits
 
 import scala.concurrent._
-import scala.concurrent.duration.{Deadline, FiniteDuration, Duration}
+import scala.concurrent.duration.{Deadline, Duration, FiniteDuration}
 import scala.util.Try
 
 abstract class IPASet[K, V] extends TableGenerator {
@@ -48,7 +48,8 @@ abstract class IPASet[K, V] extends TableGenerator {
 /**
   * IPASet implementation using a Cassandra Set collection column
   */
-class IPASetImplCollection[K, V](val name: String, val consistency: ConsistencyLevel)(implicit val evK: Primitive[K], val evV: Primitive[V], val session: Session, val space: KeySpace, val cassandraOpMetric: Timer) extends IPASet[K, V] {
+class IPASetImplCollection[K, V](val name: String, val consistency: ConsistencyLevel)(implicit val evK: Primitive[K], val evV: Primitive[V], val imps: CommonImplicits) extends IPASet[K, V] {
+  import imps._
 
   case class Entry(key: K, value: Set[V])
 
@@ -117,7 +118,8 @@ class IPASetImplCollection[K, V](val name: String, val consistency: ConsistencyL
   override def apply(key: K) = new Handle(key)
 }
 
-class IPASetImplPlain[K, V](val name: String, val consistency: ConsistencyLevel)(implicit val evK: Primitive[K], val evV: Primitive[V], val session: Session, val space: KeySpace, val cassandraOpMetric: Timer) extends IPASet[K, V] {
+class IPASetImplPlain[K, V](val name: String, val consistency: ConsistencyLevel)(implicit val evK: Primitive[K], val evV: Primitive[V], val imps: CommonImplicits) extends IPASet[K, V] {
+  import imps._
 
   case class Entry(key: K, value: V)
   class EntryTable extends CassandraTable[EntryTable, Entry] {
@@ -195,7 +197,8 @@ class IPASetImplPlain[K, V](val name: String, val consistency: ConsistencyLevel)
   override def apply(key: K) = new PlainHandle(key)
 }
 
-class IPASetImplWithCounter[K, V](val name: String, val consistency: ConsistencyLevel)(implicit val evK: Primitive[K], val evV: Primitive[V], val session: Session, val space: KeySpace, val cassandraOpMetric: Timer) extends IPASet[K, V] {
+class IPASetImplWithCounter[K, V](val name: String, val consistency: ConsistencyLevel)(implicit val evK: Primitive[K], val evV: Primitive[V], val imps: CommonImplicits) extends IPASet[K, V] {
+  import imps._
 
   case class Entry(key: K, value: V)
   class EntryTable extends CassandraTable[EntryTable, Entry] {

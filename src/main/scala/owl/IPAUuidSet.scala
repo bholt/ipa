@@ -15,10 +15,16 @@ import java.util.UUID
 
 import Connector.config
 import Util._
+import ipa.CommonImplicits
 
 import scala.concurrent.duration.FiniteDuration
 
-class IPAUuidSet(val name: String)(implicit val session: Session, val space: KeySpace, val cassandraOpMetric: Timer, val ipa_metrics: IPAMetrics) extends TableGenerator {
+class IPAUuidSet(val name: String)(implicit val imps: CommonImplicits) extends TableGenerator {
+  import imps.metrics
+  import imps.session
+  import imps.space
+  import imps.reservations
+
   type K = UUID
   type V = UUID
 
@@ -107,6 +113,7 @@ trait ConsistencyBound extends IPAUuidSet {
 
 
 trait LatencyBound extends IPAUuidSet {
+  import imps._
   def latencyBound: FiniteDuration
 
   def rush[T](latencyBound: FiniteDuration)(op: ConsistencyLevel => Future[Inconsistent[T]]): Future[Rushed[T]] = {
@@ -121,7 +128,7 @@ trait LatencyBound extends IPAUuidSet {
       val timeRemaining = deadline.timeLeft
       if (r1.consistency == ConsistencyLevel.ALL ||
           timeRemaining < config.assumed_latency) {
-        if (deadline.isOverdue()) ipa_metrics.missedDeadlines.mark()
+        if (deadline.isOverdue()) metrics.missedDeadlines.mark()
         Future(r1)
       } else {
         // make sure it finishes within the deadline

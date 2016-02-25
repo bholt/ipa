@@ -33,17 +33,17 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
       sys.error(s"impossible case: $e")
   }
 
-  val timerAdd      = metrics.timer("add_latency")
-  val timerContains = metrics.timer("contains_latency")
-  val timerSize     = metrics.timer("size_latency")
+  val timerAdd      = metrics.create.timer("add_latency")
+  val timerContains = metrics.create.timer("contains_latency")
+  val timerSize     = metrics.create.timer("size_latency")
 
-  val countContainsStrong = metrics.counter("contains_strong")
-  val countContainsWeak   = metrics.counter("contains_weak")
-  val countSizeStrong     = metrics.counter("size_strong")
-  val countSizeWeak       = metrics.counter("size_weak")
+  val countContainsStrong = metrics.create.counter("contains_strong")
+  val countContainsWeak   = metrics.create.counter("contains_weak")
+  val countSizeStrong     = metrics.create.counter("size_strong")
+  val countSizeWeak       = metrics.create.counter("size_weak")
 
-  val countConsistent = metrics.counter("consistent")
-  val countInconsistent = metrics.counter("inconsistent")
+  val countConsistent = metrics.create.counter("consistent")
+  val countInconsistent = metrics.create.counter("inconsistent")
 
   def recordResult[T](op: Symbol, r: Inconsistent[T]): Inconsistent[T] = {
     val cons = set match {
@@ -140,7 +140,7 @@ object RawMix extends Connector {
     val workload = new RawMix(config.duration)
     println(s">>> workload (${workload.duration})")
     workload.run()
-    workload.dumpMetrics()
+    workload.metrics.dump()
 
     sys.exit()
   }

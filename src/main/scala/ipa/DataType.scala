@@ -13,15 +13,14 @@ import scala.concurrent._
 import scala.concurrent.duration.FiniteDuration
 import scala.math.Ordering.Implicits._
 
-case class CommonImplicits(implicit val session: Session, val space: KeySpace, val cassandraOpMetric: Timer, val ipa_metrics: IPAMetrics, val reservations: ReservationService[tw.Future])
+case class CommonImplicits(implicit val session: Session, val space: KeySpace, val metrics: IPAMetrics, val reservations: ReservationService[tw.Future])
 
 abstract class DataType(imps: CommonImplicits) extends TableGenerator {
   def name: String
 
   implicit val session = imps.session
   implicit val space = imps.space
-  implicit val cassandraOpMetric = imps.cassandraOpMetric
-  implicit val ipa_metrics = imps.ipa_metrics
+  implicit val metrics = imps.metrics
   implicit val reservations = imps.reservations
 }
 
@@ -38,7 +37,7 @@ trait RushImpl { this: DataType =>
       val timeRemaining = deadline.timeLeft
       if (r1.consistency == ConsistencyLevel.ALL ||
           timeRemaining < config.assumed_latency) {
-        if (deadline.isOverdue()) ipa_metrics.missedDeadlines.mark()
+        if (deadline.isOverdue()) metrics.missedDeadlines.mark()
         Future(r1)
       } else {
         // make sure it finishes within the deadline

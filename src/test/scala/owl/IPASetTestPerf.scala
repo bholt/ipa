@@ -34,9 +34,9 @@ trait IPASetTestGeneric extends OwlTest {
   def zipfID() = id(zipfDist.sample())
   def urandID() = id(Random.nextInt(n))
 
-  val timerAdd = metrics.timer("add_latency")
-  val timerContains = metrics.timer("contains_latency")
-  val timerSize = metrics.timer("size_latency")
+  val timerAdd = metrics.create.timer("add_latency")
+  val timerContains = metrics.create.timer("contains_latency")
+  val timerSize = metrics.create.timer("size_latency")
 
   val mix = Map(
     'add -> 0.3,
@@ -72,8 +72,7 @@ trait IPASetTestGeneric extends OwlTest {
 
   override def afterAll() {
     println(">>> printing metrics")
-    metric.dump()
-    metric.write(Console.err)
+    metrics.dump()
   }
 }
 

@@ -17,9 +17,9 @@ import owl.Connector.config.bound._
 
 import scala.util.{Random, Success, Try}
 
-class RawMixCounter(val duration: FiniteDuration) extends OwlService {
+class RawMixCounter(val duration: FiniteDuration) extends {
   override implicit val space = RawMix.space
-  implicit val imps = CommonImplicits()
+} with OwlService {
   val nsets = config.rawmix.nsets
   val mix = config.rawmix.counter.mix
 
@@ -41,16 +41,16 @@ class RawMixCounter(val duration: FiniteDuration) extends OwlService {
       sys.error(s"impossible case: $e")
   }
 
-  val timerIncr      = metrics.timer("incr_latency")
-  val timerRead = metrics.timer("read_latency")
+  val timerIncr      = metrics.create.timer("incr_latency")
+  val timerRead = metrics.create.timer("read_latency")
 
-  val countReadStrong = metrics.counter("read_strong")
-  val countReadWeak   = metrics.counter("read_weak")
+  val countReadStrong = metrics.create.counter("read_strong")
+  val countReadWeak   = metrics.create.counter("read_weak")
 
-  val countConsistent = metrics.counter("consistent")
-  val countInconsistent = metrics.counter("inconsistent")
+  val countConsistent = metrics.create.counter("consistent")
+  val countInconsistent = metrics.create.counter("inconsistent")
 
-  val histIntervalWidth = metrics.histogram("interval_width")
+  val histIntervalWidth = metrics.create.histogram("interval_width")
 
   def recordResult(r: Any): Inconsistent[Long] = {
     val cons = counter match {
@@ -127,7 +127,7 @@ object RawMixCounter extends {
     val workload = new RawMixCounter(config.duration)
     println(s">>> workload (${workload.duration})")
     workload.run()
-    workload.dumpMetrics()
+    workload.metrics.dump()
 
     sys.exit()
   }

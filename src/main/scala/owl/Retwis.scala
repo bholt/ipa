@@ -54,7 +54,7 @@ trait Retwis extends OwlService {
 
     sealed abstract class Task(body: () => Future[Unit])
         extends (() => Future[Unit]) {
-      def apply = body() map { _ => metric.retwisOps.mark() }
+      def apply = body() map { _ => metrics.retwisOps.mark() }
     }
 
     case object NewUser extends Task(() =>
@@ -143,17 +143,7 @@ trait Retwis extends OwlService {
     await(all)
 
     println("# Workload complete.")
-    println("#### Metrics ##################")
-    ConsoleReporter.forRegistry(metricRegistry)
-        .convertRatesTo(TimeUnit.SECONDS)
-        .build()
-        .report()
-
-    // dump metrics to stderr (for experiments script to parse)
-    if (config.output_json) {
-      metric.write(Console.err)
-    }
-    println("###############################")
+    metrics.dump()
   }
 
 }

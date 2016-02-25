@@ -10,6 +10,7 @@ import com.twitter.{util => tw}
 import com.websudos.phantom.connectors.KeySpace
 import ipa.Counter.WeakOps
 import ipa.{thrift => th}
+import nl.grons.metrics.scala.MetricBuilder
 import owl.Util._
 import owl.{Connector, OwlService, Tolerance}
 
@@ -137,6 +138,12 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
         exec(CLevel.ONE)
       }
     }
+  }
+
+  override def metricsJson(): tw.Future[String] = {
+    val ss = new StringPrintStream()
+    metrics.write(ss)
+    tw.Future.value(ss.mkString)
   }
 }
 

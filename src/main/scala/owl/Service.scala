@@ -22,6 +22,7 @@ import org.joda.time.DateTime
 
 import scala.collection.JavaConversions._
 import scala.concurrent.{Future, blocking}
+import Connector.config
 
 // for Vector.sample
 import owl.Util._
@@ -123,44 +124,27 @@ class RetweetCounts extends CassandraTable[RetweetCounts, RetweetCount] {
   override def fromRow(r: Row) = RetweetCount(tweet(r), count(r))
 }
 
-class IPAMetrics(metrics: MetricBuilder) {
-  val missedDeadlines = metrics.meter("missed_deadlines")
-}
-
-trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
+class IPAMetrics(output: scala.collection.Map[String,AnyRef]) extends InstrumentedBuilder with FutureMetrics {
 
   implicit override val metricRegistry = new MetricRegistry
-  implicit val cassandraOpLatency = metrics.timer("cass_op_latency")
 
-  implicit val ipa_metrics = new IPAMetrics(metrics)
+  val cassandraOpLatency = metrics.timer("cass_op_latency")
+  val missedDeadlines = create.meter("missed_deadlines")
+  val retwisOps = create.meter("retwis_op")
 
-  implicit val imp = CommonImplicits()
+  private val mapper = new ObjectMapper()
+      .registerModule(new MetricsModule(TimeUnit.SECONDS, TimeUnit.MILLISECONDS, false))
+      .registerModule(DefaultScalaModule)
 
-  object metric {
-
-    val retwisOps = metrics.meter("retwis_op")
-
-    private val mapper = new ObjectMapper()
-        .registerModule(new MetricsModule(TimeUnit.SECONDS, TimeUnit.MILLISECONDS, false))
-        .registerModule(DefaultScalaModule)
-
-    def write(out: OutputStream) = {
-      val mConfig = config.c.root().withOnlyKey("ipa").unwrapped()
-      val mOutput = output map { case (k,v) => s"out_$k" -> v }
-      val mMetrics = mapper.readValue(mapper.writeValueAsString(metricRegistry), classOf[java.util.Map[String,Object]])
-      val writer = mapper.writerWithDefaultPrettyPrinter()
-      Console.err.println(writer.writeValueAsString(mConfig ++ mMetrics ++ mOutput))
-    }
-
-    def dump() = {
-      ConsoleReporter.forRegistry(metricRegistry)
-          .convertRatesTo(TimeUnit.SECONDS)
-          .build()
-          .report()
-    }
+  def write(out: OutputStream) = {
+    val mConfig = config.c.root().withOnlyKey("ipa").unwrapped()
+    val mOutput = output map { case (k,v) => s"out_$k" -> v }
+    val mMetrics = mapper.readValue(mapper.writeValueAsString(metricRegistry), classOf[java.util.Map[String,Object]])
+    val writer = mapper.writerWithDefaultPrettyPrinter()
+    Console.err.println(writer.writeValueAsString(mConfig ++ mMetrics ++ mOutput))
   }
 
-  def dumpMetrics(): Unit = {
+  def dump(): Unit = {
     println("# Metrics".bold)
     ConsoleReporter.forRegistry(metricRegistry)
         .convertRatesTo(TimeUnit.SECONDS)
@@ -169,10 +153,19 @@ trait OwlService extends Connector with InstrumentedBuilder with FutureMetrics {
 
     // dump metrics to stderr (for experiments script to parse)
     if (config.output_json) {
-      metric.write(Console.err)
+      write(Console.err)
     }
     println("###############################")
   }
+
+  def create = metrics
+}
+
+trait OwlService extends Connector {
+
+  implicit val metrics = new IPAMetrics(output)
+
+  implicit val imps = CommonImplicits()
 
   ///////////////////////
   // Other tables

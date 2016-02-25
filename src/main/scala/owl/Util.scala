@@ -36,8 +36,9 @@ object Util {
   }
 
   implicit class TwFuturePlus[T](f: tw.Future[T]) {
-    def instrument(timer: Timer = null)(implicit default: Timer): tw.Future[T] = {
-      val ctx = if (timer != null) timer.timerContext() else default.timerContext()
+    def instrument(timer: Timer = null)(implicit metrics: IPAMetrics): tw.Future[T] = {
+      val ctx = if (timer != null) timer.timerContext()
+                else metrics.cassandraOpLatency.timerContext()
       f.onSuccess(_ => ctx.stop()).onFailure(_ => ctx.stop())
     }
   }
@@ -82,8 +83,9 @@ object Util {
   }
 
   implicit class InstrumentedFuture[T](f: Future[T])(implicit ec: ExecutionContext) {
-    def instrument(alt: Timer = null)(implicit timer: Timer) = {
-      val ctx = if (alt != null) alt.timerContext() else timer.timerContext()
+    def instrument(timer: Timer = null)(implicit metrics: IPAMetrics) = {
+      val ctx = if (timer != null) timer.timerContext()
+                else metrics.cassandraOpLatency.timerContext()
       f.onComplete(_ => ctx.stop())
       f
     }

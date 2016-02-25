@@ -5,6 +5,7 @@ from sh import sudo, ssh, docker
 import time
 from util import *
 from os.path import expanduser as expand
+from argparse import ArgumentParser, Namespace
 
 MASTER = 'ibex'
 AGENTS = ['platypus', 'sloth', 'rhinoceros']
@@ -143,10 +144,11 @@ def reservation_server_ready(container):
     return swarm_exec(container).sh(c="grep '\[ready\]' /opt/docker/service.log | wc -l").stdout.strip() == '1'
 
 def reservations(args=None, opt=None):
-    opt = opt or {}
-    defaults = {'experiments': False, 'verbose': True}
-    defaults.update(opt)
-    opt = defaults
+    opt = opt or Namespace()
+    m = {'experiments': False, 'verbose': True}
+    m.update(opt.__dict__)
+    opt = m
+
     args = args or []
     args = ' '.join(args)
 
@@ -186,7 +188,6 @@ def containers_str(prefix='/owl_'):
 
 
 if __name__ == '__main__':
-    from argparse import ArgumentParser
     parser = ArgumentParser()
     subparsers = parser.add_subparsers(help='Commands help')
     commands = {}

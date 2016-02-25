@@ -67,8 +67,8 @@ class RawMixCounter(val duration: FiniteDuration) extends OwlService {
         cbound.consistencyLevel
     }
     cons match {
-      case ConsistencyLevel.ALL => countReadStrong += 1
-      case ConsistencyLevel.ONE => countReadWeak += 1
+      case CLevel.ALL => countReadStrong += 1
+      case CLevel.ONE => countReadWeak += 1
       case _ => // do nothing
     }
     r.asInstanceOf[Inconsistent[Long]]

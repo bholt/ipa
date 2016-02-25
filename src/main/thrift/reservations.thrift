@@ -52,4 +52,6 @@ service ReservationService {
 
   void incr(1: string name, uuid key, i64 by) throws (1: ReservationException e)
   IntervalLong readInterval(1: string name, uuid key) throws (1: ReservationException e)
+
+  string metricsJson()
 }

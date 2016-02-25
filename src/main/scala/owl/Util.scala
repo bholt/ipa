@@ -1,5 +1,6 @@
 package owl
 
+import java.io.{ByteArrayOutputStream, PrintStream}
 import java.util.UUID
 import java.util.concurrent.{ArrayBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
@@ -98,6 +99,12 @@ object Util {
 
   implicit class SessionPlus(s: Session) {
     def nreplicas = s.getCluster.getMetadata.getAllHosts.size
+  }
+
+  class StringPrintStream(
+      bos: ByteArrayOutputStream = new ByteArrayOutputStream
+  ) extends PrintStream(bos) {
+    def mkString = bos.toString("UTF8")
   }
 
   /** from scala.concurrent.impl.ExecutionContextImpl */

@@ -21,7 +21,8 @@ dependencies:
 
 test:
   pre:
-    - sbt 'run-main ipa.ReservationServer' >server.log 2>&1 &
+    - sbt 'run-main ipa.ReservationServer' >server.log 2>&1:
+      background: true
   post:
     - mkdir -p $CIRCLE_TEST_REPORTS/junit/
     - cp target/test-reports/* $CIRCLE_TEST_REPORTS/junit

@@ -89,3 +89,7 @@ libraryDependencies ++= {
     "com.twitter" %% "scrooge-core" % "4.5.0"
   )
 }
+
+// better repl (sbt owl/test:console)
+libraryDependencies += "com.lihaoyi" % "ammonite-repl" % "0.5.1" % "test" cross CrossVersion.full
+initialCommands in (Test, console) := """ammonite.repl.Main.run("import scala.concurrent._; import scala.concurrent.duration._")"""

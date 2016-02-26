@@ -5,7 +5,7 @@
 import owl._
 import Util._
 import com.websudos.phantom.dsl._
-object ReplService extends OwlService
+object ReplService extends { override implicit val space = KeySpace("repl") } with OwlService
 import ReplService._
 
 val arthur = User(username = "tealuver", name = "Arthur Dent")

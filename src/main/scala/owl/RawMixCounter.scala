@@ -100,8 +100,10 @@ class RawMixCounter(val duration: FiniteDuration) extends {
         case 'read =>
           handle.read().instrument(timerRead).map(recordResult(_)).unit
       }
-      f onComplete { _ =>
-        sem.release()
+      f onSuccess { case _ => sem.release() }
+      f onFailure { case e: Throwable =>
+        Console.err.println(e.getMessage)
+        sys.exit(1)
       }
     }
 

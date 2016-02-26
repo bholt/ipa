@@ -59,17 +59,23 @@ object Util {
 
   implicit class ScalaToTwitterFuture[T](f: Future[T])(implicit ec: ExecutionContext) {
     def asTwitter: tw.Future[T] = {
-      val promise = tw.Promise[T]()
-      f.onComplete(t => promise update t.asTwitter)
-      promise
+      val p = tw.Promise[T]()
+      f onComplete {
+        case Success(v) => p.setValue(v)
+        case Failure(e) => p.setException(e)
+      }
+      p
     }
   }
 
   implicit class TwitterToScalaFuture[T](f: tw.Future[T]) {
     def asScala: Future[T] = {
-      val promise = Promise[T]()
-      f.respond(t => promise complete t.asScala)
-      promise.future
+      val p = Promise[T]()
+      f respond {
+        case tw.Return(v) => p success v
+        case tw.Throw(e) => p failure e
+      }
+      p.future
     }
   }
 
@@ -90,7 +96,8 @@ object Util {
     def instrument(timer: Timer = null)(implicit metrics: IPAMetrics) = {
       val ctx = if (timer != null) timer.timerContext()
                 else metrics.cassandraOpLatency.timerContext()
-      f.onComplete(_ => ctx.stop())
+      f onComplete { _ => ctx.stop() }
+      f onFailure { case e: Exception => Console.err.println(e); throw e }
       f
     }
   }

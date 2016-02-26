@@ -82,6 +82,10 @@ object Util {
     def firstCompleted(implicit ec: ExecutionContext): Future[A] = Future.firstCompletedOf(v)
   }
 
+  implicit class TwFutureBundle[A, M[X] <: TraversableOnce[X]](fs: M[tw.Future[A]]) {
+    def bundle(): tw.Future[Seq[A]] = tw.Future.collect(fs.toSeq)
+  }
+
   implicit class InstrumentedFuture[T](f: Future[T])(implicit ec: ExecutionContext) {
     def instrument(timer: Timer = null)(implicit metrics: IPAMetrics) = {
       val ctx = if (timer != null) timer.timerContext()
@@ -89,6 +93,24 @@ object Util {
       f.onComplete(_ => ctx.stop())
       f
     }
+  }
+
+  def combine(ma: Map[String, Any], mb: Map[String, Any]): Map[String,Any] = {
+    (ma.keySet ++ mb.keySet) map { k =>
+      k -> {
+        (ma.get(k), mb.get(k)) match {
+          case (Some(a: Map[String, Any]), Some(b: Map[String, Any])) =>
+            combine(a, b)
+          case (Some(a: Seq[_]), Some(b)) => a :+ b
+          case (Some(a: Seq[_]), None) => a
+          case (Some(a), None) => Seq(a)
+          case (None, b: Seq[_]) => b
+          case (None, Some(b)) => Seq(b)
+          case (Some(a), Some(b)) => Seq(a, b)
+          case _ => Seq()
+        }
+      }
+    } toMap
   }
 
   implicit class DeadlinePlus(d: Deadline) {

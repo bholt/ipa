@@ -76,7 +76,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
 
   def instrument[T, U](op: Symbol)(f: Future[T]): Future[T] = {
     op match {
-      case 'incr      => f.instrument(timerIncr)
+      case 'incr => f.instrument(timerIncr)
       case 'read => f.instrument(timerRead)
     }
   }

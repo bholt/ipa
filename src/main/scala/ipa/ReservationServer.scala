@@ -4,24 +4,33 @@ import java.net.InetAddress
 import java.util.UUID
 
 import com.datastax.driver.core.{Cluster, ConsistencyLevel => CLevel}
-import com.twitter.finagle.Thrift
 import com.twitter.finagle.loadbalancer.Balancers
+import com.twitter.finagle.{Thrift, ThriftMux}
+import com.twitter.util._
 import com.twitter.{util => tw}
 import com.websudos.phantom.connectors.KeySpace
 import ipa.Counter.WeakOps
+import ipa.thrift.ReservationException
 import ipa.{thrift => th}
-import nl.grons.metrics.scala.MetricBuilder
-import owl.Util._
-import owl.{Connector, OwlService, Tolerance}
 import owl.Connector.config
+import owl.Util._
+import owl.{OwlService, Tolerance}
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.util.{Failure, Success, Try}
 
 class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationService[tw.Future] {
   import imps._
+
+  object m {
+    val rpcs = metrics.create.counter("rpcs")
+    val outOfBounds = metrics.create.counter("out_of_bounds")
+    val refreshes = metrics.create.counter("refreshes")
+    val immediates = metrics.create.counter("immediates")
+    val reads = metrics.create.counter("reads")
+    val incrs = metrics.create.counter("incrs")
+    val errors = metrics.create.counter("errors")
+  }
 
   case class Entry(
       table: Counter with WeakOps,
@@ -95,10 +104,13 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     implicit val imps = CommonImplicits()
     val counter = new Counter(table) with WeakOps
     tables += (table -> Entry(counter, space, Tolerance(error)))
+    m.rpcs += 1
     tw.Future.Unit
   }
 
   override def readInterval(name: String, keyStr: String): tw.Future[th.IntervalLong] = {
+    m.rpcs += 1
+    m.reads += 1
     val key = keyStr.toUUID
     val e = tables(name)
     e.table.readTwitter(CLevel.ONE)(key).instrument() map { raw =>
@@ -110,8 +122,16 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   }
 
   override def incr(name: String, keyStr: String, n: Long): tw.Future[Unit] = {
+    m.rpcs += 1
+    m.incrs += 1
     val key = keyStr.toUUID
-    val e = tables(name)
+
+    val e = tables.get(name) match {
+      case Some(t) => t
+      case None =>
+        m.errors += 1
+        return Future.exception(new ReservationException("missing table!"))
+    }
     // may need to get the latest value of the counter if we haven't created a reservation for this record yet
     val get = { () => e.table.readTwitter(CLevel.ALL)(key).instrument().await() }
     val res = e.reservation(key, get())
@@ -120,11 +140,13 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     val exec = { cons: CLevel => e.table.incrTwitter(cons)(key, n).instrument() }
 
     if (n > res.allocated) {
+      m.outOfBounds += 1
       // println(s">> incr($n) outside error bounds $res, executing with strong consistency")
       // cannot execute within error bounds, so must execute with strong consistency
       exec(CLevel.ALL) flatMap { _ => e.refresh(key).unit }
     } else {
       if (res.available < n) {
+        m.refreshes += 1
         // println(s">> incr($n) need to refresh: $res")
         // need to get more
         e.refresh(key) flatMap { _ =>
@@ -134,6 +156,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
           exec(CLevel.ONE)
         }
       } else {
+        m.immediates += 1
         res.available -= n
         // println(s">> incr($n) => $res")
         exec(CLevel.ONE)

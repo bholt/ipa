@@ -8,6 +8,7 @@ machine:
   
   environment:
     CASSANDRA_HOST: 127.0.0.1
+    IPA_REPLICATION_FACTOR: 1
 
 dependencies:
   pre:

@@ -86,6 +86,7 @@ libraryDependencies ++= {
     "nl.grons"                  %% "metrics-scala"        % "3.5.2",
     "com.twitter" %% "finagle-core" % finagleV,
     "com.twitter" %% "finagle-thrift" % finagleV,
+    "com.twitter" %% "finagle-thriftmux" % finagleV,
     "com.twitter" %% "scrooge-core" % "4.5.0"
   )
 }

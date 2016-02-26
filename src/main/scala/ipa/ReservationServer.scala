@@ -181,7 +181,7 @@ object ReservationServer extends {
     if (config.do_reset) dropKeyspace()
     createKeyspace()
 
-    val server = Thrift.serveIface(host, new ReservationServer)
+    val server = ThriftMux.serveIface(host, new ReservationServer)
 
     println("[ready]")
     server.await()
@@ -196,16 +196,31 @@ class ReservationClient(cluster: Cluster) {
       .map { _.getAddress.getHostAddress }
       .map { h => s"$h:$port" }
 
+//  def myBalancer = new LoadBalancerFactory {
+//    val aperture = Balancers.p2cPeakEwma()
+//    def newBalancer[Req, Rep](
+//        endpoints: Activity[Set[ServiceFactory[Req, Rep]]],
+//        sr: StatsReceiver,
+//        exc: NoBrokersAvailableException
+//    ): ServiceFactory[Req, Rep] = {
+//      println(s"newBalancer(endpoints: $endpoints)")
+//      aperture.newBalancer(endpoints, sr, exc)
+//    }
+//  }
+
   def newClient(hosts: String) = {
     val service =
-      Thrift.client
-          .withSessionPool.maxSize(4)
-          .withLoadBalancer(Balancers.aperture())
+      ThriftMux.client
+//          .withSessionPool.maxSize(4)
+//          .withLoadBalancer(Balancers.aperture())
+//          .withLoadBalancer(Balancers.heap())
+          .withLoadBalancer(Balancers.p2cPeakEwma())
           .newServiceIface[th.ReservationService.ServiceIface](hosts, "ipa")
-    Thrift.newMethodIface(service)
-  }
 
-  val client = newClient(hosts.mkString(","))
+    ThriftMux.newMethodIface(service)
+  }
+  println(s"hosts: ${hosts.mkString(",")}")
+  val client = newClient(hosts.toList.reverse.mkString(","))
 }
 
 

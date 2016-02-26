@@ -180,6 +180,10 @@ def owl_sbt(args=None, opt=None):
     remain = ' '.join(args[1:])
     swarm_exec("owl_owl_1").bash(c=fmt("source ~/.bashrc; up; cd /src/owl; sbt '#{cmd}' #{remain}"), _ok_code=[0,1], **LIVE)
 
+def owl_sbt_res(args=None, opt=None):
+    reservations(args[1:], opt)
+    owl_sbt(args, opt)
+
 
 def containers_str(prefix='/owl_'):
     containers = [ l.split()[-1] for l in swarm.ps().split('\n') if prefix in l ]
@@ -214,6 +218,7 @@ if __name__ == '__main__':
     add_command('cass', cass)
     add_command('reservations', reservations)
     add_command('owl_sbt', owl_sbt)
+    add_command('owl_sbt_res', owl_sbt_res)
 
     opt, extra = parser.parse_known_args()
     if opt.command in commands:

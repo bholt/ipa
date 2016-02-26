@@ -11,7 +11,7 @@ import com.websudos.phantom.connectors.{KeySpace, SessionProvider}
 import com.websudos.phantom.dsl.ConsistencyLevel
 import ipa.CommonImplicits
 import ipa.thrift.ReservationService
-import ipa.{thrift => th}
+import ipa.{ReservationClient, thrift => th}
 import com.twitter.{util => tw}
 
 import scala.collection.JavaConversions._
@@ -144,20 +144,7 @@ trait Connector extends SessionProvider {
 
   def nreplicas = session.getCluster.getMetadata.getAllHosts.size
 
-  implicit lazy val reservations: ReservationService[tw.Future] = {
-    val cass_hosts = session.getCluster.getMetadata.getAllHosts.map(_.getAddress.getHostAddress)
-    println(s"cassandra hosts: ${cass_hosts.mkString(", ")}")
-
-    val port = config.reservations.port
-    val hosts = cass_hosts.map(h => s"$h:$port").mkString(",")
-
-    val service = Thrift.client
-        .withSessionPool.maxSize(4)
-        .withLoadBalancer(Balancers.aperture())
-        .newServiceIface[th.ReservationService.ServiceIface](hosts, "ipa")
-
-    Thrift.newMethodIface(service)
-  }
+  implicit lazy val reservations = new ReservationClient(cluster)
 
 //  {
 //    val tmpSession = blocking { cluster.connect() }

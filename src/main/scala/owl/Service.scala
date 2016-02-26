@@ -1,6 +1,6 @@
 package owl
 
-import java.io.OutputStream
+import java.io.{OutputStream, PrintStream}
 import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -16,16 +16,20 @@ import com.websudos.phantom.builder.primitives.Primitive
 import com.websudos.phantom.column.DateTimeColumn
 import com.websudos.phantom.dsl.{StringColumn, UUIDColumn, _}
 import com.websudos.phantom.keys.PartitionKey
-import ipa.CommonImplicits
+import ipa.{CommonImplicits, ReservationClient}
 import nl.grons.metrics.scala.{FutureMetrics, InstrumentedBuilder, MetricBuilder, Timer}
 import org.joda.time.DateTime
 
 import scala.collection.JavaConversions._
 import scala.concurrent.{Future, blocking}
 import Connector.config
+import com.twitter.{util => tw}
+
+import scala.collection.parallel.immutable
 
 // for Vector.sample
 import owl.Util._
+import ipa.ReservationService
 
 import scala.language.postfixOps
 
@@ -129,22 +133,38 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef]) extends Instrument
   implicit override val metricRegistry = new MetricRegistry
 
   val cassandraOpLatency = metrics.timer("cass_op_latency")
-  val missedDeadlines = create.meter("missed_deadlines")
-  val retwisOps = create.meter("retwis_op")
+  lazy val missedDeadlines = create.meter("missed_deadlines")
 
-  private val mapper = new ObjectMapper()
+  val mapper = new ObjectMapper()
       .registerModule(new MetricsModule(TimeUnit.SECONDS, TimeUnit.MILLISECONDS, false))
       .registerModule(DefaultScalaModule)
 
-  def write(out: OutputStream) = {
-    val mConfig = config.c.root().withOnlyKey("ipa").unwrapped()
+  def write(out: PrintStream, extras: Map[String,AnyRef] = Map(), configFilter: String = "ipa") = {
+    val mConfig = config.c.root().withOnlyKey(configFilter).unwrapped()
     val mOutput = output map { case (k,v) => s"out_$k" -> v }
     val mMetrics = mapper.readValue(mapper.writeValueAsString(metricRegistry), classOf[java.util.Map[String,Object]])
     val writer = mapper.writerWithDefaultPrettyPrinter()
-    Console.err.println(writer.writeValueAsString(mConfig ++ mMetrics ++ mOutput))
+    out.println(writer.writeValueAsString(mConfig ++ mMetrics ++ mOutput ++ extras))
   }
 
-  def dump(): Unit = {
+  def fromReservationServers()(implicit reservations: ReservationClient) = {
+    reservations.hosts
+        .map { host => reservations.newClient(host).metricsJson() }
+        .map { f =>
+          f map { json =>
+            mapper.readValue(json, classOf[Map[String,Any]])
+          }
+        }
+        .bundle()
+        .await()
+        .reduce(combine)
+  }
+
+  def dump()(implicit reservations: ReservationClient): Unit = {
+
+    // collect metrics from reservation servers
+    val rmetrics =
+
     println("# Metrics".bold)
     ConsoleReporter.forRegistry(metricRegistry)
         .convertRatesTo(TimeUnit.SECONDS)
@@ -153,7 +173,7 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef]) extends Instrument
 
     // dump metrics to stderr (for experiments script to parse)
     if (config.output_json) {
-      write(Console.err)
+      write(Console.err, Map("res" -> fromReservationServers()))
     }
     println("###############################")
   }

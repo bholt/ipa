@@ -14,6 +14,8 @@ import scala.util.Random
 
 trait Retwis extends OwlService {
 
+  val retwisOps = metrics.create.meter("retwis_op")
+
   implicit val consistency = config.consistency
 
   object Zipf {
@@ -54,7 +56,7 @@ trait Retwis extends OwlService {
 
     sealed abstract class Task(body: () => Future[Unit])
         extends (() => Future[Unit]) {
-      def apply = body() map { _ => metrics.retwisOps.mark() }
+      def apply = body() map { _ => retwisOps.mark() }
     }
 
     case object NewUser extends Task(() =>

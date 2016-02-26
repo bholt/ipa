@@ -67,18 +67,18 @@ object Counter {
 
     override def create(): Future[Unit] = {
       createTwitter() flatMap { _ =>
-        reservations.createCounter(name, space.name, tolerance.error)
+        reservations.client.createCounter(name, space.name, tolerance.error)
       } asScala
     }
 
     type ReadType = Interval[Long]
 
     override def incr(key: UUID, by: Long): Future[Unit] = {
-      reservations.incr(name, key.toString, by).asScala
+      reservations.client.incr(name, key.toString, by).asScala
     }
 
     override def read(key: UUID): Future[Interval[Long]] = {
-      reservations.readInterval(name, key.toString)
+      reservations.client.readInterval(name, key.toString)
           .map(v => v: Interval[Long])
           .asScala
     }

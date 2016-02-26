@@ -3,17 +3,14 @@ package ipa
 import owl.Util._
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
 import com.websudos.phantom.dsl._
-import nl.grons.metrics.scala.Timer
 import owl.Connector.config
-import owl.{IPAMetrics, Inconsistent, Rushed, TableGenerator}
-import com.twitter.{util => tw}
-import ipa.thrift.ReservationService
+import owl.{IPAMetrics, Rushed, TableGenerator}
 
 import scala.concurrent._
 import scala.concurrent.duration.FiniteDuration
 import scala.math.Ordering.Implicits._
 
-case class CommonImplicits(implicit val session: Session, val space: KeySpace, val metrics: IPAMetrics, val reservations: ReservationService[tw.Future])
+case class CommonImplicits(implicit val session: Session, val space: KeySpace, val metrics: IPAMetrics, val reservations: ReservationClient)
 
 abstract class DataType(imps: CommonImplicits) extends TableGenerator {
   def name: String

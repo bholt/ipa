@@ -3,7 +3,7 @@ package ipa
 import java.net.InetAddress
 import java.util.UUID
 
-import com.datastax.driver.core.{ConsistencyLevel => CLevel}
+import com.datastax.driver.core.{Cluster, ConsistencyLevel => CLevel}
 import com.twitter.finagle.Thrift
 import com.twitter.finagle.loadbalancer.Balancers
 import com.twitter.{util => tw}
@@ -13,6 +13,7 @@ import ipa.{thrift => th}
 import nl.grons.metrics.scala.MetricBuilder
 import owl.Util._
 import owl.{Connector, OwlService, Tolerance}
+import owl.Connector.config
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable
@@ -100,7 +101,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   override def readInterval(name: String, keyStr: String): tw.Future[th.IntervalLong] = {
     val key = keyStr.toUUID
     val e = tables(name)
-    e.table.readTwitter(CLevel.ONE)(key) map { raw =>
+    e.table.readTwitter(CLevel.ONE)(key).instrument() map { raw =>
       // first time, create new Reservation and store in hashmap
       val res = e.reservation(key, raw)
       // println(s">> raw = $raw, res.delta = ${res.delta}; $res")
@@ -112,11 +113,11 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     val key = keyStr.toUUID
     val e = tables(name)
     // may need to get the latest value of the counter if we haven't created a reservation for this record yet
-    val get = { () => e.table.readTwitter(CLevel.ALL)(key).await() }
+    val get = { () => e.table.readTwitter(CLevel.ALL)(key).instrument().await() }
     val res = e.reservation(key, get())
 
     // consume
-    val exec = { cons: CLevel => e.table.incrTwitter(cons)(key, n) }
+    val exec = { cons: CLevel => e.table.incrTwitter(cons)(key, n).instrument() }
 
     if (n > res.allocated) {
       // println(s">> incr($n) outside error bounds $res, executing with strong consistency")
@@ -142,7 +143,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
 
   override def metricsJson(): tw.Future[String] = {
     val ss = new StringPrintStream()
-    metrics.write(ss)
+    metrics.write(ss, Map("server_addr" -> ReservationServer.host), configFilter="-")
     tw.Future.value(ss.mkString)
   }
 }
@@ -163,6 +164,27 @@ object ReservationServer extends {
     server.await()
   }
 }
+
+
+class ReservationClient(cluster: Cluster) {
+
+  val port = config.reservations.port
+  val hosts = cluster.getMetadata.getAllHosts
+      .map { _.getAddress.getHostAddress }
+      .map { h => s"$h:$port" }
+
+  def newClient(hosts: String) = {
+    val service =
+      Thrift.client
+          .withSessionPool.maxSize(4)
+          .withLoadBalancer(Balancers.aperture())
+          .newServiceIface[th.ReservationService.ServiceIface](hosts, "ipa")
+    Thrift.newMethodIface(service)
+  }
+
+  val client = newClient(hosts.mkString(","))
+}
+
 
 object ReservationClient extends {
   override implicit val space = KeySpace("reservations")

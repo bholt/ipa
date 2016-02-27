@@ -146,7 +146,10 @@ def reservation_server_ready(container):
 def reservations(args=None, opt=None):
     opt = opt or Namespace()
     m = {'experiments': False, 'verbose': True}
-    m.update(opt.__dict__)
+    if type(opt) == dict:
+        m.update(opt)
+    else:
+        m.update(opt.__dict__)
     opt = m
 
     args = args or []
@@ -156,7 +159,8 @@ def reservations(args=None, opt=None):
     cons = containers('owl_cass')
 
     for c in cons:
-        swarm_exec(c).sh(c='cat /dev/null > /opt/docker/service.log; pkill -f ipa.ReservationServer', _ok_code=[0,143])
+        swarm_exec(c).sh(c='cat /dev/null > /opt/docker/service.log; pkill -f ipa.ReservationServer', _ok_code=[0,1,143])
+        swarm_exec(c).sh(c='pkill -f ipa.replication.factor', _ok_code=[0,1,143])
 
         if opt['experiments']:
             # when running as experiment, run with whatever's built-in to the image

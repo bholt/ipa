@@ -307,7 +307,7 @@ def run_rawmix(datatype):
             mixes[datatype][a['mix']].merge_into(a)
 
             ct = count_records(table, ignore=[],
-                               valid='meters_retwis_op_count is not null', **a)
+                               valid='timers_cass_op_latency_count is not null', **a)
             puts(colored.black("→ ")+colored.cyan('count:')+colored.yellow(ct))
 
             if opt.dry:

@@ -2,7 +2,7 @@ package ipa
 
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
-import owl.{Connector, OwlService, OwlWordSpec, Tolerance}
+import owl._
 import owl.Util._
 
 import scala.concurrent.duration._
@@ -52,7 +52,7 @@ class CounterTests extends {
 
     "read default value" in {
       val r = s(0.id).read().futureValue
-      r shouldBe 0
+      r shouldBe Consistent(0)
     }
 
     "increment" in {
@@ -64,7 +64,7 @@ class CounterTests extends {
 
     "read incremented value" in {
       val r = s(0.id).read().futureValue
-      r shouldBe 3
+      r shouldBe Consistent(3)
     }
   }
 

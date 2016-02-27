@@ -148,8 +148,8 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef]) extends Instrument
   }
 
   def fromReservationServers()(implicit reservations: ReservationClient) = {
-    reservations.hosts
-        .map { host => reservations.newClient(host).metricsJson() }
+    reservations.addrs
+        .map { addr => reservations.newClient(addr).metricsJson() }
         .map { f =>
           f map { j =>
             json.readValue(j, classOf[Map[String,Any]])

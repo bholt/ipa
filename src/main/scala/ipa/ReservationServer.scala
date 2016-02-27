@@ -192,15 +192,25 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   }
 }
 
+object ReservationCommon {
+  def allHosts(cluster: Cluster) =
+    cluster.getMetadata.getAllHosts.map { _.getAddress.getHostAddress }
+
+  def thisHost = InetAddress.getLocalHost.getHostAddress
+}
+
 object ReservationServer extends {
   override implicit val space = KeySpace("reservations")
 } with OwlService {
+  import ReservationCommon._
 
-  val host = s"${InetAddress.getLocalHost.getHostAddress}:${config.reservations.port}"
+  val host = s"$thisHost:${config.reservations.port}"
 
   def main(args: Array[String]) {
-    if (config.do_reset) dropKeyspace()
-    createKeyspace()
+    if (thisHost == allHosts(cluster).head) {
+      if (config.do_reset) dropKeyspace()
+      createKeyspace()
+    }
 
     val server = Thrift.serveIface(host, new ReservationServer)
 
@@ -211,11 +221,10 @@ object ReservationServer extends {
 
 
 class ReservationClient(cluster: Cluster) {
+  import ReservationCommon._
 
   val port = config.reservations.port
-  val hosts = cluster.getMetadata.getAllHosts
-      .map { _.getAddress.getHostAddress }
-      .map { h => s"$h:$port" }
+  val addrs = allHosts(cluster).map { h => s"$h:$port" }
 
   def newClient(hosts: String) = {
     val service =
@@ -225,8 +234,9 @@ class ReservationClient(cluster: Cluster) {
 
     Thrift.newMethodIface(service)
   }
-  println(s"hosts: ${hosts.mkString(",")}")
-  val client = newClient(hosts.toList.reverse.mkString(","))
+
+  println(s"hosts: ${addrs.mkString(",")}")
+  val client = newClient(addrs.toList.reverse.mkString(","))
 }
 
 

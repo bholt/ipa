@@ -131,7 +131,7 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
       _ => tw.Future.Unit
     } recover { case e =>
       println(s">>> (re)creating ${space.name}.$name")
-      session.execute(s"DROP TABLE ${space.name}.$name")
+      session.execute(s"DROP TABLE IF EXISTS ${space.name}.$name")
       tbl.create.`with`(comment eqs metaStr).execute().unit
     } get
   }

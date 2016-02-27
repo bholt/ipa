@@ -130,7 +130,7 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
     DataType.lookupMetadata(name) filter { _ == meta } map {
       _ => tw.Future.Unit
     } recover { case e =>
-      println(s">> (re)creating ${space.name}.$name")
+      println(s">>> (re)creating ${space.name}.$name")
       session.execute(s"DROP TABLE ${space.name}.$name")
       tbl.create.`with`(comment eqs metaStr).execute().unit
     } get

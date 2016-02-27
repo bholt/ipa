@@ -29,12 +29,10 @@ object DataType {
   def lookupMetadata(name: String)(implicit imps: CommonImplicits): Try[Map[String, Any]] = {
     import imps._
     val query = s"SELECT comment FROM system.schema_columnfamilies WHERE keyspace_name = '${space.name}' AND columnfamily_name = '$name'"
-    println(query)
     Try {
       val row = blocking { session.execute(query).one() }
       if (row == null) println("row not found")
       val text = row.get("comment", classOf[String])
-      println(s"table comment: $text")
       metrics.json.readValue(text, classOf[Map[String, Any]])
     }
   }

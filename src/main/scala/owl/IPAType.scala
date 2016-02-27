@@ -7,6 +7,7 @@ import scala.math.Ordering.Implicits._
 import ipa.thrift
 import com.twitter.{util => tw}
 
+import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.{ExecutionContext, Future}
 import scala.language.implicitConversions
 
@@ -14,6 +15,15 @@ import scala.language.implicitConversions
 trait ConsistencyOrder extends Ordering[ConsistencyLevel] {
   def compare(a: ConsistencyLevel, b: ConsistencyLevel) = a.compareTo(b)
 }
+
+
+sealed trait Bound
+final case class Latency(d: FiniteDuration) extends Bound
+final case class Consistency(c: ConsistencyLevel) extends Bound
+final case class Tolerance(error: Double) extends Bound {
+  def delta(value: Long) = (value * error).toLong
+}
+
 
 class IPAType {}
 
@@ -55,9 +65,6 @@ class Stale[T](
 ) extends Rushed[T](value, consistency)
 
 
-case class Tolerance(error: Double) {
-  def delta(value: Long) = (value * error).toLong
-}
 
 class Interval[T](val min: T, val max: T)(implicit ev: Numeric[T]) extends Inconsistent[T](min) {
   override def get = median

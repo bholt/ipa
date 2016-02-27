@@ -35,7 +35,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
       new Counter("raw") with Counter.WeakOps
     case Consistency(CLevel.ALL) =>
       new Counter("raw") with Counter.StrongOps
-    case Error(t) =>
+    case t @ Tolerance(_) =>
       new Counter("raw") with Counter.ErrorTolerance { override val tolerance = t }
     case e =>
       sys.error(s"impossible case: $e")

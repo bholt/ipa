@@ -68,15 +68,10 @@ object Connector {
 
       val kind = split(0)
 
-      sealed trait Kind
-      final case class Latency(d: FiniteDuration) extends Kind
-      final case class Consistency(c: ConsistencyLevel) extends Kind
-      final case class Error(t: Tolerance) extends Kind
-
-      val parsed: Kind = split(0) match {
+      val parsed: Bound = split(0) match {
         case "latency" => Latency(Duration(split(1)).asInstanceOf[FiniteDuration])
         case "consistency" => Consistency(consistencyFromString(split(1)))
-        case "error" => Error(Tolerance(split(1).toDouble))
+        case "tolerance" => Tolerance(split(1).toDouble)
       }
 
       val latency = kind match {

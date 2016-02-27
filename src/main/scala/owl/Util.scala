@@ -106,8 +106,8 @@ object Util {
     (ma.keySet ++ mb.keySet) map { k =>
       k -> {
         (ma.get(k), mb.get(k)) match {
-          case (Some(a: Map[String, Any]), Some(b: Map[String, Any])) =>
-            combine(a, b)
+          case (Some(a: Map[_, _]), Some(b: Map[_, _])) =>
+            combine(a.asInstanceOf[Map[String,Any]], b.asInstanceOf[Map[String,Any]])
           case (Some(a: Seq[_]), Some(b)) => a :+ b
           case (Some(a: Seq[_]), None) => a
           case (Some(a), None) => Seq(a)

@@ -73,7 +73,6 @@ object Counter {
 
     override def create(): Future[Unit] = {
       createTwitter() flatMap { _ =>
-        println(s"reservations.create: $table")
         reservations.client.createCounter(table, tolerance.error)
       } asScala
     }

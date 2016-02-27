@@ -31,6 +31,8 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     val reads = metrics.create.counter("reads")
     val incrs = metrics.create.counter("incrs")
     val errors = metrics.create.counter("errors")
+
+    val races = metrics.create.counter("races")
   }
 
   case class Entry(
@@ -157,7 +159,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
         // consume
         val exec = { cons: CLevel => e.table.incrTwitter(cons)(key, n).instrument() }
 
-        if (n > res.allocated) {
+        if (n >= res.allocated) {
           m.outOfBounds += 1
           // println(s">> incr($n) outside error bounds $res, executing with strong consistency")
           // cannot execute within error bounds, so must execute with strong consistency
@@ -168,10 +170,13 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
             // println(s">> incr($n) need to refresh: $res")
             // need to get more
             e.refresh(key) flatMap { _ =>
-              assert(res.available >= n)
-              res.available -= n
-              // println(s">> incr($n) => $res")
-              exec(CLevel.ONE)
+              if (res.available >= n) {
+                res.available -= n
+                exec(CLevel.ONE)
+              } else {
+                m.races += 1
+                exec(CLevel.ALL)
+              }
             }
           } else {
             m.immediates += 1

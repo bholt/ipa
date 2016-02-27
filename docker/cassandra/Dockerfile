@@ -11,14 +11,14 @@ RUN apt-get remove -y scala-library scala; \
     apt-get update && \
     apt-get install -y inetutils-ping wget && \
     wget http://www.scala-lang.org/files/archive/scala-2.11.7.deb && \
-    dpkg -i scala-2.11.6.deb && \
+    dpkg -i scala-2.11.7.deb && \
     wget http://dl.bintray.com/sbt/debian/sbt-0.13.9.deb && \
     dpkg -i sbt-0.13.9.deb
 
 # Fix java certs & pre-install latest sbt version
 RUN update-ca-certificates -f && sbt version
 
-RUN apt-get install -y ssh rsync git openjdk-8-jdk
+RUN apt-get install -y ssh rsync git openjdk-8-jdk apt-transport-https
 
 # ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64
 RUN update-alternatives --install "/usr/bin/javac" "javac" "/usr/lib/jvm/java-8-openjdk-amd64/bin/javac" 1 && \

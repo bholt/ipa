@@ -44,9 +44,11 @@ object Counter {
   }
 
   trait StrongOps extends Ops.Incr with Ops.Read { base: Counter =>
-    type ReadType = Long
-    override def read(key: UUID) = base.read(CLevel.ALL)(key)
-    override def incr(key: UUID, by: Long) = base.incr(CLevel.ALL)(key, by)
+    type ReadType = Consistent[Long]
+    override def read(key: UUID): Future[Consistent[Long]] =
+      base.read(CLevel.ALL)(key) map { Consistent(_) }
+    override def incr(key: UUID, by: Long): Future[Unit] =
+      base.incr(CLevel.ALL)(key, by)
   }
 
   trait LatencyBound extends Ops.Incr with Ops.Read with RushImpl {

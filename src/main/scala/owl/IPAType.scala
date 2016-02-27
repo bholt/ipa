@@ -16,6 +16,10 @@ trait ConsistencyOrder extends Ordering[ConsistencyLevel] {
   def compare(a: ConsistencyLevel, b: ConsistencyLevel) = a.compareTo(b)
 }
 
+object Consistency {
+  val Strong = ConsistencyLevel.ALL
+  val Weak = ConsistencyLevel.ONE
+}
 
 sealed trait Bound
 final case class Latency(d: FiniteDuration) extends Bound
@@ -23,7 +27,6 @@ final case class Consistency(c: ConsistencyLevel) extends Bound
 final case class Tolerance(error: Double) extends Bound {
   def delta(value: Long) = (value * error).toLong
 }
-
 
 class IPAType {}
 
@@ -35,6 +38,11 @@ class Inconsistent[T](value: T) extends IPAType {
 }
 object Inconsistent { def apply[T](value: T) = new Inconsistent(value) }
 
+
+class Consistent[T](value: T) extends Inconsistent[T](value)
+object Consistent {
+  def apply[T](value: T) = new Consistent(value)
+}
 
 class Transient[T](value: T) extends Inconsistent[T](value) {
   /** wait for it to become consistent */
@@ -83,4 +91,7 @@ object Conversions {
   implicit def thriftTwFutureToNative[A, B](f: tw.Future[A])(implicit ev: A => B): tw.Future[B] = f map { v => v: B }
 
   implicit def thriftFutureToNative[A, B](f: Future[A])(implicit ev: A => B, ec: ExecutionContext): Future[B] = f map { v => v: B }
+
+  implicit def consistentValueToValue[T](c: Consistent[T]): T = c.get
+  implicit def valueToConsistentValue[T](v: T): Consistent[T] = Consistent(v)
 }

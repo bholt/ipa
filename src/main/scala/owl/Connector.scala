@@ -68,11 +68,18 @@ object Connector {
 
       val kind = split(0)
 
-      val parsed: Bound = split(0) match {
-        case "latency" => Latency(Duration(split(1)).asInstanceOf[FiniteDuration])
-        case "consistency" => Consistency(consistencyFromString(split(1)))
-        case "tolerance" => Tolerance(split(1).toDouble)
-      }
+      lazy val parsed: Bound = Try {
+        split(0) match {
+          case "latency" => Latency(Duration(split(1)).asInstanceOf[FiniteDuration])
+          case "consistency" => Consistency(consistencyFromString(split(1)))
+          case "tolerance" => Tolerance(split(1).toDouble)
+          case _ => throw new RuntimeException(s"invalid bound: ${split(0)}:${split(1)}")
+        }
+      } recover {
+        case e: Throwable =>
+          println(s"error parsing bound: ${e.getMessage}")
+          sys.exit(1)
+      } get
 
       val latency = kind match {
         case "latency" => Some(Duration(split(1)).asInstanceOf[FiniteDuration])

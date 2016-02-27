@@ -12,6 +12,7 @@ import scala.concurrent.duration._
 import Util._
 import java.util.concurrent.Semaphore
 
+import ipa.Counter.{StrongOps, WeakOps}
 import ipa.{CommonImplicits, Counter}
 import owl.Connector.config.bound._
 
@@ -38,6 +39,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
     case t @ Tolerance(_) =>
       new Counter("raw") with Counter.ErrorTolerance { override val tolerance = t }
     case e =>
+      println("error parsing bound")
       sys.error(s"impossible case: $e")
   }
 
@@ -65,6 +67,11 @@ class RawMixCounter(val duration: FiniteDuration) extends {
 
       case cbound: ConsistencyBound =>
         cbound.consistencyLevel
+
+      case _: WeakOps => Consistency.Weak
+      case _: StrongOps => Consistency.Strong
+      case _ =>
+        sys.error("datatype didn't match any of the options")
     }
     cons match {
       case CLevel.ALL => countReadStrong += 1

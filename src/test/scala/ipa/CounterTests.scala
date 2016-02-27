@@ -103,7 +103,7 @@ class CounterTests extends {
     val large = 1000L
     val large_eps = (large * error).toLong
 
-    val s = new Counter("latencybound")
+    val s = new Counter("tolerant")
         with Counter.ErrorTolerance { override val tolerance = Tolerance(error) }
 
     "be created" in { s.create().await() }

@@ -39,19 +39,24 @@ union Result {
   2: Interval interval
 }
 
+struct Table {
+  1: string space
+  2: string name
+}
 
 service ReservationService {
   /**
    * Initialize new UuidSet
    * TODO: make generic version
    */
-  void createUuidset(1: string name, 2: double sizeTolerance) throws (1: ReservationException e)
+  void createUuidset(1: Table tbl, 2: double sizeTolerance) throws (1: ReservationException e)
 
   /** Initialize new Counter table. */
-  void createCounter(1: string name, 2: string keyspace, 3: double tolerance) throws (1: ReservationException e)
+  void createCounter(1: Table tbl, 2: double tolerance) throws (1: ReservationException e)
 
-  void incr(1: string name, uuid key, i64 by) throws (1: ReservationException e)
-  IntervalLong readInterval(1: string name, uuid key) throws (1: ReservationException e)
+  void incr(1: Table tbl, uuid key, i64 by) throws (1: ReservationException e)
+
+  IntervalLong readInterval(1: Table tbl, uuid key) throws (1: ReservationException e)
 
   string metricsJson()
 }

@@ -3,7 +3,7 @@ package ipa
 import java.net.InetAddress
 import java.util.UUID
 
-import scala.util.{Success, Failure, Try}
+import scala.util.{Failure, Success, Try}
 import com.datastax.driver.core.{Cluster, ConsistencyLevel => CLevel}
 import com.twitter.finagle.loadbalancer.Balancers
 import com.twitter.finagle.{Thrift, ThriftMux}
@@ -11,7 +11,7 @@ import com.twitter.util._
 import com.twitter.{util => tw}
 import com.websudos.phantom.connectors.KeySpace
 import ipa.Counter.WeakOps
-import ipa.thrift.ReservationException
+import ipa.thrift.{ReservationException, Table}
 import ipa.{thrift => th}
 import owl.Connector.config
 import owl.Util._
@@ -91,17 +91,21 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     }
   }
 
-  val tables = new mutable.HashMap[String, Entry]
+  val tables = new mutable.HashMap[Table, Entry]
 
-  def table(name: String): Try[Entry] = {
-    Try(tables(name)) recoverWith { case _ =>
-      Counter.fromName(name) flatMap {
+  def table(t: Table): Try[Entry] = {
+    Try(tables(t)) recoverWith { case _ =>
+      implicit val space = KeySpace(t.space)
+      implicit val imps = CommonImplicits()
+      Counter.fromName(t.name) flatMap {
         case tbl: Counter with Counter.ErrorTolerance =>
-          Success(Entry(tbl, space, tbl.tolerance))
+          val e = Entry(tbl, space, tbl.tolerance)
+          tables += (t -> e)
+          Success(e)
         case tbl =>
           //println(s"Counter without error tolerance: $name")
           //Entry(tbl, space, Tolerance(0))
-          Failure(ReservationException(s"counter without error tolerance: $name"))
+          Failure(ReservationException(s"counter without error tolerance: $t"))
       }
     }
   }
@@ -110,23 +114,23 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     * Initialize new UuidSet
     * TODO: make generic version
     */
-  override def createUuidset(name: String, sizeTolerance: Double): tw.Future[Unit] = ???
+  override def createUuidset(t: Table, sizeTolerance: Double): tw.Future[Unit] = ???
 
   /** Initialize new Counter table. */
-  override def createCounter(table: String, keyspace: String, error: Double): tw.Future[Unit] = {
-    implicit val space = KeySpace(keyspace)
+  override def createCounter(t: Table, error: Double): tw.Future[Unit] = {
+    implicit val space = KeySpace(t.space)
     implicit val imps = CommonImplicits()
-    val counter = new Counter(table) with WeakOps
-    tables += (table -> Entry(counter, space, Tolerance(error)))
+    val counter = new Counter(t.name) with WeakOps
+    tables += (t -> Entry(counter, space, Tolerance(error)))
     m.rpcs += 1
     tw.Future.Unit
   }
 
-  override def readInterval(name: String, keyStr: String): tw.Future[th.IntervalLong] = {
+  override def readInterval(t: Table, keyStr: String): tw.Future[th.IntervalLong] = {
     m.rpcs += 1
     m.reads += 1
     val key = keyStr.toUUID
-    table(name) match {
+    table(t) match {
       case Success(e) =>
         e.table.readTwitter(CLevel.ONE)(key).instrument() map { raw =>
           // first time, create new Reservation and store in hashmap
@@ -139,12 +143,12 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     }
   }
 
-  override def incr(name: String, keyStr: String, n: Long): tw.Future[Unit] = {
+  override def incr(t: Table, keyStr: String, n: Long): tw.Future[Unit] = {
     m.rpcs += 1
     m.incrs += 1
     val key = keyStr.toUUID
 
-    table(name) match {
+    table(t) match {
       case Success(e) =>
         // may need to get the latest value of the counter if we haven't created a reservation for this record yet
         val get = { () => e.table.readTwitter(CLevel.ALL)(key).instrument().await() }
@@ -259,12 +263,12 @@ object ReservationClient extends {
 
     val client = Thrift.newMethodIface(service)
 
-    val tbl = "c"
+    val t = Table(space.name, "c")
     println(s"create counter")
-    client.createCounter(tbl, "reservations", 0.05).await()
+    client.createCounter(t, 0.05).await()
 
     println(s"incr counter")
-    client.incr(tbl, 0.id.toString, 1L).await()
+    client.incr(t, 0.id.toString, 1L).await()
 
     println(s"done")
     sys.exit()

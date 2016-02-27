@@ -11,6 +11,7 @@ import ipa.thrift.{IntervalLong, ReservationException}
 import nl.grons.metrics.scala.Timer
 import owl._
 
+import ipa.thrift.Table
 import scala.concurrent.Future
 import owl.Util._
 
@@ -66,23 +67,25 @@ object Counter {
     base: Counter =>
 
     def tolerance: Tolerance
-
+    
+    private def table: Table = Table(space.name, name)
     override def meta() = Map("tolerance" -> tolerance.error)
 
     override def create(): Future[Unit] = {
       createTwitter() flatMap { _ =>
-        reservations.client.createCounter(name, space.name, tolerance.error)
+        println(s"reservations.create: $table")
+        reservations.client.createCounter(table, tolerance.error)
       } asScala
     }
 
     type ReadType = Interval[Long]
-
+    
     override def incr(key: UUID, by: Long): Future[Unit] = {
-      reservations.client.incr(name, key.toString, by).asScala
+      reservations.client.incr(table, key.toString, by).asScala
     }
 
     override def read(key: UUID): Future[Interval[Long]] = {
-      reservations.client.readInterval(name, key.toString)
+      reservations.client.readInterval(table, key.toString)
           .map(v => v: Interval[Long])
           .asScala
     }
@@ -121,11 +124,17 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
 
   val tbl = new CountTable
 
-  def createTwitter(): tw.Future[Unit] =
-    tbl.create.ifNotExists
-        .`with`(comment eqs metrics.json.writeValueAsString(meta))
-        .execute()
-        .unit
+  def createTwitter(): tw.Future[Unit] = {
+    val metaStr = metrics.json.writeValueAsString(meta)
+
+    DataType.lookupMetadata(name) filter { _ == meta } map {
+      _ => tw.Future.Unit
+    } recover { case e =>
+      println(s">> (re)creating ${space.name}.$name")
+      session.execute(s"DROP TABLE ${space.name}.$name")
+      tbl.create.`with`(comment eqs metaStr).execute().unit
+    } get
+  }
 
   override def create(): Future[Unit] =
     createTwitter().asScala

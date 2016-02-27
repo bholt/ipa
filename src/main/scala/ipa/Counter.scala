@@ -7,7 +7,7 @@ import com.twitter.{util => tw}
 import com.websudos.phantom.builder.query.{ExecutableQuery, ExecutableStatement, SelectQuery}
 import com.websudos.phantom.dsl._
 import com.websudos.phantom.keys.PartitionKey
-import ipa.thrift.IntervalLong
+import ipa.thrift.{IntervalLong, ReservationException}
 import nl.grons.metrics.scala.Timer
 import owl._
 
@@ -16,6 +16,8 @@ import owl.Util._
 
 import scala.concurrent.duration.FiniteDuration
 import owl.Conversions._
+
+import scala.util.{Failure, Success, Try}
 
 object Counter {
 
@@ -65,6 +67,8 @@ object Counter {
 
     def tolerance: Tolerance
 
+    override def meta() = Map("tolerance" -> tolerance.error)
+
     override def create(): Future[Unit] = {
       createTwitter() flatMap { _ =>
         reservations.client.createCounter(name, space.name, tolerance.error)
@@ -84,6 +88,24 @@ object Counter {
     }
   }
 
+  def fromName(name: String)(implicit imps: CommonImplicits): Try[Counter] = {
+    DataType.lookupMetadata(name) flatMap { meta =>
+      Try(meta("tolerance")) flatMap {
+        case tol: Double =>
+          val c = new Counter(name)
+              with ErrorTolerance { override val tolerance = Tolerance(tol) }
+          Success(c)
+        case tol =>
+          Failure(ReservationException(s"tolerance wasn't a double: $tol"))
+      } recoverWith {
+        case e: Throwable =>
+          Failure(ReservationException(s"unable to get 'tolerance': ${e.getMessage}"))
+      }
+    } recoverWith {
+      case e: Throwable =>
+        Failure(ReservationException(s"metadata not found for $name"))
+    }
+  }
 }
 
 class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType(imps) {
@@ -100,10 +122,13 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
   val tbl = new CountTable
 
   def createTwitter(): tw.Future[Unit] =
-    tbl.create.ifNotExists.execute().unit
+    tbl.create.ifNotExists
+        .`with`(comment eqs metrics.json.writeValueAsString(meta))
+        .execute()
+        .unit
 
   override def create(): Future[Unit] =
-    tbl.create.ifNotExists.future().unit
+    createTwitter().asScala
 
   override def truncate(): Future[Unit] =
     tbl.truncate.future().unit

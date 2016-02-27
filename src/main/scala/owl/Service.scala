@@ -135,15 +135,15 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef]) extends Instrument
   val cassandraOpLatency = metrics.timer("cass_op_latency")
   lazy val missedDeadlines = create.meter("missed_deadlines")
 
-  val mapper = new ObjectMapper()
+  val json = new ObjectMapper()
       .registerModule(new MetricsModule(TimeUnit.SECONDS, TimeUnit.MILLISECONDS, false))
       .registerModule(DefaultScalaModule)
 
   def write(out: PrintStream, extras: Map[String,AnyRef] = Map(), configFilter: String = "ipa") = {
     val mConfig = config.c.root().withOnlyKey(configFilter).unwrapped()
     val mOutput = output map { case (k,v) => s"out_$k" -> v }
-    val mMetrics = mapper.readValue(mapper.writeValueAsString(metricRegistry), classOf[java.util.Map[String,Object]])
-    val writer = mapper.writerWithDefaultPrettyPrinter()
+    val mMetrics = json.readValue(json.writeValueAsString(metricRegistry), classOf[java.util.Map[String,Object]])
+    val writer = json.writerWithDefaultPrettyPrinter()
     out.println(writer.writeValueAsString(mConfig ++ mMetrics ++ mOutput ++ extras))
   }
 
@@ -151,8 +151,8 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef]) extends Instrument
     reservations.hosts
         .map { host => reservations.newClient(host).metricsJson() }
         .map { f =>
-          f map { json =>
-            mapper.readValue(json, classOf[Map[String,Any]])
+          f map { j =>
+            json.readValue(j, classOf[Map[String,Any]])
           }
         }
         .bundle()

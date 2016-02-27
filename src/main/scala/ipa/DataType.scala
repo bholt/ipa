@@ -9,16 +9,35 @@ import owl.{IPAMetrics, Rushed, TableGenerator}
 import scala.concurrent._
 import scala.concurrent.duration.FiniteDuration
 import scala.math.Ordering.Implicits._
+import scala.util.Try
 
 case class CommonImplicits(implicit val session: Session, val space: KeySpace, val metrics: IPAMetrics, val reservations: ReservationClient)
 
 abstract class DataType(imps: CommonImplicits) extends TableGenerator {
   def name: String
 
+  /* metadata to store in the Cassandra table properties */
+  def meta: Map[String,Any] = Map()
+
   implicit val session = imps.session
   implicit val space = imps.space
   implicit val metrics = imps.metrics
   implicit val reservations = imps.reservations
+}
+
+object DataType {
+  def lookupMetadata(name: String)(implicit imps: CommonImplicits): Try[Map[String, Any]] = {
+    import imps._
+    val query = s"SELECT comment FROM system.schema_columnfamilies WHERE keyspace_name = '${space.name}' AND columnfamily_name = '$name'"
+    println(query)
+    Try {
+      val row = session.execute(query).one()
+      if (row == null) println("row not found")
+      val text = row.get("comment", classOf[String])
+      println(s"table comment: $text")
+      metrics.json.readValue(text, classOf[Map[String, Any]])
+    }
+  }
 }
 
 trait RushImpl { this: DataType =>

@@ -3,6 +3,7 @@ package ipa
 import java.net.InetAddress
 import java.util.UUID
 
+import scala.util.{Success, Failure, Try}
 import com.datastax.driver.core.{Cluster, ConsistencyLevel => CLevel}
 import com.twitter.finagle.loadbalancer.Balancers
 import com.twitter.finagle.{Thrift, ThriftMux}
@@ -33,7 +34,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   }
 
   case class Entry(
-      table: Counter with WeakOps,
+      table: Counter,
       space: KeySpace,
       tolerance: Tolerance
   ) {
@@ -92,6 +93,19 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
 
   val tables = new mutable.HashMap[String, Entry]
 
+  def table(name: String): Try[Entry] = {
+    Try(tables(name)) recoverWith { case _ =>
+      Counter.fromName(name) flatMap {
+        case tbl: Counter with Counter.ErrorTolerance =>
+          Success(Entry(tbl, space, tbl.tolerance))
+        case tbl =>
+          //println(s"Counter without error tolerance: $name")
+          //Entry(tbl, space, Tolerance(0))
+          Failure(ReservationException(s"counter without error tolerance: $name"))
+      }
+    }
+  }
+
   /**
     * Initialize new UuidSet
     * TODO: make generic version
@@ -112,12 +126,16 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     m.rpcs += 1
     m.reads += 1
     val key = keyStr.toUUID
-    val e = tables(name)
-    e.table.readTwitter(CLevel.ONE)(key).instrument() map { raw =>
-      // first time, create new Reservation and store in hashmap
-      val res = e.reservation(key, raw)
-      // println(s">> raw = $raw, res.delta = ${res.delta}; $res")
-      th.IntervalLong(raw - res.delta, raw + res.delta)
+    table(name) match {
+      case Success(e) =>
+        e.table.readTwitter(CLevel.ONE)(key).instrument() map { raw =>
+          // first time, create new Reservation and store in hashmap
+          val res = e.reservation(key, raw)
+          // println(s">> raw = $raw, res.delta = ${res.delta}; $res")
+          th.IntervalLong(raw - res.delta, raw + res.delta)
+        }
+      case Failure(e) =>
+        tw.Future.exception(e)
     }
   }
 
@@ -126,41 +144,40 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     m.incrs += 1
     val key = keyStr.toUUID
 
-    val e = tables.get(name) match {
-      case Some(t) => t
-      case None =>
-        m.errors += 1
-        return Future.exception(new ReservationException("missing table!"))
-    }
-    // may need to get the latest value of the counter if we haven't created a reservation for this record yet
-    val get = { () => e.table.readTwitter(CLevel.ALL)(key).instrument().await() }
-    val res = e.reservation(key, get())
+    table(name) match {
+      case Success(e) =>
+        // may need to get the latest value of the counter if we haven't created a reservation for this record yet
+        val get = { () => e.table.readTwitter(CLevel.ALL)(key).instrument().await() }
+        val res = e.reservation(key, get())
 
-    // consume
-    val exec = { cons: CLevel => e.table.incrTwitter(cons)(key, n).instrument() }
+        // consume
+        val exec = { cons: CLevel => e.table.incrTwitter(cons)(key, n).instrument() }
 
-    if (n > res.allocated) {
-      m.outOfBounds += 1
-      // println(s">> incr($n) outside error bounds $res, executing with strong consistency")
-      // cannot execute within error bounds, so must execute with strong consistency
-      exec(CLevel.ALL) flatMap { _ => e.refresh(key).unit }
-    } else {
-      if (res.available < n) {
-        m.refreshes += 1
-        // println(s">> incr($n) need to refresh: $res")
-        // need to get more
-        e.refresh(key) flatMap { _ =>
-          assert(res.available >= n)
-          res.available -= n
-          // println(s">> incr($n) => $res")
-          exec(CLevel.ONE)
+        if (n > res.allocated) {
+          m.outOfBounds += 1
+          // println(s">> incr($n) outside error bounds $res, executing with strong consistency")
+          // cannot execute within error bounds, so must execute with strong consistency
+          exec(CLevel.ALL) flatMap { _ => e.refresh(key).unit }
+        } else {
+          if (res.available < n) {
+            m.refreshes += 1
+            // println(s">> incr($n) need to refresh: $res")
+            // need to get more
+            e.refresh(key) flatMap { _ =>
+              assert(res.available >= n)
+              res.available -= n
+              // println(s">> incr($n) => $res")
+              exec(CLevel.ONE)
+            }
+          } else {
+            m.immediates += 1
+            res.available -= n
+            // println(s">> incr($n) => $res")
+            exec(CLevel.ONE)
+          }
         }
-      } else {
-        m.immediates += 1
-        res.available -= n
-        // println(s">> incr($n) => $res")
-        exec(CLevel.ONE)
-      }
+      case Failure(e) =>
+        tw.Future.exception(e)
     }
   }
 

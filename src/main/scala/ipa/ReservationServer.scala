@@ -197,7 +197,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   }
 
   override def metricsReset(): tw.Future[Unit] = {
-    metrics.reset()
+    metrics.factory.reset()
     tw.Future.Unit
   }
 }

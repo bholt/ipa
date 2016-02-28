@@ -22,8 +22,10 @@ import org.joda.time.DateTime
 import scala.collection.JavaConversions._
 import scala.concurrent.{Future, blocking}
 import Connector.config
+import com.codahale.metrics
 import com.twitter.{util => tw}
 
+import scala.collection.mutable
 import scala.collection.parallel.immutable
 
 // for Vector.sample
@@ -127,10 +129,41 @@ class RetweetCounts extends CassandraTable[RetweetCounts, RetweetCount] {
   override def fromRow(r: Row) = RetweetCount(tweet(r), count(r))
 }
 
+class MetricCell[T](var metric: T)
+object MetricCell { def apply[T](metric: T) = new MetricCell[T](metric) }
+
 class IPAMetrics(output: scala.collection.Map[String,AnyRef]) {
 
-  val registry = new MetricRegistry
-  def create = registry // just for better readability
+  val registry = new metrics.MetricRegistry
+
+  object factory {
+    val timers = mutable.HashMap[String,MetricCell[Timer]]()
+    val counters = mutable.HashMap[String,MetricCell[Counter]]()
+    val meters = mutable.HashMap[String,MetricCell[Meter]]()
+    val histograms = mutable.HashMap[String,MetricCell[Histogram]]()
+
+    def timer(name: String) =
+      timers.getOrElseUpdate(name, MetricCell(registry.timer(name)))
+
+    def counter(name: String) =
+      counters.getOrElseUpdate(name, MetricCell(registry.counter(name)))
+
+    def meter(name: String) =
+      meters.getOrElseUpdate(name, MetricCell(registry.meter(name)))
+
+    def histogram(name: String) =
+      histograms.getOrElseUpdate(name, MetricCell(registry.histogram(name)))
+
+    def reset() = {
+      registry.removeMatching(MetricFilter.ALL)
+      for ((name, cell) <- timers)     cell.metric = registry.timer(name)
+      for ((name, cell) <- counters)   cell.metric = registry.counter(name)
+      for ((name, cell) <- meters)     cell.metric = registry.meter(name)
+      for ((name, cell) <- histograms) cell.metric = registry.histogram(name)
+    }
+  }
+
+  def create = factory
 
   val cassandraOpLatency = create.timer("cass_op_latency")
   lazy val missedDeadlines = create.meter("missed_deadlines")
@@ -148,29 +181,12 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef]) {
   }
 
   def fromReservationServers()(implicit reservations: ReservationClient) = {
-    reservations.addrs
-        .map { addr => reservations.newClient(addr).metricsJson() }
-        .map { f =>
-          f map { j =>
-            json.readValue(j, classOf[Map[String,Any]])
-          }
-        }
+    reservations.all
+        .map { client => client.metricsJson() }
+        .map { f => f map { j => json.readValue(j, classOf[Map[String,Any]]) } }
         .bundle()
         .await()
         .reduce(combine)
-  }
-
-  def reset() = {
-    val old = registry.getMetrics.toMap
-    registry.removeMatching(MetricFilter.ALL)
-    for ((name, metric) <- old) {
-      metric match {
-        case _: Counter =>    registry.counter(name)
-        case _: Histogram =>  registry.histogram(name)
-        case _: Meter =>      registry.meter(name)
-        case _: Timer =>      registry.timer(name)
-      }
-    }
   }
 
   def dump()(implicit reservations: ReservationClient): Unit = {

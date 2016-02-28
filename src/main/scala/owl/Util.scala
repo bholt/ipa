@@ -133,12 +133,14 @@ object Util {
     def nreplicas = s.getCluster.getMetadata.getAllHosts.size
   }
 
-  implicit class CounterMetricPlus(c: metrics.Counter) {
+  implicit def cellToMetric[T](cell: MetricCell[T]): T = cell.metric
+
+  implicit class CounterMetricPlus(c: MetricCell[metrics.Counter]) {
     def +=(v: Long): Unit = c.inc(v)
     def -=(v: Long): Unit = c.dec(v)
   }
 
-  implicit class HistogramMetricPlus(h: metrics.Histogram) {
+  implicit class HistogramMetricPlus(h: MetricCell[metrics.Histogram]) {
     def +=(v: Long): Unit = h.update(v)
     def <<(v: Long): Unit = h.update(v)
   }

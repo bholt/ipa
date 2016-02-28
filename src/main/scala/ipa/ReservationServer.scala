@@ -20,6 +20,8 @@ import owl.{OwlService, Tolerance}
 import scala.collection.JavaConversions._
 import scala.collection.mutable
 
+import owl.Consistency._
+
 class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationService[tw.Future] {
   import imps._
 
@@ -33,6 +35,11 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     val errors = metrics.create.counter("errors")
 
     val races = metrics.create.counter("races")
+
+    val latencyWeakWrite   = metrics.create.timer("weak_write_latency")
+    val latencyStrongWrite = metrics.create.timer("strong_write_latency")
+    val latencyWeakRead    = metrics.create.timer("weak_read_latency")
+    val latencyStrongRead  = metrics.create.timer("strong_read_latency")
   }
 
   case class Entry(
@@ -134,7 +141,9 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     val key = keyStr.toUUID
     table(t) match {
       case Success(e) =>
-        e.table.readTwitter(CLevel.ONE)(key).instrument() map { raw =>
+        e.table.readTwitter(Weak)(key)
+            .instrument(m.latencyWeakRead)
+            .instrument() map { raw =>
           // first time, create new Reservation and store in hashmap
           val res = e.reservation(key, raw)
           // println(s">> raw = $raw, res.delta = ${res.delta}; $res")
@@ -153,17 +162,25 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     table(t) match {
       case Success(e) =>
         // may need to get the latest value of the counter if we haven't created a reservation for this record yet
-        val get = { () => e.table.readTwitter(CLevel.ALL)(key).instrument().await() }
+        val get = { () =>
+          e.table.readTwitter(Strong)(key)
+              .instrument(m.latencyStrongRead)
+              .instrument().await()
+        }
         val res = e.reservation(key, get())
 
         // consume
-        val exec = { cons: CLevel => e.table.incrTwitter(cons)(key, n).instrument() }
+        val exec = { cons: CLevel =>
+          val timer = if (cons == Strong) m.latencyStrongWrite
+                      else                m.latencyWeakWrite
+          e.table.incrTwitter(cons)(key, n).instrument(timer).instrument()
+        }
 
         if (n >= res.allocated) {
           m.outOfBounds += 1
           // println(s">> incr($n) outside error bounds $res, executing with strong consistency")
           // cannot execute within error bounds, so must execute with strong consistency
-          exec(CLevel.ALL) flatMap { _ => e.refresh(key).unit }
+          exec(Strong) flatMap { _ => e.refresh(key).unit }
         } else {
           if (res.available < n) {
             m.refreshes += 1
@@ -172,17 +189,17 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
             e.refresh(key) flatMap { _ =>
               if (res.available >= n) {
                 res.available -= n
-                exec(CLevel.ONE)
+                exec(Weak)
               } else {
                 m.races += 1
-                exec(CLevel.ALL)
+                exec(Strong)
               }
             }
           } else {
             m.immediates += 1
             res.available -= n
             // println(s">> incr($n) => $res")
-            exec(CLevel.ONE)
+            exec(Weak)
           }
         }
       case Failure(e) =>

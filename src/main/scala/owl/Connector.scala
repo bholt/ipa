@@ -4,6 +4,7 @@ import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 
 import com.datastax.driver.core._
+import com.datastax.driver.core.policies.{DCAwareRoundRobinPolicy, LatencyAwarePolicy}
 import com.twitter.finagle.Thrift
 import com.twitter.finagle.loadbalancer.Balancers
 import com.typesafe.config.{ConfigFactory, ConfigRenderOptions, ConfigValue, ConfigValueType}
@@ -125,8 +126,12 @@ object Connector {
           .setMaxRequestsPerConnection(HostDistance.REMOTE, config.concurrent_reqs))
       .build()
 
+  val latencyMonitor =
+    LatencyAwarePolicy.builder(DCAwareRoundRobinPolicy.builder().build()).build()
+
   val cluster = Cluster.builder()
       .addContactPoints(config.hosts)
+      .withLoadBalancingPolicy(latencyMonitor)
       .build()
 
   val default_keyspace = KeySpace(config.keyspace)

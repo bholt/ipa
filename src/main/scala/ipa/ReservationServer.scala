@@ -15,11 +15,10 @@ import ipa.thrift.{ReservationException, Table}
 import ipa.{thrift => th}
 import owl.Connector.config
 import owl.Util._
-import owl.{OwlService, Tolerance}
+import owl.{Connector, OwlService, Tolerance}
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable
-
 import owl.Consistency._
 
 class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationService[tw.Future] {
@@ -208,8 +207,22 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   }
 
   override def metricsJson(): tw.Future[String] = {
+    // session.getCluster.getConfiguration.getPolicies.getLoadBalancingPolicy
+    val latencyStats = Connector.latencyMonitor.getScoresSnapshot.getAllStats
+    println(
+      latencyStats map {
+        case (host,stats) =>
+          s"${host.getAddress}:\n - ${stats.getLatencyScore/1e6} ms (n: ${stats.getMeasurementsCount})"
+      } mkString "\n"
+    )
+
+    val extras = Map(
+      "server_addr" -> ReservationServer.host,
+      "monitor" -> latencyStats
+    )
+
     val ss = new StringPrintStream()
-    metrics.write(ss, Map("server_addr" -> ReservationServer.host), configFilter="-")
+    metrics.write(ss, extras, configFilter="-")
     tw.Future.value(ss.mkString)
   }
 

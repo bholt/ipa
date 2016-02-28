@@ -168,6 +168,7 @@ def run(logfile, *args, **flags):
     # hack to invoke as a shell script because something chokes on some values...
     invoke = ["sh",  "-c", "exec bin/owl {}".format(" ".join(args))]
 
+    puts(colored.magenta("@ " + now()))
     try:
         cmd = swarm.owl_exec(*invoke, _timeout=60*5, _iter=True)
         puts("> #{colored.blue(' '.join(cmd.cmd))}")

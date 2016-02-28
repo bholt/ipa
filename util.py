@@ -8,6 +8,8 @@ import json
 import pygments
 from pygments.lexers import JsonLexer, YamlLexer
 from pygments.formatters import TerminalFormatter
+import time
+
 
 def caller():
     # note, need extra 'f_back' because this itself is a function...
@@ -62,3 +64,6 @@ ANSISEQ = re.compile(r'(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]')
 def strip_ansi(text):
     return ANSISEQ.sub('', text)
 
+
+def now():
+    time.strftime("%I:%M:%S", time.localtime())

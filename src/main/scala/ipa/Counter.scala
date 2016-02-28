@@ -21,6 +21,7 @@ import owl.Conversions._
 import scala.util.{Failure, Success, Try}
 
 object Counter {
+  import Consistency._
 
   object Ops {
 
@@ -39,16 +40,17 @@ object Counter {
   trait WeakOps extends Ops.Incr with Ops.Read { base: Counter =>
     type ReadType = Inconsistent[Long]
     override def read(key: UUID) =
-      base.read(CLevel.ONE)(key).map(Inconsistent(_))
-    override def incr(key: UUID, by: Long) = base.incr(CLevel.ONE)(key, by)
+      base.read(Weak)(key).map(Inconsistent(_))
+    override def incr(key: UUID, by: Long) =
+      base.incr(Weak)(key, by)
   }
 
   trait StrongOps extends Ops.Incr with Ops.Read { base: Counter =>
     type ReadType = Consistent[Long]
     override def read(key: UUID): Future[Consistent[Long]] =
-      base.read(CLevel.ALL)(key) map { Consistent(_) }
+      base.read(Weak)(key) map { Consistent(_) }
     override def incr(key: UUID, by: Long): Future[Unit] =
-      base.incr(CLevel.ALL)(key, by)
+      base.incr(Strong)(key, by)
   }
 
   trait LatencyBound extends Ops.Incr with Ops.Read with RushImpl {

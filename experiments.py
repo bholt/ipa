@@ -299,10 +299,10 @@ def run_rawmix(datatype):
             ipa_duration              = [60],
             ipa_zipf                  = ['0.6'],
 
-            ipa_concurrent_requests   = [128, 512, 2*K],
+            ipa_concurrent_requests   = [16, 128, 512, 2*K, 4*K],
 
-            ipa_bound = ['tolerance:0.1', 'consistency:strong', 'consistency:weak', 'latency:50ms'],
-            honeycomb_mode = ['normal', 'slowpoke_flat'],
+            ipa_bound = ['tolerance:0.1', 'tolerance:0.05', 'consistency:strong', 'consistency:weak', 'latency:50ms', 'latency:10ms'],
+            honeycomb_mode = ['normal', 'slowpoke_flat', 'world'],
             mix = ['no_size']
 
         ):

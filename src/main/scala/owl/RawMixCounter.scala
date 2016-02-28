@@ -133,7 +133,7 @@ object RawMixCounter extends {
     println(s">>> warmup (${warmup.duration})")
     warmup.run(truncate = true)
 
-    reservations.client.metricsReset()
+    reservations.all map { _.metricsReset() } bundle() await()
 
     val workload = new RawMixCounter(config.duration)
     println(s">>> workload (${workload.duration})")

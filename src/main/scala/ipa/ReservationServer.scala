@@ -246,7 +246,10 @@ class ReservationClient(cluster: Cluster) {
   }
 
   println(s"hosts: ${addrs.mkString(",")}")
-  val client = newClient(addrs.toList.reverse.mkString(","))
+
+  val client = newClient(addrs.mkString(","))
+
+  val all = addrs map { addr => newClient(addr) }
 }
 
 

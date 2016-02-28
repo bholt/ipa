@@ -31,7 +31,6 @@ object DataType {
     val query = s"SELECT comment FROM system.schema_columnfamilies WHERE keyspace_name = '${space.name}' AND columnfamily_name = '$name'"
     Try {
       val row = blocking { session.execute(query).one() }
-      if (row == null) println("row not found")
       val text = row.get("comment", classOf[String])
       metrics.json.readValue(text, classOf[Map[String, Any]])
     }

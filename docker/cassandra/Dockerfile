@@ -29,7 +29,7 @@ RUN update-alternatives --install "/usr/bin/javac" "javac" "/usr/lib/jvm/java-8-
 RUN mkdir -p /src; \
     git clone https://github.com/bholt/owl.git /src/owl && \
     cd /src/owl && \
-    sbt test:compile
+    sbt compile test:compile
 
 # override some configurations
 ADD conf/cassandra.yaml /etc/cassandra/cassandra.yaml

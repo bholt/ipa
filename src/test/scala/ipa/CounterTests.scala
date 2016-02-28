@@ -4,7 +4,7 @@ import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
 import owl._
 import owl.Util._
-
+import owl.Conversions._
 import scala.concurrent.duration._
 
 class CounterTests extends {
@@ -63,8 +63,10 @@ class CounterTests extends {
     }
 
     "read incremented value" in {
-      val r = s(0.id).read().futureValue
+      val r: Consistent[Long] = s(0.id).read().futureValue
       r shouldBe Consistent(3)
+      val v: Long = r
+      v shouldBe 3
     }
   }
 

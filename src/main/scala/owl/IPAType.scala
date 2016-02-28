@@ -39,10 +39,8 @@ class Inconsistent[T](value: T) extends IPAType {
 object Inconsistent { def apply[T](value: T) = new Inconsistent(value) }
 
 
-class Consistent[T](value: T) extends Inconsistent[T](value)
-object Consistent {
-  def apply[T](value: T) = new Consistent(value)
-}
+case class Consistent[T](value: T) extends Inconsistent[T](value) {}
+
 
 class Transient[T](value: T) extends Inconsistent[T](value) {
   /** wait for it to become consistent */

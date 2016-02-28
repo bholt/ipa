@@ -8,6 +8,7 @@ import com.websudos.phantom.builder.query.{ExecutableQuery, ExecutableStatement,
 import com.websudos.phantom.dsl._
 import com.websudos.phantom.keys.PartitionKey
 import ipa.thrift.{IntervalLong, ReservationException}
+
 import owl._
 
 import ipa.thrift.Table

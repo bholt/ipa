@@ -145,21 +145,25 @@ def before_all():
 
     # time.sleep(5) # make sure Cassandra has finished initializing
     # blockade.status(**LIVE)
-    swarm.reservations(['-Dipa.replication.factor=3'], {'experiments': True})
+    # swarm.reservations(['-Dipa.replication.factor=3'], {'experiments': True})
 
 
 def run(logfile, *args, **flags):
     # convert ipa_* flags to java properties & add to args
     # ipa_retwis_initial_users -> ipa.retwis.initial.users
-    args = list(args)
-    args.extend([
+    props = [
         "-D{}={}".format(k.replace('_','.'), flags[k])
         for k in flags if k.startswith('ipa_')
-    ])
+    ]
+
+    args = list(args)
+    args.extend(props)
 
     if 'honeycomb_mode' in flags:
         mode = flags['honeycomb_mode']
         honeycomb.configure(mode, quiet=True)
+
+    swarm.reservations(props, {'experiments': True})
 
     # hack to invoke as a shell script because something chokes on some values...
     invoke = ["sh",  "-c", "exec bin/owl {}".format(" ".join(args))]
@@ -297,7 +301,7 @@ def run_rawmix(datatype):
             ipa_concurrent_requests   = [16, 128, 512, 2*K, 4*K],
 
             # 'latency:50ms', 'latency:10ms'
-            ipa_bound = ['tolerance:0.1', 'consistency:strong', 'consistency:weak'],
+            ipa_bound = ['tolerance:0.1'], #, 'consistency:strong', 'consistency:weak'],
             honeycomb_mode = ['normal', 'slowpoke_flat'],
             mix = ['no_size']
 

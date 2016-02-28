@@ -184,7 +184,7 @@ def run(logfile, *args, **flags):
 
         # flatten & clean up metrics a bit
         metrics = {
-            re.sub(r"owl\.\w+\.", "", k): v
+            re.sub(r"owl\.\w+\.", "", k).replace(".","_"): v
             for k, v in flatten_json(json.loads(filtered)).items()
         }
 

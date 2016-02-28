@@ -45,7 +45,7 @@ class CounterTests extends {
 
   "Counter with StrongOps" should {
 
-    val s = new Counter("strong") with Counter.StrongOps
+    val s = new Counter("strong") with Counter.StrongWrite
 
     "be created" in { s.create().await() }
     "be truncated" in { s.truncate().await() }

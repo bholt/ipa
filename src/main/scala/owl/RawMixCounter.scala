@@ -26,15 +26,22 @@ class RawMixCounter(val duration: FiniteDuration) extends {
   def zipfID() = id(zipfDist.sample())
   def urandID() = id(Random.nextInt(nsets))
 
-  val counter = config.bound.parsed match {
+  val counter = config.bound match {
     case Latency(l) =>
       new Counter("raw") with Counter.LatencyBound { override val bound = l }
-    case Consistency(Weak) =>
+
+    case Consistency(Weak, Weak) =>
       new Counter("raw") with Counter.WeakOps
-    case Consistency(Strong) =>
-      new Counter("raw") with Counter.StrongOps
+
+    case Consistency(Strong, Weak) =>
+      new Counter("raw") with Counter.StrongRead
+
+    case Consistency(Weak, Strong) =>
+      new Counter("raw") with Counter.StrongWrite
+
     case t @ Tolerance(_) =>
       new Counter("raw") with Counter.ErrorTolerance { override val tolerance = t }
+
     case e =>
       println("error parsing bound")
       sys.error(s"impossible case: $e")
@@ -62,7 +69,9 @@ class RawMixCounter(val duration: FiniteDuration) extends {
         r.asInstanceOf[Rushed[Long]].consistency
       case _: Counter.WeakOps =>
         Consistency.Weak
-      case _: Counter.StrongOps =>
+      case _: Counter.StrongWrite =>
+        Consistency.Weak
+      case _: Counter.StrongRead =>
         Consistency.Strong
       case _ =>
         sys.error("datatype didn't match any of the options")
@@ -73,13 +82,6 @@ class RawMixCounter(val duration: FiniteDuration) extends {
       case _ => // do nothing
     }
     r.asInstanceOf[Inconsistent[Long]]
-  }
-
-  def instrument[T, U](op: Symbol)(f: Future[T]): Future[T] = {
-    op match {
-      case 'incr => f.instrument(timerIncr)
-      case 'read => f.instrument(timerRead)
-    }
   }
 
   def run(truncate: Boolean = false) {

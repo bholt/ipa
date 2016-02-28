@@ -22,6 +22,8 @@ import scala.concurrent.{Future, blocking}
 import scala.util.Try
 
 object Connector {
+  import Consistency._
+
   object config {
     val c = ConfigFactory.load()
 
@@ -64,40 +66,24 @@ object Connector {
       }
     }
 
-    object bound {
-      private val split = c.getString("ipa.bound").split(":")
-
-      val kind = split(0)
-
-      lazy val parsed: Bound = Try {
-        split(0) match {
-          case "latency" => Latency(Duration(split(1)).asInstanceOf[FiniteDuration])
-          case "consistency" => Consistency(consistencyFromString(split(1)))
-          case "tolerance" => Tolerance(split(1).toDouble)
-          case _ => throw new RuntimeException(s"invalid bound: ${split(0)}:${split(1)}")
-        }
-      } recover {
-        case e: Throwable =>
-          println(s"error parsing bound: ${e.getMessage}")
-          sys.exit(1)
-      } get
-
-      val latency = kind match {
-        case "latency" => Some(Duration(split(1)).asInstanceOf[FiniteDuration])
-        case _ => None
+    lazy val bound: Bound = Try {
+      val split = c.getString("ipa.bound").split(":")
+      split(0) match {
+        case "latency" => Latency(Duration(split(1)).asInstanceOf[FiniteDuration])
+        case "consistency" =>
+          split(1) match {
+            case "weak"        => Consistency(Weak, Weak)
+            case "strong"      => Consistency(Strong, Weak) // strong read
+            case "strongwrite" => Consistency(Weak, Strong)
+          }
+        case "tolerance" => Tolerance(split(1).toDouble)
+        case _ => throw new RuntimeException(s"invalid bound: ${split(0)}:${split(1)}")
       }
-
-      val consistency = kind match {
-        case "consistency" => Some(consistencyFromString(split(1)))
-        case _ => None
-      }
-
-      val error = kind match {
-        case "error" => Some(split(1).toDouble)
-        case _ => None
-      }
-
-    }
+    } recover {
+      case e: Throwable =>
+        println(s"error parsing bound: ${e.getMessage}")
+        sys.exit(1)
+    } get
 
     def nthreads = c.getInt("ipa.nthreads")
     def cap    = c.getInt("ipa.cap")

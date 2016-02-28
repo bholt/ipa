@@ -23,12 +23,21 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
   def zipfID() = id(zipfDist.sample())
   def urandID() = id(Random.nextInt(nsets))
 
-  val set = (config.bound.latency, config.bound.consistency) match {
-    case (Some(latency), None) =>
-      new IPAUuidSet("raw") with LatencyBound { override val latencyBound = latency }
-    case (None, Some(consistency)) =>
+  import Consistency._
+
+  val set = config.bound match {
+
+    case Consistency(Weak, Weak) =>
       new IPAUuidSet("raw")
-          with ConsistencyBound { override val consistencyLevel = consistency }
+          with ConsistencyBound { override val consistencyLevel = Weak }
+
+    case Consistency(Strong, Weak) | Consistency(Weak, Strong) =>
+      new IPAUuidSet("raw")
+          with ConsistencyBound { override val consistencyLevel = Strong }
+
+    case Latency(lat) =>
+      new IPAUuidSet("raw") with LatencyBound { override val latencyBound = lat }
+
     case e =>
       sys.error(s"impossible case: $e")
   }

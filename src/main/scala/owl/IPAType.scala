@@ -1,6 +1,6 @@
 package owl
 
-import com.datastax.driver.core.ConsistencyLevel
+import com.datastax.driver.core.{ConsistencyLevel => CLevel}
 import org.joda.time.DateTime
 
 import scala.math.Ordering.Implicits._
@@ -12,18 +12,18 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.language.implicitConversions
 
 /** Define ordering over consistency levels */
-trait ConsistencyOrder extends Ordering[ConsistencyLevel] {
-  def compare(a: ConsistencyLevel, b: ConsistencyLevel) = a.compareTo(b)
+trait ConsistencyOrder extends Ordering[CLevel] {
+  def compare(a: CLevel, b: CLevel) = a.compareTo(b)
 }
 
 object Consistency {
-  val Strong = ConsistencyLevel.ALL
-  val Weak = ConsistencyLevel.ONE
+  val Strong = CLevel.ALL
+  val Weak = CLevel.ONE
 }
 
 sealed trait Bound
 final case class Latency(d: FiniteDuration) extends Bound
-final case class Consistency(c: ConsistencyLevel) extends Bound
+final case class Consistency(read: CLevel, write: CLevel) extends Bound
 final case class Tolerance(error: Double) extends Bound {
   def delta(value: Long) = (value * error).toLong
 }
@@ -51,7 +51,7 @@ class Transient[T](value: T) extends Inconsistent[T](value) {
 }
 
 
-class Rushed[T](value: T, cons: ConsistencyLevel)
+class Rushed[T](value: T, cons: CLevel)
     extends Inconsistent[T](value) with Ordered[Rushed[T]]
 {
   def consistency = cons
@@ -60,13 +60,13 @@ class Rushed[T](value: T, cons: ConsistencyLevel)
 }
 
 object Rushed {
-  def apply[T](value: T, c: ConsistencyLevel) = new Rushed(value, c)
+  def apply[T](value: T, c: CLevel) = new Rushed(value, c)
 }
 
 
 class Stale[T](
     value: T,
-    override val consistency: ConsistencyLevel,
+    override val consistency: CLevel,
     val time: DateTime
 ) extends Rushed[T](value, consistency)
 

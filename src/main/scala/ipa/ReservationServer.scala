@@ -216,9 +216,19 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
       } mkString "\n"
     )
 
+    val statsCleaned = latencyStats map {
+      case (host, stats) =>
+        val shortHost = host.getAddress.getHostAddress
+        shortHost -> Map(
+          "count" -> stats.getMeasurementsCount,
+          "latency_ms" -> stats.getLatencyScore / 1e6
+        )
+    }
+    println(statsCleaned)
+
     val extras = Map(
       "server_addr" -> ReservationServer.host,
-      "monitor" -> latencyStats
+      "monitor" -> statsCleaned
     )
 
     val ss = new StringPrintStream()

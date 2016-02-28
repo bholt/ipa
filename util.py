@@ -66,4 +66,4 @@ def strip_ansi(text):
 
 
 def now():
-    time.strftime("%I:%M:%S", time.localtime())
+    return time.strftime("%I:%M:%S", time.localtime())

@@ -4,8 +4,9 @@ import java.io.{ByteArrayOutputStream, PrintStream}
 import java.util.UUID
 import java.util.concurrent.{ArrayBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
+import com.codahale.metrics
+import com.codahale.metrics.Timer
 import com.datastax.driver.core.Session
-import nl.grons.metrics.scala.Timer
 import com.twitter.{util => tw}
 
 import scala.collection.generic.CanBuildFrom
@@ -37,8 +38,8 @@ object Util {
 
   implicit class TwFuturePlus[T](f: tw.Future[T]) {
     def instrument(timer: Timer = null)(implicit metrics: IPAMetrics): tw.Future[T] = {
-      val ctx = if (timer != null) timer.timerContext()
-                else metrics.cassandraOpLatency.timerContext()
+      val ctx = if (timer != null) timer.time()
+                else metrics.cassandraOpLatency.time()
       f.onSuccess(_ => ctx.stop()).onFailure(_ => ctx.stop())
     }
   }
@@ -94,8 +95,8 @@ object Util {
 
   implicit class InstrumentedFuture[T](f: Future[T])(implicit ec: ExecutionContext) {
     def instrument(timer: Timer = null)(implicit metrics: IPAMetrics) = {
-      val ctx = if (timer != null) timer.timerContext()
-                else metrics.cassandraOpLatency.timerContext()
+      val ctx = if (timer != null) timer.time()
+                else metrics.cassandraOpLatency.time()
       f onComplete { _ => ctx.stop() }
       f onFailure { case e: Exception => Console.err.println(e); throw e }
       f
@@ -130,6 +131,16 @@ object Util {
 
   implicit class SessionPlus(s: Session) {
     def nreplicas = s.getCluster.getMetadata.getAllHosts.size
+  }
+
+  implicit class CounterMetricPlus(c: metrics.Counter) {
+    def +=(v: Long): Unit = c.inc(v)
+    def -=(v: Long): Unit = c.dec(v)
+  }
+
+  implicit class HistogramMetricPlus(h: metrics.Histogram) {
+    def +=(v: Long): Unit = h.update(v)
+    def <<(v: Long): Unit = h.update(v)
   }
 
   class StringPrintStream(

@@ -58,5 +58,6 @@ service ReservationService {
 
   IntervalLong readInterval(1: Table tbl, uuid key) throws (1: ReservationException e)
 
+  void metricsReset()
   string metricsJson()
 }

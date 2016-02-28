@@ -8,7 +8,6 @@ import com.websudos.phantom.builder.query.{ExecutableQuery, ExecutableStatement,
 import com.websudos.phantom.dsl._
 import com.websudos.phantom.keys.PartitionKey
 import ipa.thrift.{IntervalLong, ReservationException}
-import nl.grons.metrics.scala.Timer
 import owl._
 
 import ipa.thrift.Table

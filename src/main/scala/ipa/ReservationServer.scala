@@ -6,7 +6,7 @@ import java.util.UUID
 import scala.util.{Failure, Success, Try}
 import com.datastax.driver.core.{Cluster, ConsistencyLevel => CLevel}
 import com.twitter.finagle.loadbalancer.Balancers
-import com.twitter.finagle.{Thrift, ThriftMux}
+import com.twitter.finagle.Thrift
 import com.twitter.util._
 import com.twitter.{util => tw}
 import com.websudos.phantom.connectors.KeySpace
@@ -194,6 +194,11 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     val ss = new StringPrintStream()
     metrics.write(ss, Map("server_addr" -> ReservationServer.host), configFilter="-")
     tw.Future.value(ss.mkString)
+  }
+
+  override def metricsReset(): tw.Future[Unit] = {
+    metrics.reset()
+    tw.Future.Unit
   }
 }
 

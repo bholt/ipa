@@ -8,7 +8,6 @@ import com.websudos.phantom.builder.primitives.Primitive
 import com.websudos.phantom.column.{CounterColumn, PrimitiveColumn, SetColumn}
 import com.websudos.phantom.dsl._
 import com.websudos.phantom.keys.PartitionKey
-import nl.grons.metrics.scala.Timer
 
 import scala.collection.JavaConversions._
 import scala.concurrent.{Await, Future}

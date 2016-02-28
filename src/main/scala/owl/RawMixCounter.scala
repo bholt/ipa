@@ -59,7 +59,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
       case _: Counter.ErrorTolerance =>
         val iv = r.asInstanceOf[Interval[Long]]
         val width = iv.max - iv.min
-        histIntervalWidth += width
+        histIntervalWidth << width
         CLevel.ONE // reads always weak
 
       case _: LatencyBound =>
@@ -132,6 +132,8 @@ object RawMixCounter extends {
     val warmup = new RawMixCounter(5 seconds)
     println(s">>> warmup (${warmup.duration})")
     warmup.run(truncate = true)
+
+    reservations.client.metricsReset()
 
     val workload = new RawMixCounter(config.duration)
     println(s">>> workload (${workload.duration})")

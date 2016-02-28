@@ -83,7 +83,6 @@ libraryDependencies ++= {
     "org.apache.commons"  %  "commons-math3"              % "3.5",
     "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.6.3",
     "com.codahale.metrics"       % "metrics-json"         % "3.0.2",
-    "nl.grons"                  %% "metrics-scala"        % "3.5.2",
     "com.twitter" %% "finagle-core" % finagleV,
     "com.twitter" %% "finagle-thrift" % finagleV,
     "com.twitter" %% "finagle-thriftmux" % finagleV,

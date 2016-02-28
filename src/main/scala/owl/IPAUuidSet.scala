@@ -6,7 +6,6 @@ import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.column.PrimitiveColumn
 import com.websudos.phantom.dsl._
 import com.websudos.phantom.keys.PartitionKey
-import nl.grons.metrics.scala.{MetricBuilder, Timer}
 
 import scala.concurrent._
 import scala.collection.JavaConversions._

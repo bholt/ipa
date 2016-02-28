@@ -5,7 +5,7 @@ import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-import com.codahale.metrics.{ConsoleReporter, MetricRegistry}
+import com.codahale.metrics._
 import com.codahale.metrics.json.MetricsModule
 import com.datastax.driver.core.utils.UUIDs
 import com.datastax.driver.core.{ConsistencyLevel, Row}
@@ -17,7 +17,6 @@ import com.websudos.phantom.column.DateTimeColumn
 import com.websudos.phantom.dsl.{StringColumn, UUIDColumn, _}
 import com.websudos.phantom.keys.PartitionKey
 import ipa.{CommonImplicits, ReservationClient}
-import nl.grons.metrics.scala.{FutureMetrics, InstrumentedBuilder, MetricBuilder, Timer}
 import org.joda.time.DateTime
 
 import scala.collection.JavaConversions._
@@ -128,11 +127,12 @@ class RetweetCounts extends CassandraTable[RetweetCounts, RetweetCount] {
   override def fromRow(r: Row) = RetweetCount(tweet(r), count(r))
 }
 
-class IPAMetrics(output: scala.collection.Map[String,AnyRef]) extends InstrumentedBuilder with FutureMetrics {
+class IPAMetrics(output: scala.collection.Map[String,AnyRef]) {
 
-  implicit override val metricRegistry = new MetricRegistry
+  val registry = new MetricRegistry
+  def create = registry // just for better readability
 
-  val cassandraOpLatency = metrics.timer("cass_op_latency")
+  val cassandraOpLatency = create.timer("cass_op_latency")
   lazy val missedDeadlines = create.meter("missed_deadlines")
 
   val json = new ObjectMapper()
@@ -142,7 +142,7 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef]) extends Instrument
   def write(out: PrintStream, extras: Map[String,AnyRef] = Map(), configFilter: String = "ipa") = {
     val mConfig = config.c.root().withOnlyKey(configFilter).unwrapped()
     val mOutput = output map { case (k,v) => s"out_$k" -> v }
-    val mMetrics = json.readValue(json.writeValueAsString(metricRegistry), classOf[java.util.Map[String,Object]])
+    val mMetrics = json.readValue(json.writeValueAsString(registry), classOf[java.util.Map[String,Object]])
     val writer = json.writerWithDefaultPrettyPrinter()
     out.println(writer.writeValueAsString(mConfig ++ mMetrics ++ mOutput ++ extras))
   }
@@ -160,13 +160,26 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef]) extends Instrument
         .reduce(combine)
   }
 
+  def reset() = {
+    val old = registry.getMetrics.toMap
+    registry.removeMatching(MetricFilter.ALL)
+    for ((name, metric) <- old) {
+      metric match {
+        case _: Counter =>    registry.counter(name)
+        case _: Histogram =>  registry.histogram(name)
+        case _: Meter =>      registry.meter(name)
+        case _: Timer =>      registry.timer(name)
+      }
+    }
+  }
+
   def dump()(implicit reservations: ReservationClient): Unit = {
 
     // collect metrics from reservation servers
     val rmetrics =
 
     println("# Metrics".bold)
-    ConsoleReporter.forRegistry(metricRegistry)
+    ConsoleReporter.forRegistry(registry)
         .convertRatesTo(TimeUnit.SECONDS)
         .build()
         .report()
@@ -178,7 +191,6 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef]) extends Instrument
     println("###############################")
   }
 
-  def create = metrics
 }
 
 trait OwlService extends Connector {

@@ -3,7 +3,6 @@ package owl
 import java.util.UUID
 
 import com.datastax.driver.core.ConsistencyLevel
-import nl.grons.metrics.scala.Timer
 
 import scala.concurrent._
 import scala.concurrent.duration._

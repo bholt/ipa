@@ -165,7 +165,7 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef]) {
 
   def create = factory
 
-  val cassandraOpLatency = create.timer("cass_op_latency")
+  lazy val cassandraOpLatency = create.timer("cass_op_latency")
   lazy val missedDeadlines = create.meter("missed_deadlines")
 
   val json = new ObjectMapper()

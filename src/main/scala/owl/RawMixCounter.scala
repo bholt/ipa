@@ -1,8 +1,5 @@
 package owl
 
-import java.util.UUID
-
-import com.datastax.driver.core.{ConsistencyLevel => CLevel}
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
 import org.apache.commons.math3.distribution.ZipfDistribution
@@ -12,15 +9,15 @@ import scala.concurrent.duration._
 import Util._
 import java.util.concurrent.Semaphore
 
-import ipa.Counter.{StrongOps, WeakOps}
-import ipa.{CommonImplicits, Counter}
-import owl.Connector.config.bound._
+import ipa.Counter
 
-import scala.util.{Random, Success, Try}
+import scala.util.Random
 
 class RawMixCounter(val duration: FiniteDuration) extends {
   override implicit val space = RawMix.space
 } with OwlService {
+  import Consistency._
+
   val nsets = config.rawmix.nsets
   val mix = config.rawmix.counter.mix
 
@@ -32,9 +29,9 @@ class RawMixCounter(val duration: FiniteDuration) extends {
   val counter = config.bound.parsed match {
     case Latency(l) =>
       new Counter("raw") with Counter.LatencyBound { override val bound = l }
-    case Consistency(CLevel.ONE) =>
+    case Consistency(Weak) =>
       new Counter("raw") with Counter.WeakOps
-    case Consistency(CLevel.ALL) =>
+    case Consistency(Strong) =>
       new Counter("raw") with Counter.StrongOps
     case t @ Tolerance(_) =>
       new Counter("raw") with Counter.ErrorTolerance { override val tolerance = t }
@@ -60,22 +57,19 @@ class RawMixCounter(val duration: FiniteDuration) extends {
         val iv = r.asInstanceOf[Interval[Long]]
         val width = iv.max - iv.min
         histIntervalWidth << width
-        CLevel.ONE // reads always weak
-
-      case _: LatencyBound =>
+        Weak // reads always weak
+      case _: Counter.LatencyBound =>
         r.asInstanceOf[Rushed[Long]].consistency
-
-      case cbound: ConsistencyBound =>
-        cbound.consistencyLevel
-
-      case _: WeakOps => Consistency.Weak
-      case _: StrongOps => Consistency.Strong
+      case _: Counter.WeakOps =>
+        Consistency.Weak
+      case _: Counter.StrongOps =>
+        Consistency.Strong
       case _ =>
         sys.error("datatype didn't match any of the options")
     }
     cons match {
-      case CLevel.ALL => countReadStrong += 1
-      case CLevel.ONE => countReadWeak += 1
+      case Strong => countReadStrong += 1
+      case Weak   => countReadWeak += 1
       case _ => // do nothing
     }
     r.asInstanceOf[Inconsistent[Long]]

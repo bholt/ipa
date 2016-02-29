@@ -25,7 +25,9 @@ public class Tracker implements LatencyTracker {
     );
 
     private final ConcurrentMap<Host, HostLatencyTracker> latencies = new ConcurrentHashMap<Host, HostLatencyTracker>();
+
     private volatile long cachedMin = -1L;
+    private volatile Host cachedMinHost = null;
 
     private final long scale;
     private final long retryPeriod;
@@ -62,17 +64,28 @@ public class Tracker implements LatencyTracker {
     public void updateMin() {
         long newMin = Long.MAX_VALUE;
         long now = System.nanoTime();
-        for (HostLatencyTracker tracker : latencies.values()) {
-            TimestampedAverage latency = tracker.getCurrentAverage();
-            if (latency != null && latency.average >= 0 && latency.nbMeasure >= minMeasure && (now - latency.timestamp) <= retryPeriod)
+        Host minHost = null;
+        for (Map.Entry<Host,HostLatencyTracker> e : latencies.entrySet()) {
+            TimestampedAverage latency = e.getValue().getCurrentAverage();
+            if (latency != null && latency.average >= 0 && latency.nbMeasure >= minMeasure && (now - latency.timestamp) <= retryPeriod) {
                 newMin = Math.min(newMin, latency.average);
+                minHost = e.getKey();
+            }
         }
-        if (newMin != Long.MAX_VALUE)
+        if (newMin != Long.MAX_VALUE) {
             cachedMin = newMin;
+            cachedMinHost = minHost;
+        }
     }
 
-    public long getMinAverage() {
+    public long getMin() {
         return cachedMin;
+    }
+    public Host getMinHost() { return cachedMinHost; }
+
+    public long min() {
+        updateMin();
+        return getMin();
     }
 
     public TimestampedAverage latencyOf(Host host) {
@@ -104,9 +117,9 @@ public class Tracker implements LatencyTracker {
 
 class TimestampedAverage {
 
-    final long timestamp;
-    final long average;
-    final long nbMeasure;
+    public final long timestamp;
+    public final long average;
+    public final long nbMeasure;
 
     TimestampedAverage(long timestamp, long average, long nbMeasure) {
         this.timestamp = timestamp;

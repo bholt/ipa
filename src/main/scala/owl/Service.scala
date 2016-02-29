@@ -21,10 +21,12 @@ import org.joda.time.DateTime
 
 import scala.collection.JavaConversions._
 import scala.concurrent.{Future, blocking}
-import Connector.config
+import Connector.{config, tracker}
 import com.codahale.metrics
 import com.twitter.{util => tw}
+import ipa.policies.ConsistencyLatencyTracker
 
+import scala.collection.JavaConversions._
 import scala.collection.mutable
 import scala.collection.parallel.immutable
 
@@ -200,9 +202,22 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef]) {
         .build()
         .report()
 
+    def cleanedLatencies(t: ConsistencyLatencyTracker): mutable.Map[String, Map[String, AnyVal]] = {
+      t.currentLatencies() map { case (host, stats) =>
+          host.getAddress.getHostAddress -> Map(
+            "count" -> stats.nbMeasure,
+            "latency_ms" -> stats.average / 1e6
+          )
+      }
+    }
+
     // dump metrics to stderr (for experiments script to parse)
     if (config.output_json) {
-      write(Console.err, Map("res" -> fromReservationServers()))
+      write(Console.err, Map(
+        "res" -> fromReservationServers(),
+        "tracker_weak" -> cleanedLatencies(tracker.weak),
+        "tracker_strong" -> cleanedLatencies(tracker.strong)
+      ))
     }
     println("###############################")
   }

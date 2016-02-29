@@ -3,8 +3,8 @@ package ipa
 import owl.Util._
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
 import com.websudos.phantom.dsl._
-import owl.Connector.config
-import owl.{IPAMetrics, Rushed, TableGenerator}
+import owl.Connector.{config, tracker}
+import owl._
 
 import scala.concurrent._
 import scala.concurrent.duration.FiniteDuration
@@ -38,29 +38,42 @@ object DataType {
 }
 
 trait RushImpl { this: DataType =>
+  import Consistency._
+
+  lazy val strongThresholded = metrics.create.counter("rush_strong_thresholded")
+
   def rush[T](latencyBound: FiniteDuration)(op: CLevel => Future[T]): Future[Rushed[T]] = {
-    val deadline = latencyBound.fromNow
+    val thresholdNanos = latencyBound.toNanos * 1.5
+    val strongMin = tracker.strong.min()
 
-    val ops =
-      Seq(ConsistencyLevel.ALL, ConsistencyLevel.ONE) map { c =>
-        op(c) map { r => Rushed(r, c) }
-      }
-
-    ops.firstCompleted flatMap { r1 =>
-      val timeRemaining = deadline.timeLeft
-      if (r1.consistency == ConsistencyLevel.ALL ||
-          timeRemaining < config.assumed_latency) {
-        if (deadline.isOverdue()) metrics.missedDeadlines.mark()
-        Future(r1)
-      } else {
-        // make sure it finishes within the deadline
-        val fallback = Future {
-          blocking { Thread.sleep(timeRemaining.toMillis) }
-          r1
+    if (strongMin > thresholdNanos) {
+      strongThresholded += 1
+      // then don't even try Strong consistency
+      op(Weak) map { Rushed(_, Weak) }
+    } else {
+      val ops =
+        Seq(Strong, Weak) map { c =>
+          op(c) map { r => Rushed(r, c) }
         }
-        (ops.filterNot(_.isCompleted) :+ fallback)
-            .firstCompleted
-            .map { r2 => r1 max r2 } // return the higher-consistency one
+      val deadline = latencyBound.fromNow
+      ops.firstCompleted flatMap { r1 =>
+        val timeRemaining = deadline.timeLeft
+        if (r1.consistency == Strong ||
+            timeRemaining < config.assumed_latency) {
+          if (deadline.isOverdue()) metrics.missedDeadlines.mark()
+          Future(r1)
+        } else {
+          // make sure it finishes within the deadline
+          val fallback = Future {
+            blocking {
+              Thread.sleep(timeRemaining.toMillis)
+            }
+            r1
+          }
+          (ops.filterNot(_.isCompleted) :+ fallback)
+              .firstCompleted
+              .map { r2 => r1 max r2 } // return the higher-consistency one
+        }
       }
     }
   }

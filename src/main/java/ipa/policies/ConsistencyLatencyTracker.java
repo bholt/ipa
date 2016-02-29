@@ -1,9 +1,6 @@
 package ipa.policies;
 
-import com.datastax.driver.core.Cluster;
-import com.datastax.driver.core.Host;
-import com.datastax.driver.core.LatencyTracker;
-import com.datastax.driver.core.Statement;
+import com.datastax.driver.core.*;
 import com.datastax.driver.core.exceptions.*;
 import com.google.common.collect.ImmutableSet;
 
@@ -14,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class Tracker implements LatencyTracker {
+public class ConsistencyLatencyTracker implements LatencyTracker {
 
     private static final Set<Class<? extends DriverException>> EXCLUDED_EXCEPTIONS = ImmutableSet.of(
             UnavailableException.class, // this is done via the snitch and is usually very fast
@@ -32,11 +29,13 @@ public class Tracker implements LatencyTracker {
     private final long scale;
     private final long retryPeriod;
     private final int minMeasure;
+    private final ConsistencyLevel consistencyLevel;
 
-    public Tracker(long scale, long retryPeriod, int minMeasure) {
+    public ConsistencyLatencyTracker(ConsistencyLevel consistencyLevel, long scale, long retryPeriod, int minMeasure) {
         this.scale = scale;
         this.retryPeriod = retryPeriod;
         this.minMeasure = minMeasure;
+        this.consistencyLevel = consistencyLevel;
     }
 
     @Override
@@ -54,6 +53,7 @@ public class Tracker implements LatencyTracker {
     }
 
     private boolean shouldConsiderNewLatency(Statement statement, Exception exception) {
+        if (statement.getConsistencyLevel() != consistencyLevel) return false;
         // query was successful: always consider
         if (exception == null) return true;
         // filter out "fast" errors

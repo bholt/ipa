@@ -3,7 +3,7 @@ package ipa
 import owl.Util._
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
 import com.websudos.phantom.dsl._
-import owl.Connector.{config, tracker}
+import owl.Connector.config
 import owl._
 
 import scala.concurrent._
@@ -44,9 +44,9 @@ trait RushImpl { this: DataType =>
 
   def rush[T](latencyBound: FiniteDuration)(op: CLevel => Future[T]): Future[Rushed[T]] = {
     val thresholdNanos = latencyBound.toNanos * 1.5
-    val strongMin = tracker.strong.min()
+    val prediction = metrics.tracker.predict(Strong)
 
-    if (strongMin > thresholdNanos) {
+    if (prediction > thresholdNanos) {
       strongThresholded += 1
       // then don't even try Strong consistency
       op(Weak) map { Rushed(_, Weak) }

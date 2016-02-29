@@ -8,7 +8,7 @@ import java.util.concurrent.TimeUnit
 import com.codahale.metrics._
 import com.codahale.metrics.json.MetricsModule
 import com.datastax.driver.core.utils.UUIDs
-import com.datastax.driver.core.{ConsistencyLevel, Row}
+import com.datastax.driver.core.{Cluster, ConsistencyLevel, Row}
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import com.websudos.phantom.CassandraTable
@@ -16,12 +16,12 @@ import com.websudos.phantom.builder.primitives.Primitive
 import com.websudos.phantom.column.DateTimeColumn
 import com.websudos.phantom.dsl.{StringColumn, UUIDColumn, _}
 import com.websudos.phantom.keys.PartitionKey
-import ipa.{CommonImplicits, ReservationClient}
+import ipa.{CommonImplicits, MetricsLatencyTracker, ReservationClient}
 import org.joda.time.DateTime
 
 import scala.collection.JavaConversions._
 import scala.concurrent.{Future, blocking}
-import Connector.{config, tracker}
+import Connector.config
 import com.codahale.metrics
 import com.twitter.{util => tw}
 import ipa.policies.ConsistencyLatencyTracker
@@ -134,9 +134,12 @@ class RetweetCounts extends CassandraTable[RetweetCounts, RetweetCount] {
 class MetricCell[T](var metric: T)
 object MetricCell { def apply[T](metric: T) = new MetricCell[T](metric) }
 
-class IPAMetrics(output: scala.collection.Map[String,AnyRef]) {
+class IPAMetrics(output: scala.collection.Map[String,AnyRef], cluster: Cluster) {
 
   val registry = new metrics.MetricRegistry
+
+  val tracker = new MetricsLatencyTracker(this)
+  cluster.register(tracker)
 
   object factory {
     val timers = mutable.HashMap[String,MetricCell[Timer]]()
@@ -194,7 +197,6 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef]) {
   def dump()(implicit reservations: ReservationClient): Unit = {
 
     // collect metrics from reservation servers
-    val rmetrics =
 
     println("# Metrics".bold)
     ConsoleReporter.forRegistry(registry)
@@ -213,11 +215,7 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef]) {
 
     // dump metrics to stderr (for experiments script to parse)
     if (config.output_json) {
-      write(Console.err, Map(
-        "res" -> fromReservationServers(),
-        "tracker_weak" -> cleanedLatencies(tracker.weak),
-        "tracker_strong" -> cleanedLatencies(tracker.strong)
-      ))
+      write(Console.err, Map("res" -> fromReservationServers()))
     }
     println("###############################")
   }
@@ -226,7 +224,7 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef]) {
 
 trait OwlService extends Connector {
 
-  implicit val metrics = new IPAMetrics(output)
+  implicit val metrics = new IPAMetrics(output, cluster)
 
   implicit val imps = CommonImplicits()
 

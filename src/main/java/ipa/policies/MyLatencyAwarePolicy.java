@@ -67,7 +67,7 @@ public class MyLatencyAwarePolicy implements ChainableLoadBalancingPolicy {
     private static final Logger logger = LoggerFactory.getLogger(MyLatencyAwarePolicy.class);
 
     private final LoadBalancingPolicy childPolicy;
-    private final Tracker latencyTracker;
+    protected final Tracker latencyTracker;
     private final ScheduledExecutorService updaterService = Executors.newSingleThreadScheduledExecutor(threadFactory("LatencyAwarePolicy updater"));
 
     private final double exclusionThreshold;
@@ -76,7 +76,7 @@ public class MyLatencyAwarePolicy implements ChainableLoadBalancingPolicy {
     private final long retryPeriod;
     private final long minMeasure;
 
-    private MyLatencyAwarePolicy(LoadBalancingPolicy childPolicy,
+    protected MyLatencyAwarePolicy(LoadBalancingPolicy childPolicy,
                                double exclusionThreshold,
                                long scale,
                                long retryPeriod,
@@ -385,7 +385,7 @@ public class MyLatencyAwarePolicy implements ChainableLoadBalancingPolicy {
             QueryValidationException.class // query validation also happens at early stages in the coordinator
     );
 
-    private class Tracker implements LatencyTracker {
+    public class Tracker implements LatencyTracker {
 
         private final ConcurrentMap<Host, HostLatencyTracker> latencies = new ConcurrentHashMap<Host, HostLatencyTracker>();
         private volatile long cachedMin = -1L;

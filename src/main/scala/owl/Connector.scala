@@ -14,6 +14,7 @@ import ipa.CommonImplicits
 import ipa.thrift.ReservationService
 import ipa.{ReservationClient, thrift => th}
 import com.twitter.{util => tw}
+import ipa.policies.Tracker
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable
@@ -115,10 +116,23 @@ object Connector {
   val latencyMonitor =
     LatencyAwarePolicy.builder(DCAwareRoundRobinPolicy.builder().build()).build()
 
+  object tracker {
+    def create() = new Tracker(
+      LatencyAwarePolicy.Builder.DEFAULT_SCALE_NANOS,
+      LatencyAwarePolicy.Builder.DEFAULT_RETRY_PERIOD_NANOS,
+      LatencyAwarePolicy.Builder.DEFAULT_MIN_MEASURE
+    )
+
+    val weak = create()
+    val strong = create()
+  }
+
   val cluster = Cluster.builder()
       .addContactPoints(config.hosts)
       .withLoadBalancingPolicy(latencyMonitor)
       .build()
+      .register(tracker.weak)
+      .register(tracker.strong)
 
   val default_keyspace = KeySpace(config.keyspace)
 }

@@ -55,9 +55,8 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
       // read strong always performs read repair so this suffices to ensure that everyone is up-to-date and we can start using our reservations again
       // TODO: verify read repair is happening
       // TODO: check reservations table rather than assuming `allocated` is constant
-      table.readTwitter(CLevel.ALL)(key) map { v =>
+      table.readTwitter(Strong)(key).instrument(m.latencyStrongRead) map { v =>
         val res = reservation(key, v)
-
         // now that we've synchronized with everyone, we get our tokens back
         res.update(v, tolerance)
         res

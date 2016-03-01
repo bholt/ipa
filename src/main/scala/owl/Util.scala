@@ -109,7 +109,7 @@ object Util {
 
   def executeAsTwitterFuture(stmt: BoundStatement)(implicit session: Session): tw.Future[ResultSet] = {
     val promise = tw.Promise[ResultSet]()
-    val future = session.executeAsync(stmt.toString)
+    val future = session.executeAsync(stmt)
     val callback = new FutureCallback[ResultSet] {
       def onSuccess(result: ResultSet): Unit = {
         promise update Return(result)
@@ -123,9 +123,9 @@ object Util {
     promise
   }
 
-  def executeAsScalaFuture(st: BoundStatement)(implicit session: Session): Future[ResultSet] = {
+  def executeAsScalaFuture(stmt: BoundStatement)(implicit session: Session): Future[ResultSet] = {
     val promise = Promise[ResultSet]()
-    val future = session.executeAsync(st)
+    val future = session.executeAsync(stmt)
     val callback = new FutureCallback[ResultSet] {
       def onSuccess(result: ResultSet): Unit = {
         promise success result

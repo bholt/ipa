@@ -17,6 +17,7 @@ import owl.Connector.config
 import owl.Util._
 import owl.{Connector, OwlService, Tolerance}
 
+import scala.collection.concurrent
 import scala.collection.JavaConversions._
 import scala.collection.mutable
 import owl.Consistency._
@@ -98,22 +99,26 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     }
   }
 
-  val tables = new mutable.HashMap[Table, Entry]
+  val tables = new concurrent.TrieMap[Table, Entry]
 
   def table(t: Table): Try[Entry] = {
-    Try(tables(t)) recoverWith { case _ =>
-      implicit val space = KeySpace(t.space)
-      implicit val imps = CommonImplicits()
-      Counter.fromName(t.name) flatMap {
-        case tbl: Counter with Counter.ErrorTolerance =>
-          val e = Entry(tbl, space, tbl.tolerance)
-          tables += (t -> e)
-          Success(e)
-        case tbl =>
-          //println(s"Counter without error tolerance: $name")
-          //Entry(tbl, space, Tolerance(0))
-          Failure(ReservationException(s"counter without error tolerance: $t"))
-      }
+    Try {
+      tables.getOrElseUpdate(t, {
+        Console.err.println(s"creating: $t")
+        implicit val space = KeySpace(t.space)
+        implicit val imps = CommonImplicits()
+        Counter.fromName(t.name) map {
+          case tbl: Counter with Counter.ErrorTolerance =>
+            Entry(tbl, space, tbl.tolerance)
+          case tbl =>
+            Entry(tbl, space, Tolerance(0))
+        } recoverWith {
+          case e: Throwable =>
+            sys.error(s"Unable to create table ($t): ${e.getMessage}")
+        } get
+      })
+    } recoverWith { case e =>
+      Failure(ReservationException(s"counter without error tolerance: $t"))
     }
   }
 

@@ -6,12 +6,16 @@ import java.util.concurrent.{ArrayBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
 import com.codahale.metrics
 import com.codahale.metrics.Timer
-import com.datastax.driver.core.Session
+import com.datastax.driver.core.{BoundStatement, ResultSet, Session, Statement}
+import com.google.common.util.concurrent.{FutureCallback, Futures}
+import com.twitter.util.{Return, Throw}
 import com.twitter.{util => tw}
+import com.websudos.phantom.Manager
+import com.websudos.phantom.connectors.KeySpace
 
 import scala.collection.generic.CanBuildFrom
 import scala.concurrent.duration.{Deadline, Duration}
-import scala.concurrent.{Await, ExecutionContext, Future, Promise}
+import scala.concurrent._
 import scala.language.higherKinds
 import scala.util.{Failure, Random, Success, Try}
 
@@ -101,6 +105,39 @@ object Util {
       f onFailure { case e: Exception => Console.err.println(e); throw e }
       f
     }
+  }
+
+  def executeAsTwitterFuture(stmt: BoundStatement)(implicit session: Session): tw.Future[ResultSet] = {
+    val promise = tw.Promise[ResultSet]()
+    val future = session.executeAsync(stmt.toString)
+    val callback = new FutureCallback[ResultSet] {
+      def onSuccess(result: ResultSet): Unit = {
+        promise update Return(result)
+      }
+      def onFailure(err: Throwable): Unit = {
+        Manager.logger.error(err.getMessage)
+        promise update Throw(err)
+      }
+    }
+    Futures.addCallback(future, callback, Manager.executor)
+    promise
+  }
+
+  def executeAsScalaFuture(st: BoundStatement)(implicit session: Session): Future[ResultSet] = {
+    val promise = Promise[ResultSet]()
+    val future = session.executeAsync(st)
+    val callback = new FutureCallback[ResultSet] {
+      def onSuccess(result: ResultSet): Unit = {
+        promise success result
+      }
+
+      def onFailure(err: Throwable): Unit = {
+        Manager.logger.error(err.getMessage)
+        promise failure err
+      }
+    }
+    Futures.addCallback(future, callback, Manager.executor)
+    promise.future
   }
 
   def combine(ma: Map[String, Any], mb: Map[String, Any]): Map[String,Any] = {

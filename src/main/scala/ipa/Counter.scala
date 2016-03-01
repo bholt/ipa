@@ -2,22 +2,18 @@ package ipa
 
 import java.util.UUID
 
-import com.datastax.driver.core.{Row, ConsistencyLevel => CLevel}
+import com.datastax.driver.core.querybuilder.QueryBuilder
+import com.datastax.driver.core.{BoundStatement, Row, ConsistencyLevel => CLevel}
 import com.twitter.{util => tw}
-import com.websudos.phantom.builder.query.{ExecutableQuery, ExecutableStatement, SelectQuery}
 import com.websudos.phantom.dsl._
 import com.websudos.phantom.keys.PartitionKey
-import ipa.thrift.{IntervalLong, ReservationException}
-
+import ipa.thrift.{ReservationException, Table}
+import owl.Conversions._
+import owl.Util._
 import owl._
 
-import ipa.thrift.Table
 import scala.concurrent.Future
-import owl.Util._
-
 import scala.concurrent.duration.FiniteDuration
-import owl.Conversions._
-
 import scala.util.{Failure, Success, Try}
 
 object Counter {
@@ -159,32 +155,46 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
   }
   def apply(key: UUID) = new Handle(key)
 
-
-  def incrStmt(c: CLevel)(key: UUID, by: Long): ExecutableStatement = {
-    tbl.update()
-        .where(_.ekey eqs key)
-        .modify(_.ecount += by)
-        .consistencyLevel_=(c)
+  val preparedIncr = {
+    val stmt =
+      QueryBuilder.update(space.name, name)
+        .`with`(QueryBuilder.incr(tbl.ecount.name, QueryBuilder.bindMarker()))
+        .where(QueryBuilder.eq(tbl.ekey.name,QueryBuilder.bindMarker()))
+        .toString
+    Console.err.println(s"preparing incr: $stmt")
+    session.prepare(stmt)
   }
+
+  def incrStmt(c: CLevel)(key: UUID, by: Long): BoundStatement =
+    preparedIncr.setConsistencyLevel(c).bind(by.asInstanceOf[AnyRef], key.asInstanceOf[AnyRef])
 
   def incr(c: CLevel)(key: UUID, by: Long) =
-    incrStmt(c)(key, by).future().instrument().unit
+    executeAsScalaFuture(incrStmt(c)(key,by)).instrument().unit
 
-  def incrTwitter(c: CLevel)(key: UUID, by: Long): tw.Future[Unit] = {
-    incrStmt(c)(key, by).execute().instrument().unit
+  def incrTwitter(c: CLevel)(key: UUID, by: Long): tw.Future[Unit] =
+    executeAsTwitterFuture(incrStmt(c)(key, by)).instrument().unit
+
+  val preparedRead = {
+    val s = QueryBuilder.select(tbl.ecount.name)
+        .from(space.name, name)
+        .where(QueryBuilder.eq(tbl.ekey.name, QueryBuilder.bindMarker()))
+        .limit(1)
+        .toString
+    println(s"preparedRead: $s")
+    session.prepare(s)
   }
 
-  def readStmt(c: CLevel)(key: UUID) = {
-    tbl.select(_.ecount)
-        .where(_.ekey eqs key)
-        .consistencyLevel_=(c)
-  }
+  def readStmt(c: CLevel)(key: UUID) =
+    preparedRead.setConsistencyLevel(c).bind(key.asInstanceOf[AnyRef])
+
+  def readResult(rs: ResultSet) =
+    Option(rs.one()).map(_.get(0, classOf[Long])).getOrElse(0L)
 
   def read(c: CLevel)(key: UUID) =
-    readStmt(c)(key).one().instrument().map(_.getOrElse(0L))
+    executeAsScalaFuture(readStmt(c)(key)).instrument().map(readResult)
 
   def readTwitter(c: CLevel)(key: UUID): tw.Future[Long] = {
-    readStmt(c)(key).get().instrument().map(_.getOrElse(0L))
+    executeAsTwitterFuture(readStmt(c)(key)).instrument().map(readResult)
   }
 
 }

@@ -155,14 +155,10 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
   }
   def apply(key: UUID) = new Handle(key)
 
-  val preparedIncr = {
-    val stmt =
-      QueryBuilder.update(space.name, name)
-        .`with`(QueryBuilder.incr(tbl.ecount.name, QueryBuilder.bindMarker()))
-        .where(QueryBuilder.eq(tbl.ekey.name,QueryBuilder.bindMarker()))
-        .toString
-    Console.err.println(s"preparing incr: $stmt")
-    session.prepare(stmt)
+  lazy val preparedIncr = {
+    val key = tbl.ekey.name
+    val ct = tbl.ecount.name
+    session.prepare(s"UPDATE ${space.name}.$name SET $ct=$ct+? WHERE $key=?")
   }
 
   def incrStmt(c: CLevel)(key: UUID, by: Long): BoundStatement =
@@ -174,14 +170,10 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
   def incrTwitter(c: CLevel)(key: UUID, by: Long): tw.Future[Unit] =
     executeAsTwitterFuture(incrStmt(c)(key, by)).instrument().unit
 
-  val preparedRead = {
-    val s = QueryBuilder.select(tbl.ecount.name)
-        .from(space.name, name)
-        .where(QueryBuilder.eq(tbl.ekey.name, QueryBuilder.bindMarker()))
-        .limit(1)
-        .toString
-    println(s"preparedRead: $s")
-    session.prepare(s)
+  lazy val preparedRead = {
+    val key = tbl.ekey.name
+    val ct = tbl.ecount.name
+    session.prepare(s"SELECT $ct FROM ${space.name}.$name WHERE $key=?")
   }
 
   def readStmt(c: CLevel)(key: UUID) =

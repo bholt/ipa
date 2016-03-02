@@ -38,23 +38,15 @@ object Counter {
     override def read(key: UUID) =
       base.read(Weak)(key).map(Inconsistent(_))
     override def incr(key: UUID, by: Long) =
-      base.incr(Weak)(key, by)
-  }
-
-  trait StrongWrite extends Ops.Incr with Ops.Read { base: Counter =>
-    type ReadType = Consistent[Long]
-    override def read(key: UUID): Future[Consistent[Long]] =
-      base.read(Weak)(key) map { Consistent(_) }
-    override def incr(key: UUID, by: Long): Future[Unit] =
       base.incr(Strong)(key, by)
   }
 
-  trait StrongRead extends Ops.Incr with Ops.Read { base: Counter =>
+  trait StrongOps extends Ops.Incr with Ops.Read { base: Counter =>
     type ReadType = Consistent[Long]
     override def read(key: UUID): Future[Consistent[Long]] =
       base.read(Strong)(key) map { Consistent(_) }
     override def incr(key: UUID, by: Long): Future[Unit] =
-      base.incr(Weak)(key, by)
+      base.incr(Strong)(key, by)
   }
 
   trait LatencyBound extends Ops.Incr with Ops.Read with RushImpl {
@@ -68,7 +60,7 @@ object Counter {
       rush(bound){ c: CLevel => base.read(c)(key) }
 
     override def incr(key: UUID, by: Long) =
-      base.incr(CLevel.ONE)(key, by)
+      base.incr(Strong)(key, by)
   }
 
   trait ErrorTolerance extends Ops.Incr with Ops.Read {

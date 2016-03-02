@@ -30,14 +30,11 @@ class RawMixCounter(val duration: FiniteDuration) extends {
     case Latency(l) =>
       new Counter("raw") with Counter.LatencyBound { override val bound = l }
 
-    case Consistency(Weak, Weak) =>
+    case Consistency(Weak, _) =>
       new Counter("raw") with Counter.WeakOps
 
-    case Consistency(Strong, Weak) =>
-      new Counter("raw") with Counter.StrongRead
-
-    case Consistency(Weak, Strong) =>
-      new Counter("raw") with Counter.StrongWrite
+    case Consistency(Strong, _) =>
+      new Counter("raw") with Counter.StrongOps
 
     case t @ Tolerance(_) =>
       new Counter("raw") with Counter.ErrorTolerance { override val tolerance = t }
@@ -58,30 +55,21 @@ class RawMixCounter(val duration: FiniteDuration) extends {
 
   val histIntervalWidth = metrics.create.histogram("interval_width")
 
-  def recordResult(r: Any): Inconsistent[Long] = {
-    val cons = counter match {
+  def recordResult(rAny: Any): Inconsistent[Long] = {
+    val r = rAny.asInstanceOf[Inconsistent[Long]]
+    // some require special additional handling...
+    counter match {
       case _: Counter.ErrorTolerance =>
         val iv = r.asInstanceOf[Interval[Long]]
         val width = iv.max - iv.min
         histIntervalWidth << width
-        Weak // reads always weak
-      case _: Counter.LatencyBound =>
-        r.asInstanceOf[Rushed[Long]].consistency
-      case _: Counter.WeakOps =>
-        Consistency.Weak
-      case _: Counter.StrongWrite =>
-        Consistency.Weak
-      case _: Counter.StrongRead =>
-        Consistency.Strong
-      case _ =>
-        sys.error("datatype didn't match any of the options")
     }
-    cons match {
+    r.consistency match {
       case Strong => countReadStrong += 1
       case Weak   => countReadWeak += 1
       case _ => // do nothing
     }
-    r.asInstanceOf[Inconsistent[Long]]
+    r
   }
 
   def run(truncate: Boolean = false) {

@@ -17,13 +17,13 @@ trait ConsistencyOrder extends Ordering[CLevel] {
 }
 
 object Consistency {
-  val Strong = CLevel.ALL
+  val Strong = CLevel.QUORUM
   val Weak = CLevel.ONE
 }
 
 sealed trait Bound
 final case class Latency(d: FiniteDuration) extends Bound
-final case class Consistency(read: CLevel, write: CLevel) extends Bound
+final case class Consistency(read: CLevel, write: CLevel = Consistency.Strong) extends Bound
 final case class Tolerance(error: Double) extends Bound {
   def delta(value: Long) = (value * error).toLong
 }
@@ -31,15 +31,16 @@ final case class Tolerance(error: Double) extends Bound {
 class IPAType {}
 
 class Inconsistent[T](value: T) extends IPAType {
-
+  def consistency = Consistency.Weak
   /** get the value anyway (should we call it 'endorse'?)*/
   def get: T = value
-
 }
 object Inconsistent { def apply[T](value: T) = new Inconsistent(value) }
 
 
-case class Consistent[T](value: T) extends Inconsistent[T](value) {}
+case class Consistent[T](value: T) extends Inconsistent[T](value) {
+  override def consistency = Consistency.Strong
+}
 
 
 class Transient[T](value: T) extends Inconsistent[T](value) {
@@ -54,7 +55,7 @@ class Transient[T](value: T) extends Inconsistent[T](value) {
 class Rushed[T](value: T, cons: CLevel)
     extends Inconsistent[T](value) with Ordered[Rushed[T]]
 {
-  def consistency = cons
+  override def consistency = cons
   def compare(o: Rushed[T]) = { this.consistency compareTo o.consistency }
   override def toString = s"Rushed($value, $consistency)"
 }

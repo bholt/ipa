@@ -73,9 +73,8 @@ object Connector {
         case "latency" => Latency(Duration(split(1)).asInstanceOf[FiniteDuration])
         case "consistency" =>
           split(1) match {
-            case "weak"        => Consistency(Weak, Weak)
-            case "strong"      => Consistency(Strong, Weak) // strong read
-            case "strongwrite" => Consistency(Weak, Strong)
+            case "weak"   => Consistency(Weak)
+            case "strong" => Consistency(Strong)
           }
         case "tolerance" => Tolerance(split(1).toDouble)
         case _ => throw new RuntimeException(s"invalid bound: ${split(0)}:${split(1)}")

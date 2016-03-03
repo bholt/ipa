@@ -262,7 +262,7 @@ class RawMixCounter:
         a['ipa_rawmix_counter_mix_incr'] = self.incr
 
 
-def run_rawmix(datatype):
+def run_rawmix(log, datatype):
     nexp = 0
 
     containers = swarm.containers_str()
@@ -366,6 +366,7 @@ if __name__ == '__main__':
         before_all()
         # print note('skipping before_all()')
 
+    puts("SRC: #{SRC}")
     log = open(SRC + '/experiments.log', 'w')
 
     tag = sh.git.describe().stdout
@@ -374,6 +375,6 @@ if __name__ == '__main__':
     if opt.mode == 'owl':
         n = run_retwis()
     elif opt.mode == 'rawmix':
-        n = run_rawmix(opt.type)
+        n = run_rawmix(log, opt.type)
 
     notify_slack(fmt("Finished #{n} experiments. :success:"))

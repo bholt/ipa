@@ -63,6 +63,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
         val iv = r.asInstanceOf[Interval[Long]]
         val width = iv.max - iv.min
         histIntervalWidth << width
+      case _ => // do nothing
     }
     r.consistency match {
       case Strong => countReadStrong += 1

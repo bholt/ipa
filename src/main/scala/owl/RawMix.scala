@@ -27,11 +27,11 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
 
   val set = config.bound match {
 
-    case Consistency(Weak, Weak) =>
+    case Consistency(Weak, _) =>
       new IPAUuidSet("raw")
           with ConsistencyBound { override val consistencyLevel = Weak }
 
-    case Consistency(Strong, Weak) | Consistency(Weak, Strong) =>
+    case Consistency(Strong, _) =>
       new IPAUuidSet("raw")
           with ConsistencyBound { override val consistencyLevel = Strong }
 

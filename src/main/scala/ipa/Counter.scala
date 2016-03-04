@@ -171,8 +171,9 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
   def readStmt(c: CLevel)(key: UUID) =
     preparedRead.setConsistencyLevel(c).bind().setUUID(0, key)
 
-  def readResult(rs: ResultSet) =
+  def readResult(rs: ResultSet) = {
     Option(rs.one()).map(_.get(0, classOf[Long])).getOrElse(0L)
+  }
 
   def read(c: CLevel)(key: UUID) =
     executeAsScalaFuture(readStmt(c)(key)).instrument().map(readResult)

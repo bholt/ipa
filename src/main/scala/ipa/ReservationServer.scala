@@ -3,6 +3,7 @@ package ipa
 import java.net.InetAddress
 import java.util.UUID
 
+import scala.concurrent.duration.{Deadline, Duration, NANOSECONDS}
 import scala.util.{Failure, Success, Try}
 import com.datastax.driver.core.{Cluster, ConsistencyLevel => CLevel}
 import com.twitter.finagle.loadbalancer.Balancers
@@ -22,6 +23,12 @@ import scala.collection.JavaConversions._
 import scala.collection.mutable
 import owl.Consistency._
 
+case class Timestamped[T](value: T, time: Long = System.nanoTime) {
+  def expired: Boolean = (System.nanoTime - time) > config.lease.periodNanos
+  def get: Option[T] = if (!expired) Some(value) else None
+}
+
+
 class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationService[tw.Future] {
   import imps._
 
@@ -33,6 +40,8 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     val reads = metrics.create.counter("reads")
     val incrs = metrics.create.counter("incrs")
     val errors = metrics.create.counter("errors")
+
+    val cached_reads = metrics.create.counter("cached_reads")
 
     val races = metrics.create.counter("races")
 
@@ -49,17 +58,21 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   ) {
     val reservations = new mutable.HashMap[UUID, Reservation]
 
-    def reservation(key: UUID, lastRead: => Long) =
+    def reservation(key: UUID) = reservations.get(key)
+
+    def reservation(key: UUID, lastRead: => Timestamped[Long]) =
       reservations.getOrElseUpdate(key, Reservation(this, lastRead))
 
     def refresh(key: UUID): tw.Future[Reservation] = {
       // read strong always performs read repair so this suffices to ensure that everyone is up-to-date and we can start using our reservations again
       // TODO: verify read repair is happening
       // TODO: check reservations table rather than assuming `allocated` is constant
+      val rt = System.nanoTime // conservative read time
       table.readTwitter(Strong)(key).instrument(m.latencyStrongRead) map { v =>
-        val res = reservation(key, v)
+        val vt = Timestamped(v, rt)
+        val res = reservation(key, vt)
         // now that we've synchronized with everyone, we get our tokens back
-        res.update(v, tolerance)
+        res.update(vt, tolerance)
         res
       }
     }
@@ -67,16 +80,17 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   }
 
   class Reservation {
-    var lastRead: Long = 0L
+    var lastRead: Timestamped[Long] = Timestamped(0L, 0L)
     var total: Long = 0L      // tokens allocated globally (currently assumed to be the max possible given the error tolerance)
     var allocated: Long = 0L  // tokens allocated to this replica locally
     var available: Long = 0L // local tokens remaining
+    
 
-    def update(_lastRead: Long, tol: Tolerance): Unit = {
+    def update(_lastRead: Timestamped[Long], tol: Tolerance): Unit = {
       lastRead = _lastRead
 
       // TODO: assuming that maximum possible are allocated
-      total = tol.delta(lastRead)
+      total = tol.delta(lastRead.value)
 
       // TODO: assuming that each replica gets lower bound of its fair share
       allocated = total / session.nreplicas
@@ -92,7 +106,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   }
 
   object Reservation {
-    def apply(entry: Entry, lastRead: Long): Reservation = {
+    def apply(entry: Entry, lastRead: Timestamped[Long]): Reservation = {
       val r = new Reservation()
       r.update(lastRead, entry.tolerance)
       r
@@ -144,13 +158,24 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     val key = keyStr.toUUID
     table(t) match {
       case Success(e) =>
-        e.table.readTwitter(Weak)(key)
-            .instrument(m.latencyWeakRead)
-            .instrument() map { raw =>
-          // first time, create new Reservation and store in hashmap
-          val res = e.reservation(key, raw)
-          // println(s">> raw = $raw, res.delta = ${res.delta}; $res")
-          th.IntervalLong(raw - res.delta, raw + res.delta)
+        // try to find cached read in reservation
+        e.reservation(key) flatMap { res => // if we found a reservation
+          res.lastRead.get map { v => // if cached read not expired
+            m.cached_reads += 1
+            // return the cached value
+            tw.Future.value(th.IntervalLong(v - res.delta, v + res.delta))
+          }
+        } getOrElse { // if no reservation or expired read:
+          // read from local cassandra replica
+          val rt = System.nanoTime
+          e.table.readTwitter(Weak)(key)
+              .instrument(m.latencyWeakRead)
+              .instrument() map { v =>
+            val vt = Timestamped(v, rt)
+            // first time, create new Reservation and store in hashmap
+            val res = e.reservation(key, vt)
+            th.IntervalLong(v - res.delta, v + res.delta)
+          }
         }
       case Failure(e) =>
         tw.Future.exception(e)
@@ -166,13 +191,16 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
       case Success(e) =>
         // may need to get the latest value of the counter if we haven't created a reservation for this record yet
         val get = { () =>
-          e.table.readTwitter(Strong)(key)
+          val rt = System.nanoTime
+          e.table.readTwitter(CLevel.ONE)(key)
               .instrument(m.latencyStrongRead)
-              .instrument().await()
+              .instrument()
+              .map(Timestamped(_, rt))
+              .await()
         }
         val res = e.reservation(key, get())
 
-        // consume
+        // execute the increment on durable store
         val exec = { cons: CLevel =>
           val timer = if (cons == Strong) m.latencyStrongWrite
                       else                m.latencyWeakWrite
@@ -181,28 +209,31 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
 
         if (n >= res.allocated) {
           m.outOfBounds += 1
-          // println(s">> incr($n) outside error bounds $res, executing with strong consistency")
-          // cannot execute within error bounds, so must execute with strong consistency
-          exec(Strong) flatMap { _ => e.refresh(key).unit }
+          // cannot execute within error bounds, so must wait until all have received it
+          exec(CLevel.ALL) flatMap { _ => e.refresh(key).unit } map { v =>
+            // make sure we wait until lease period has definitely expired
+            Thread.sleep(config.lease.periodMillis)
+            v
+          }
         } else {
           if (res.available < n) {
             m.refreshes += 1
             // println(s">> incr($n) need to refresh: $res")
             // need to get more
             e.refresh(key) flatMap { _ =>
-              if (res.available >= n) {
+              if (res.available >= n) { // enough tokens available:
                 res.available -= n
-                exec(Weak)
-              } else {
+                exec(CLevel.ONE)
+              } else { // race where some other op took the token
                 m.races += 1
-                exec(Strong)
+                // rather than possibly iterating again, just give up and wait
+                exec(CLevel.ALL)
               }
             }
-          } else {
+          } else { // enough tokens available:
             m.immediates += 1
             res.available -= n
-            // println(s">> incr($n) => $res")
-            exec(Weak)
+            exec(CLevel.ONE) // just needs to be fault-tolerant
           }
         }
       case Failure(e) =>

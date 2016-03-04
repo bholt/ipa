@@ -44,7 +44,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
       sys.error(s"impossible case: $e")
   }
 
-  val timerIncr      = metrics.create.timer("incr_latency")
+  val timerIncr = metrics.create.timer("incr_latency")
   val timerRead = metrics.create.timer("read_latency")
 
   val countReadStrong = metrics.create.counter("read_strong")

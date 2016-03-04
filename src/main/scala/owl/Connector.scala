@@ -44,6 +44,12 @@ object Connector {
 
     def consistency = consistencyFromString(c.getString("ipa.consistency"))
 
+    object lease {
+      val period = Duration(c.getString("ipa.lease.period")).asInstanceOf[FiniteDuration]
+      val periodNanos = period.toNanos
+      val periodMillis = period.toMillis
+    }
+
     object reservations {
       val port = c.getInt("ipa.reservations.port")
     }

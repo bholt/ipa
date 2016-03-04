@@ -26,23 +26,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
   def zipfID() = id(zipfDist.sample())
   def urandID() = id(Random.nextInt(nsets))
 
-  val counter = config.bound match {
-    case Latency(l) =>
-      new Counter("raw") with Counter.LatencyBound { override val bound = l }
-
-    case Consistency(Weak, _) =>
-      new Counter("raw") with Counter.WeakOps
-
-    case Consistency(Strong, _) =>
-      new Counter("raw") with Counter.StrongOps
-
-    case t @ Tolerance(_) =>
-      new Counter("raw") with Counter.ErrorTolerance { override val tolerance = t }
-
-    case e =>
-      println("error parsing bound")
-      sys.error(s"impossible case: $e")
-  }
+  val counter = Counter.fromBound(config.bound)
 
   val timerIncr = metrics.create.timer("incr_latency")
   val timerRead = metrics.create.timer("read_latency")

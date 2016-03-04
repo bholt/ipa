@@ -2,14 +2,16 @@ package owl
 
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
 import org.joda.time.DateTime
+import owl.Consistency._
 
 import scala.math.Ordering.Implicits._
 import ipa.thrift
 import com.twitter.{util => tw}
 
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.concurrent.{ExecutionContext, Future}
 import scala.language.implicitConversions
+import scala.util.Try
 
 /** Define ordering over consistency levels */
 trait ConsistencyOrder extends Ordering[CLevel] {
@@ -26,6 +28,29 @@ final case class Latency(d: FiniteDuration) extends Bound
 final case class Consistency(read: CLevel, write: CLevel = Consistency.Strong) extends Bound
 final case class Tolerance(error: Double) extends Bound {
   def delta(value: Long) = (value * error).toLong
+}
+
+object Bound {
+  def fromString(str: String): Bound = {
+    Try {
+      val split = str.split(":")
+      split(0) match {
+        case "latency" => Latency(Duration(split(1)).asInstanceOf[FiniteDuration])
+        case "consistency" =>
+          split(1) match {
+            case "weak"   => Consistency(Weak)
+            case "weakwrite" => Consistency(Weak, Weak)
+            case "strong" => Consistency(Strong)
+          }
+        case "tolerance" => Tolerance(split(1).toDouble)
+        case _ => throw new RuntimeException(s"invalid bound: ${split(0)}:${split(1)}")
+      }
+    } recover {
+      case e: Throwable =>
+        Console.err.println(s"error parsing bound: ${e.getMessage}")
+        sys.exit(1)
+    } get
+  }
 }
 
 class IPAType {}

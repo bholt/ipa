@@ -73,23 +73,7 @@ object Connector {
       }
     }
 
-    lazy val bound: Bound = Try {
-      val split = c.getString("ipa.bound").split(":")
-      split(0) match {
-        case "latency" => Latency(Duration(split(1)).asInstanceOf[FiniteDuration])
-        case "consistency" =>
-          split(1) match {
-            case "weak"   => Consistency(Weak)
-            case "strong" => Consistency(Strong)
-          }
-        case "tolerance" => Tolerance(split(1).toDouble)
-        case _ => throw new RuntimeException(s"invalid bound: ${split(0)}:${split(1)}")
-      }
-    } recover {
-      case e: Throwable =>
-        println(s"error parsing bound: ${e.getMessage}")
-        sys.exit(1)
-    } get
+    lazy val bound = Bound.fromString(c.getString("ipa.bound"))
 
     def nthreads = c.getInt("ipa.nthreads")
     def cap    = c.getInt("ipa.cap")

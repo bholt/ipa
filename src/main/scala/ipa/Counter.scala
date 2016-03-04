@@ -41,6 +41,14 @@ object Counter {
       base.incr(Strong)(key, by)
   }
 
+  trait WeakWeakOps extends Ops.Incr with Ops.Read { base: Counter =>
+    type ReadType = Inconsistent[Long]
+    override def read(key: UUID) =
+      base.read(Weak)(key).map(Inconsistent(_))
+    override def incr(key: UUID, by: Long) =
+      base.incr(Weak)(key, by)
+  }
+
   trait StrongOps extends Ops.Incr with Ops.Read { base: Counter =>
     type ReadType = Consistent[Long]
     override def read(key: UUID): Future[Consistent[Long]] =
@@ -88,6 +96,27 @@ object Counter {
           .map(v => v: Interval[Long])
           .asScala
     }
+  }
+
+  def fromBound(bound: Bound)(implicit imps: CommonImplicits) = bound match {
+    case Latency(l) =>
+      new Counter("raw") with Counter.LatencyBound { override val bound = l }
+
+    case Consistency(Weak, Weak) =>
+      new Counter("raw") with Counter.WeakWeakOps
+
+    case Consistency(Weak, Strong) =>
+      new Counter("raw") with Counter.WeakOps
+
+    case Consistency(Strong, _) =>
+      new Counter("raw") with Counter.StrongOps
+
+    case t @ Tolerance(_) =>
+      new Counter("raw") with Counter.ErrorTolerance { override val tolerance = t }
+
+    case e =>
+      println("error parsing bound")
+      sys.error(s"impossible case: $e")
   }
 
   def fromName(name: String)(implicit imps: CommonImplicits): Try[Counter] = {

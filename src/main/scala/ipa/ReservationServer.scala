@@ -84,7 +84,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     var total: Long = 0L      // tokens allocated globally (currently assumed to be the max possible given the error tolerance)
     var allocated: Long = 0L  // tokens allocated to this replica locally
     var available: Long = 0L // local tokens remaining
-    
+
 
     def update(_lastRead: Timestamped[Long], tol: Tolerance): Unit = {
       lastRead = _lastRead

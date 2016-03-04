@@ -31,3 +31,13 @@ modes:
     1: [delay 0ms]
     2: [delay 0ms]
     3: [delay 0ms]
+
+  google:
+    1: [delay 1ms 0.3ms 95% distribution normal]
+    2: [delay 110ms 5ms 95% distribution normal]
+    3: [delay 165ms 5ms 95% distribution normal]
+
+  amazon:
+    1: [delay 1ms 0.3ms 95% distribution normal]
+    2: [delay 80ms 10ms 80% distribution normal]
+    3: [delay 200ms 50ms 90% distribution normal]

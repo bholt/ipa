@@ -24,6 +24,7 @@ class IPASetTests extends {
     PatienceConfig(timeout = timeout, interval = 20 millis)
 
   println(s"create keyspace ${space.name} in beforeAll")
+  if (config.do_reset) dropKeyspace()
   createKeyspace(session)
 
   val u1 = id(1)
@@ -33,7 +34,7 @@ class IPASetTests extends {
   def test_generic(s: Set[UUID]): Unit = {
 
     "be created" in {
-      s.create().await(timeout)
+      s.create().await()
     }
 
     "be truncated" in {
@@ -50,7 +51,7 @@ class IPASetTests extends {
       assert(s(u1).contains(u3).futureValue.get)
     }
 
-    "size reflect added items" in {
+    "have the correct size" in {
       s(u1).size().futureValue.get shouldBe 2
     }
 

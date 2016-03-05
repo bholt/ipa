@@ -45,12 +45,7 @@ class IPASetTests extends {
       assert(s(u1).contains(u2).futureValue.get)
       assert(s(u1).contains(u3).futureValue.get)
     }
-
-    "contain added items" in {
-      assert(s(u1).contains(u2).futureValue.get)
-      assert(s(u1).contains(u3).futureValue.get)
-    }
-
+    
     "size reflect added items" in {
       s(u1).size().futureValue.get shouldBe 2
     }

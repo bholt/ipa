@@ -15,54 +15,51 @@ import owl._
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success, Try}
+import scala.language.higherKinds
 
 object Counter {
   import Consistency._
 
-  object Ops {
+  trait Ops {
+    type IPAType[T] <: Inconsistent[T]
 
-    trait Incr {
-      def incr(key: UUID, by: Long): Future[Unit]
-    }
+    def incr(key: UUID, by: Long): Future[Unit]
 
-    trait Read {
-      type ReadType
 
-      def read(key: UUID): Future[ReadType]
-    }
+    def read(key: UUID): Future[IPAType[Long]]
 
   }
 
-  trait WeakOps extends Ops.Incr with Ops.Read { base: Counter =>
-    type ReadType = Inconsistent[Long]
+  trait WeakOps extends Ops { base: Counter =>
+    type IPAType[T] = Inconsistent[T]
     override def read(key: UUID) =
       base.read(Weak)(key).map(Inconsistent(_))
     override def incr(key: UUID, by: Long) =
       base.incr(Strong)(key, by)
   }
 
-  trait WeakWeakOps extends Ops.Incr with Ops.Read { base: Counter =>
-    type ReadType = Inconsistent[Long]
+  trait WeakWeakOps extends Ops { base: Counter =>
+    type IPAType[T] = Inconsistent[T]
     override def read(key: UUID) =
       base.read(Weak)(key).map(Inconsistent(_))
     override def incr(key: UUID, by: Long) =
       base.incr(Weak)(key, by)
   }
 
-  trait StrongOps extends Ops.Incr with Ops.Read { base: Counter =>
-    type ReadType = Consistent[Long]
+  trait StrongOps extends Ops { base: Counter =>
+    type IPAType[T] = Consistent[T]
     override def read(key: UUID): Future[Consistent[Long]] =
       base.read(Strong)(key) map { Consistent(_) }
     override def incr(key: UUID, by: Long): Future[Unit] =
       base.incr(Strong)(key, by)
   }
 
-  trait LatencyBound extends Ops.Incr with Ops.Read with RushImpl {
+  trait LatencyBound extends Ops with RushImpl {
     base: Counter =>
 
     def bound: FiniteDuration
 
-    type ReadType = Rushed[Long]
+    type IPAType[T] = Rushed[T]
 
     override def read(key: UUID) =
       rush(bound){ c: CLevel => base.read(c)(key) }
@@ -71,7 +68,7 @@ object Counter {
       base.incr(Strong)(key, by)
   }
 
-  trait ErrorTolerance extends Ops.Incr with Ops.Read {
+  trait ErrorTolerance extends Ops {
     base: Counter =>
 
     def tolerance: Tolerance
@@ -85,7 +82,7 @@ object Counter {
       } asScala
     }
 
-    type ReadType = Interval[Long]
+    type IPAType[T] = Interval[T]
     
     override def incr(key: UUID, by: Long): Future[Unit] = {
       reservations.client.incr(table, key.toString, by).asScala
@@ -140,7 +137,7 @@ object Counter {
 }
 
 class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType(imps) {
-  self: Counter.Ops.Incr with Counter.Ops.Read =>
+  self: Counter.Ops =>
 
   case class Count(key: UUID, count: Long)
   class CountTable extends CassandraTable[CountTable, Count] {
@@ -172,7 +169,7 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
 
   class Handle(key: UUID) {
     def incr(by: Long = 1L): Future[Unit] = self.incr(key, by)
-    def read(): Future[ReadType] = self.read(key)
+    def read(): Future[IPAType[Long]] = self.read(key)
   }
   def apply(key: UUID) = new Handle(key)
 

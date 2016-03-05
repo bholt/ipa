@@ -39,8 +39,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
 
   val histIntervalWidth = metrics.create.histogram("interval_width")
 
-  def recordResult(rAny: Any): Inconsistent[Long] = {
-    val r = rAny.asInstanceOf[Inconsistent[Long]]
+  def recordResult(r: Inconsistent[Long]): Inconsistent[Long] = {
     // some require special additional handling...
     counter match {
       case _: Counter.ErrorTolerance =>

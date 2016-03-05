@@ -47,15 +47,19 @@ class IPASetTests extends {
     }
 
     "contain added items" in {
+      Console.err.println(s"${s.name}: checking contains")
       assert(s(u1).contains(u2).futureValue.get)
       assert(s(u1).contains(u3).futureValue.get)
     }
 
     "have the correct size" in {
-      s(u1).size().futureValue.get shouldBe 2
+      Console.err.println(s"${s.name}: checking size")
+      val v: Inconsistent[Long] = s(u1).size().futureValue
+      v.get shouldBe 2
     }
 
     "remove items that exist" in {
+      Console.err.println(s"${s.name}: testing remove")
       s(u1).remove(u2).await(timeout)
       s(u1).size().futureValue.get shouldBe 1
     }

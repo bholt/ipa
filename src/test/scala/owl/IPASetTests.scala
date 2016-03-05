@@ -9,6 +9,8 @@ import org.scalatest.{Inspectors, Matchers, BeforeAndAfterAll, WordSpec}
 import scala.concurrent.duration._
 
 import Util._
+import Conversions._
+import ipa.Set
 
 class IPASetTests extends {
   override implicit val space = KeySpace("ipa_set_tests")
@@ -28,10 +30,7 @@ class IPASetTests extends {
   val u2 = id(2)
   val u3 = id(3)
 
-  "IPASet with LatencyBound" should {
-
-    val s = new IPAUuidSet("snorm")
-        with LatencyBound { val latencyBound = 100 millis }
+  def test_generic(s: Set[UUID]): Unit = {
 
     "be created" in {
       s.create().await()
@@ -40,6 +39,11 @@ class IPASetTests extends {
     "add items" in {
       s(u1).add(u2).await(timeout)
       s(u1).add(u3).await(timeout)
+    }
+
+    "contain added items" in {
+      assert(s(u1).contains(u2).futureValue.get)
+      assert(s(u1).contains(u3).futureValue.get)
     }
 
     "contain added items" in {
@@ -68,61 +72,65 @@ class IPASetTests extends {
 
   }
 
+  "IPA Set with Weak ops" should {
+    val s = new Set[UUID]("s_weak") with Set.WeakOps[UUID]
+
+    test_generic(s)
+
+  }
+
+  "IPA Set with Strong ops" should {
+    val s = new Set[UUID]("s_strong") with Set.StrongOps[UUID]
+
+    test_generic(s)
+
+    "handle implicit conversion" in {
+      // verify that implicit conversion works
+      val r: Consistent[Boolean] = s(u1).contains(u3).await(timeout)
+      r shouldBe Consistent(true)
+      val v: Boolean = r
+      v shouldBe true
+    }
+  }
+
+  "IPASet with LatencyBound" should {
+
+    val s = new Set[UUID]("s_rush")
+        with Set.LatencyBound[UUID] { override val bound = 100 millis }
+
+    test_generic(s)
+
+    "return rushed type" in {
+      val r: Rushed[Boolean] = s(u1).contains(u3).await(timeout)
+      r.get shouldBe true
+      println(s"Set.contains @ ${r.consistency}")
+    }
+
+  }
+
   "Quick set" should {
 
-    val s = new IPAUuidSet("suid")
-        with LatencyBound { val latencyBound = 5 millis }
+    val s = new Set[UUID]("quick")
+        with Set.LatencyBound[UUID] { override val bound = 1 millis }
 
-    "be created" in {
-      println(">>> creating table-based set")
-      s.create().await()
-    }
-
-    "allow adding" in {
-      Seq( s(u1).add(u2), s(u1).add(u3) )
-          .bundle
-          .await()
-    }
-
-    "support rushed size" in {
-      whenReady( s(u1).size() ) { r =>
-        println(s"set(u1).size => $r")
-        r.get shouldBe 2
-      }
-    }
+    test_generic(s)
 
   }
 
 
   "Sloth set" should {
 
-    val s = new IPAUuidSet("sloth")
-        with LatencyBound { val latencyBound = 2 seconds }
+    val s = new Set[UUID]("sloth")
+        with Set.LatencyBound[UUID] { override val bound = 2 seconds }
 
-    "be created" in {
-      s.create().await()
-    }
+    test_generic(s)
 
-    "allow adding" in {
-      Seq( s(u1).add(u2), s(u1).add(u3) )
-          .bundle
-          .await()
-    }
-
-    "get strong consistency" ignore {
-      val t = now()
-      val r = s(u1).size().await(timeout)
-      t.elapsed should be < (s.latencyBound/2)
-      println(s"set(u1).size => $r")
-      r.get shouldBe 2
-      r.consistency shouldBe ConsistencyLevel.ALL
-    }
   }
 
   "Hasty set" should {
 
-    val s = new IPAUuidSet("hasty")
-        with LatencyBound { val latencyBound = 1 microsecond }
+    val s = new Set[UUID]("hasty")
+        with Set.LatencyBound[UUID] { override val bound = 10 microseconds }
 
     "be created" in {
       s.create().await()
@@ -137,7 +145,7 @@ class IPASetTests extends {
     "miss its deadline and get weak consistency" ignore {
       val t = now()
       val r = s(u1).size().await(timeout)
-      t.elapsed should be > s.latencyBound
+      t.elapsed should be > s.bound
       println(s"hasty: u1.size => $r")
       r.consistency shouldBe ConsistencyLevel.ONE
     }

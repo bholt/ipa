@@ -12,7 +12,7 @@ import com.twitter.util._
 import com.twitter.{util => tw}
 import com.websudos.phantom.connectors.KeySpace
 import ipa.Counter.WeakOps
-import ipa.thrift.{ReservationException, Table}
+import ipa.thrift.{ReservationException, Result, SetOp, Table}
 import ipa.{thrift => th}
 import owl.Connector.config
 import owl.Util._
@@ -275,6 +275,8 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     metrics.factory.reset()
     tw.Future.Unit
   }
+
+  override def setOp(tbl: Table, op: SetOp): Future[Result] = ???
 }
 
 object ReservationCommon {

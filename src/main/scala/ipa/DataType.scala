@@ -5,6 +5,8 @@ import com.datastax.driver.core.{ConsistencyLevel => CLevel}
 import com.websudos.phantom.dsl._
 import owl.Connector.config
 import owl._
+import com.twitter.{util => tw}
+import ipa.thrift.Table
 
 import scala.concurrent._
 import scala.concurrent.duration.FiniteDuration
@@ -13,11 +15,30 @@ import scala.util.Try
 
 case class CommonImplicits(implicit val session: Session, val space: KeySpace, val metrics: IPAMetrics, val reservations: ReservationClient)
 
+import Connector.json
+
+case class Metadata(bound: Option[Bound] = None) {
+  override def toString = bound map { b =>
+    json.writeValueAsString(Map("bound" -> b.toString))
+  } getOrElse {
+    ""
+  }
+}
+
+object Metadata {
+  def fromString(s: String)(implicit imps: CommonImplicits) = {
+    val m = json.readValue(s, classOf[Map[String,String]])
+    Metadata(m get "bound" map Bound.fromString)
+  }
+}
+
 abstract class DataType(imps: CommonImplicits) extends TableGenerator {
   def name: String
 
+  protected def fullName: Table = Table(space.name, name)
+
   /* metadata to store in the Cassandra table properties */
-  def meta: Map[String,Any] = Map()
+  def meta: Metadata = Metadata()
 
   implicit val session = imps.session
   implicit val space = imps.space
@@ -26,14 +47,25 @@ abstract class DataType(imps: CommonImplicits) extends TableGenerator {
 }
 
 object DataType {
-  def lookupMetadata(name: String)(implicit imps: CommonImplicits): Try[Map[String, Any]] = {
+  def lookupMetadata(name: String)(implicit imps: CommonImplicits): Try[String] = {
     import imps._
     val query = s"SELECT comment FROM system.schema_columnfamilies WHERE keyspace_name = '${space.name}' AND columnfamily_name = '$name'"
     Try {
       val row = blocking { session.execute(query).one() }
       val text = row.get("comment", classOf[String])
-      metrics.json.readValue(text, classOf[Map[String, Any]])
+      text
     }
+  }
+
+  def createWithMetadata[T <: CassandraTable[T, _], E](name: String, tbl: T, metaStr: String)(implicit imps: CommonImplicits): tw.Future[Unit] = {
+    import imps._
+    DataType.lookupMetadata(name) filter { _ == metaStr } map {
+      _ => tw.Future.Unit
+    } recover { case e =>
+      println(s">>> (re)creating ${space.name}.$name")
+      session.execute(s"DROP TABLE IF EXISTS ${space.name}.$name")
+      tbl.create.`with`(comment eqs metaStr).execute().unit
+    } get
   }
 }
 

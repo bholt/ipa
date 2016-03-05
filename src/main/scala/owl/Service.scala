@@ -173,9 +173,7 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef], cluster: Cluster) 
   lazy val cassandraOpLatency = create.timer("cass_op_latency")
   lazy val missedDeadlines = create.meter("missed_deadlines")
 
-  val json = new ObjectMapper()
-      .registerModule(new MetricsModule(TimeUnit.SECONDS, TimeUnit.MILLISECONDS, false))
-      .registerModule(DefaultScalaModule)
+  import Connector.json
 
   def write(out: PrintStream, extras: Map[String,AnyRef] = Map(), configFilter: String = "ipa") = {
     val mConfig = config.c.root().withOnlyKey(configFilter).unwrapped()

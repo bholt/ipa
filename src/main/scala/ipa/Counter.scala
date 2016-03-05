@@ -2,7 +2,6 @@ package ipa
 
 import java.util.UUID
 
-import com.datastax.driver.core.querybuilder.QueryBuilder
 import com.datastax.driver.core.{BoundStatement, Row, ConsistencyLevel => CLevel}
 import com.twitter.{util => tw}
 import com.websudos.phantom.dsl._
@@ -72,24 +71,23 @@ object Counter {
     base: Counter =>
 
     def tolerance: Tolerance
-    
-    private def table: Table = Table(space.name, name)
-    override def meta() = Map("tolerance" -> tolerance.error)
+
+    override def meta = Metadata(Some(tolerance))
 
     override def create(): Future[Unit] = {
       createTwitter() flatMap { _ =>
-        reservations.client.createCounter(table, tolerance.error)
+        reservations.client.createCounter(fullName, tolerance.error)
       } asScala
     }
 
     type IPAType[T] = Interval[T]
     
     override def incr(key: UUID, by: Long): Future[Unit] = {
-      reservations.client.incr(table, key.toString, by).asScala
+      reservations.client.incr(fullName, key.toString, by).asScala
     }
 
     override def read(key: UUID): Future[Interval[Long]] = {
-      reservations.client.readInterval(table, key.toString)
+      reservations.client.readInterval(fullName, key.toString)
           .map(v => v: Interval[Long])
           .asScala
     }
@@ -117,17 +115,13 @@ object Counter {
   }
 
   def fromName(name: String)(implicit imps: CommonImplicits): Try[Counter] = {
-    DataType.lookupMetadata(name) flatMap { meta =>
-      Try(meta("tolerance")) flatMap {
-        case tol: Double =>
-          val c = new Counter(name)
-              with ErrorTolerance { override val tolerance = Tolerance(tol) }
-          Success(c)
-        case tol =>
-          Failure(ReservationException(s"tolerance wasn't a double: $tol"))
-      } recoverWith {
-        case e: Throwable =>
-          Failure(ReservationException(s"unable to get 'tolerance': ${e.getMessage}"))
+    DataType.lookupMetadata(name) flatMap { metaStr =>
+      val meta = Metadata.fromString(metaStr)
+      meta.bound match {
+        case Some(bound) =>
+          Success(Counter.fromBound(bound))
+        case _ =>
+          Failure(ReservationException(s"Unable to find metadata for $name"))
       }
     } recoverWith {
       case e: Throwable =>
@@ -149,17 +143,8 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
 
   val tbl = new CountTable
 
-  def createTwitter(): tw.Future[Unit] = {
-    val metaStr = metrics.json.writeValueAsString(meta)
-
-    DataType.lookupMetadata(name) filter { _ == meta } map {
-      _ => tw.Future.Unit
-    } recover { case e =>
-      println(s">>> (re)creating ${space.name}.$name")
-      session.execute(s"DROP TABLE IF EXISTS ${space.name}.$name")
-      tbl.create.`with`(comment eqs metaStr).execute().unit
-    } get
-  }
+  def createTwitter(): tw.Future[Unit] =
+    DataType.createWithMetadata(name, tbl, meta.toString)
 
   override def create(): Future[Unit] =
     createTwitter().asScala
@@ -183,10 +168,10 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
     preparedIncr.setConsistencyLevel(c).bind(by.asInstanceOf[AnyRef], key.asInstanceOf[AnyRef])
 
   def incr(c: CLevel)(key: UUID, by: Long) =
-    executeAsScalaFuture(incrStmt(c)(key,by)).instrument().unit
+    incrStmt(c)(key,by).execAsScala().instrument().unit
 
   def incrTwitter(c: CLevel)(key: UUID, by: Long): tw.Future[Unit] =
-    executeAsTwitterFuture(incrStmt(c)(key, by)).instrument().unit
+    incrStmt(c)(key, by).execAsTwitter().instrument().unit
 
   lazy val preparedRead = {
     val key = tbl.ekey.name
@@ -202,10 +187,10 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
   }
 
   def read(c: CLevel)(key: UUID) =
-    executeAsScalaFuture(readStmt(c)(key)).instrument().map(readResult)
+    readStmt(c)(key).execAsScala().instrument().map(readResult)
 
   def readTwitter(c: CLevel)(key: UUID): tw.Future[Long] = {
-    executeAsTwitterFuture(readStmt(c)(key)).instrument().map(readResult)
+    readStmt(c)(key).execAsTwitter().instrument().map(readResult)
   }
 
 }

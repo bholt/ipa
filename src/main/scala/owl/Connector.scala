@@ -3,8 +3,11 @@ package owl
 import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 
+import com.codahale.metrics.json.MetricsModule
 import com.datastax.driver.core._
 import com.datastax.driver.core.policies.{DCAwareRoundRobinPolicy, LatencyAwarePolicy}
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import com.twitter.finagle.Thrift
 import com.twitter.finagle.loadbalancer.Balancers
 import com.typesafe.config.{ConfigFactory, ConfigRenderOptions, ConfigValue, ConfigValueType}
@@ -23,7 +26,11 @@ import scala.concurrent.{Future, blocking}
 import scala.util.Try
 
 object Connector {
-  import Consistency._
+
+  val json = new ObjectMapper()
+      .registerModule(new MetricsModule(TimeUnit.SECONDS, TimeUnit.MILLISECONDS, false))
+      .registerModule(DefaultScalaModule)
+
 
   object config {
     val c = ConfigFactory.load()

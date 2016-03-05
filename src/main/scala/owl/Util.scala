@@ -6,12 +6,14 @@ import java.util.concurrent.{ArrayBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
 import com.codahale.metrics
 import com.codahale.metrics.Timer
-import com.datastax.driver.core.{BoundStatement, ResultSet, Session, Statement}
+import com.datastax.driver.core._
 import com.google.common.util.concurrent.{FutureCallback, Futures}
 import com.twitter.util.{Return, Throw}
 import com.twitter.{util => tw}
 import com.websudos.phantom.Manager
+import com.websudos.phantom.builder.query.prepared.{ExecutablePreparedQuery, PreparedBlock}
 import com.websudos.phantom.connectors.KeySpace
+import ipa.thrift.Table
 
 import scala.collection.generic.CanBuildFrom
 import scala.concurrent.duration.{Deadline, Duration}
@@ -34,6 +36,10 @@ object Util {
   implicit class FuturePlus[T](f: Future[T]) {
     def await(d: Duration = Duration.Inf): T = Await.result(f, d)
     def unit(implicit ec: ExecutionContext): Future[Unit] = f.map(_ => ())
+  }
+
+  implicit class TablePlus(t: Table) {
+    override def toString = s"${t.space}.${t.name}"
   }
 
   implicit class TwAwaitablePlus[T](f: tw.Awaitable[T]) {
@@ -107,37 +113,60 @@ object Util {
     }
   }
 
-  def executeAsTwitterFuture(stmt: BoundStatement)(implicit session: Session): tw.Future[ResultSet] = {
-    val promise = tw.Promise[ResultSet]()
-    val future = session.executeAsync(stmt)
-    val callback = new FutureCallback[ResultSet] {
-      def onSuccess(result: ResultSet): Unit = {
-        promise update Return(result)
-      }
-      def onFailure(err: Throwable): Unit = {
-        Manager.logger.error(err.getMessage)
-        promise update Throw(err)
-      }
+  implicit class PreparedStatementPlus(ps: ExecutablePreparedQuery) {
+
+    def futureTwitter(c: ConsistencyLevel = ps.options.consistencyLevel.orNull)(implicit session: Session): tw.Future[ResultSet] = {
+      val stmt = new SimpleStatement(ps.qb.terminate().queryString)
+          .setConsistencyLevel(c)
+      stmt.execAsTwitter()
     }
-    Futures.addCallback(future, callback, Manager.executor)
-    promise
+
+    def futureScala(c: ConsistencyLevel = ps.options.consistencyLevel.orNull)(implicit session: Session): Future[ResultSet] = {
+      val stmt = new SimpleStatement(ps.qb.terminate().queryString)
+          .setConsistencyLevel(c)
+      stmt.execAsScala()
+    }
   }
 
-  def executeAsScalaFuture(stmt: BoundStatement)(implicit session: Session): Future[ResultSet] = {
-    val promise = Promise[ResultSet]()
-    val future = session.executeAsync(stmt)
-    val callback = new FutureCallback[ResultSet] {
-      def onSuccess(result: ResultSet): Unit = {
-        promise success result
-      }
-
-      def onFailure(err: Throwable): Unit = {
-        Manager.logger.error(err.getMessage)
-        promise failure err
-      }
+  implicit class FutureResultPlus(f: Future[ResultSet]) {
+    def first[T](convert: Row => T)(implicit ec: ExecutionContext) = {
+      f map { rs => Option(rs.one()).map(convert) }
     }
-    Futures.addCallback(future, callback, Manager.executor)
-    promise.future
+  }
+
+  implicit class StatementPlus(stmt: Statement) {
+    def execAsTwitter()(implicit session: Session): tw.Future[ResultSet] = {
+      val promise = tw.Promise[ResultSet]()
+      val future = session.executeAsync(stmt)
+      val callback = new FutureCallback[ResultSet] {
+        def onSuccess(result: ResultSet): Unit = {
+          promise update Return(result)
+        }
+        def onFailure(err: Throwable): Unit = {
+          Manager.logger.error(err.getMessage)
+          promise update Throw(err)
+        }
+      }
+      Futures.addCallback(future, callback, Manager.executor)
+      promise
+    }
+
+    def execAsScala()(implicit session: Session): Future[ResultSet] = {
+      val promise = Promise[ResultSet]()
+      val future = session.executeAsync(stmt)
+      val callback = new FutureCallback[ResultSet] {
+        def onSuccess(result: ResultSet): Unit = {
+          promise success result
+        }
+
+        def onFailure(err: Throwable): Unit = {
+          Manager.logger.error(err.getMessage)
+          promise failure err
+        }
+      }
+      Futures.addCallback(future, callback, Manager.executor)
+      promise.future
+    }
   }
 
   def combine(ma: Map[String, Any], mb: Map[String, Any]): Map[String,Any] = {

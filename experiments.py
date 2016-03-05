@@ -301,11 +301,11 @@ def run_rawmix(log, datatype):
 
             ipa_concurrent_requests   = [128, 512, 2*K, 4*K],
 
-            # ipa_bound = ['tolerance:0.1', 'tolerance:0.05', 'consistency:strong', 'consistency:strongwrite', 'consistency:weak', 'latency:50ms', 'latency:10ms'],
-            ipa_bound = ['tolerance:0.1', 'tolerance:0.05'],
-            ipa_lease_period = ['50ms', '100ms', '200ms'],
+            ipa_bound = ['tolerance:0.1', 'tolerance:0.05', 'consistency:strong', 'consistency:weak', 'consistency:weakwrite', 'latency:50ms', 'latency:10ms'],
+            # ipa_bound = ['tolerance:0.1', 'tolerance:0.05'],
+            ipa_lease_period = ['200ms'],
             # ipa_bound = ['consistency:strong', 'consistency:weak', 'latency:50ms', 'latency:10ms'],
-            honeycomb_mode = ['normal', 'slowpoke_flat'],
+            honeycomb_mode = ['normal', 'slowpoke_flat', 'google', 'amazon'],
             mix = ['no_size']
 
         ):

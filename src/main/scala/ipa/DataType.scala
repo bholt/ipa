@@ -35,7 +35,7 @@ object Metadata {
 abstract class DataType(imps: CommonImplicits) extends TableGenerator {
   def name: String
 
-  protected def fullName: Table = Table(space.name, name)
+  protected def table: Table = Table(space.name, name)
 
   /* metadata to store in the Cassandra table properties */
   def meta: Metadata = Metadata()

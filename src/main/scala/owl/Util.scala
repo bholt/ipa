@@ -14,6 +14,8 @@ import com.websudos.phantom.Manager
 import com.websudos.phantom.builder.query.prepared.{ExecutablePreparedQuery, PreparedBlock}
 import com.websudos.phantom.connectors.KeySpace
 import ipa.thrift.Table
+import org.joda.time.DateTime
+import scala.collection.JavaConverters._
 
 import scala.collection.generic.CanBuildFrom
 import scala.concurrent.duration.{Deadline, Duration}
@@ -39,7 +41,7 @@ object Util {
   }
 
   implicit class TablePlus(t: Table) {
-    override def toString = s"${t.space}.${t.name}"
+    def fullname = s"${t.space}.${t.name}"
   }
 
   implicit class TwAwaitablePlus[T](f: tw.Awaitable[T]) {
@@ -113,7 +115,7 @@ object Util {
     }
   }
 
-  implicit class PreparedStatementPlus(ps: ExecutablePreparedQuery) {
+  implicit class ExecutablePreparedQueryPlus(ps: ExecutablePreparedQuery) {
 
     def futureTwitter(c: ConsistencyLevel = ps.options.consistencyLevel.orNull)(implicit session: Session): tw.Future[ResultSet] = {
       val stmt = new SimpleStatement(ps.qb.terminate().queryString)
@@ -131,6 +133,24 @@ object Util {
   implicit class FutureResultPlus(f: Future[ResultSet]) {
     def first[T](convert: Row => T)(implicit ec: ExecutionContext) = {
       f map { rs => Option(rs.one()).map(convert) }
+    }
+  }
+
+  implicit class PreparedStatementPlus(ps: PreparedStatement) {
+    def bindWith(args: Any*)(c: ConsistencyLevel) = {
+      def flatten(p: Any): AnyRef = p match {
+        case Some(x) => flatten(x)
+        case None => null.asInstanceOf[AnyRef]
+        case x: List[_] => x.asInstanceOf[List[Any]].asJava
+        case x: Set[_] => x.asInstanceOf[Set[Any]].asJava
+        case x: Map[_, _] => x.asInstanceOf[Map[Any, Any]].asJava
+        case x: DateTime => x.toDate
+        case x: Enumeration#Value => x.asInstanceOf[Enumeration#Value].toString
+        case x: BigDecimal => x.bigDecimal
+        case x: BigInt => x.bigInteger
+        case x => x.asInstanceOf[AnyRef]
+      }
+      ps.setConsistencyLevel(c).bind(args map flatten :_*)
     }
   }
 

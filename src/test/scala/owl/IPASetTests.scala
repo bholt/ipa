@@ -33,7 +33,11 @@ class IPASetTests extends {
   def test_generic(s: Set[UUID]): Unit = {
 
     "be created" in {
-      s.create().await()
+      s.create().await(timeout)
+    }
+
+    "be truncated" in {
+      s.truncate().await(timeout)
     }
 
     "add items" in {
@@ -45,7 +49,7 @@ class IPASetTests extends {
       assert(s(u1).contains(u2).futureValue.get)
       assert(s(u1).contains(u3).futureValue.get)
     }
-    
+
     "size reflect added items" in {
       s(u1).size().futureValue.get shouldBe 2
     }

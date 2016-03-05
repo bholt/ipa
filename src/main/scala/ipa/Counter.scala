@@ -76,18 +76,18 @@ object Counter {
 
     override def create(): Future[Unit] = {
       createTwitter() flatMap { _ =>
-        reservations.client.createCounter(fullName, tolerance.error)
+        reservations.client.createCounter(table, tolerance.error)
       } asScala
     }
 
     type IPAType[T] = Interval[T]
     
     override def incr(key: UUID, by: Long): Future[Unit] = {
-      reservations.client.incr(fullName, key.toString, by).asScala
+      reservations.client.incr(table, key.toString, by).asScala
     }
 
     override def read(key: UUID): Future[Interval[Long]] = {
-      reservations.client.readInterval(fullName, key.toString)
+      reservations.client.readInterval(table, key.toString)
           .map(v => v: Interval[Long])
           .asScala
     }
@@ -158,6 +158,11 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
   }
   def apply(key: UUID) = new Handle(key)
 
+  object prepared {
+    val (k, c, t) = (tbl.ekey.name, tbl.ecount.name, table.name)
+
+//    lazy val incr =
+  }
   lazy val preparedIncr = {
     val key = tbl.ekey.name
     val ct = tbl.ecount.name

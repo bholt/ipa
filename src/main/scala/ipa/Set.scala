@@ -17,6 +17,8 @@ import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
 import scala.language.higherKinds
 
+import Console.err
+
 object Set {
 
   trait Ops[V] { self: Set[V] =>
@@ -35,7 +37,7 @@ object Set {
       _add(key, value)(writeLevel)
 
     override def remove(key: K, value: V): Future[Unit] =
-      _add(key, value)(writeLevel)
+      _remove(key, value)(writeLevel)
 
   }
 
@@ -94,7 +96,7 @@ object Set {
 
     override def create(): Future[Unit] = {
       createTwitter() flatMap { _ =>
-        reservations.client.createCounter(fullName, tolerance.error)
+        reservations.client.createCounter(table, tolerance.error)
       } asScala
     }
 
@@ -142,39 +144,35 @@ abstract class Set[V:Primitive](val name: String)(implicit imps: CommonImplicits
   def apply(key: UUID) = new Handle(key)
 
   object prepared {
-    lazy val add =
-      tbl.insert().p_value(_.ekey, ?).p_value(_.evalue, ?).prepare()
+    val (k, v, t) = (tbl.ekey.name, tbl.evalue.name, table.fullname)
+
+    lazy val add = {
+      session.prepare(s"INSERT INTO $t ($k, $v) VALUES (?, ?)")
+    }
+
     lazy val remove =
-      tbl.delete().p_where(_.ekey eqs ?).p_and(_.evalue eqs ?).prepare()
-    lazy val contains = {
-      val (k,v) = (tbl.ekey.name, tbl.evalue.name)
-      session.prepare(s"SELECT $v FROM $fullName WHERE $k = ? AND $v = ? LIMIT 1")
-    }
-    lazy val size = {
-      val (k,v) = (tbl.ekey.name, tbl.evalue.name)
-      session.prepare(s"SELECT COUNT(*) FROM $fullName WHERE $k = ? LIMIT 1")
-    }
+      session.prepare(s"DELETE FROM $t WHERE $k = ? AND $v = ?")
+
+    lazy val contains =
+      session.prepare(s"SELECT $v FROM $t WHERE $k = ? AND $v = ? LIMIT 1")
+
+    lazy val size =
+      session.prepare(s"SELECT COUNT(*) FROM $t WHERE $k = ? LIMIT 1")
   }
 
 
-  def _add(key: K, value: V)(c: CLevel) = {
-    prepared.add.bind(key, value).futureScala(c).unit
-  }
+  def _add(key: K, value: V)(c: CLevel) =
+    prepared.add.bindWith(key, value)(c).execAsScala().unit
 
-  def _remove(key: K, value: V)(c: CLevel) = {
-    prepared.remove.bind(key, value).futureScala(c).unit
-  }
+  def _remove(key: K, value: V)(c: CLevel) =
+    prepared.remove.bindWith(key, value)(c).execAsScala().unit
 
-  def _contains(k: K, v: V)(c: CLevel): Future[Boolean] = {
-    prepared.contains.setConsistencyLevel(c)
-        .bind(k.asInstanceOf[AnyRef], v.asInstanceOf[AnyRef])
+  def _contains(k: K, v: V)(c: CLevel): Future[Boolean] =
+    prepared.contains.bindWith(k, v)(c)
         .execAsScala().map(rs => rs.one() != null)
-  }
 
-  def _size(k: K)(c: CLevel): Future[Long] = {
-    prepared.contains.setConsistencyLevel(c)
-        .bind(k.asInstanceOf[AnyRef])
+  def _size(k: K)(c: CLevel): Future[Long] =
+    prepared.size.bindWith(k)(c)
         .execAsScala().first(_.get(0, classOf[Long])).map(_.getOrElse(0L))
-  }
 
 }

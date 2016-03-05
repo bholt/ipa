@@ -34,9 +34,8 @@ struct IntervalLong {
   2: i64 max
 }
 
-union Result {
-  1: Inconsistent inconsistent
-  2: Interval interval
+struct Result {
+   Interval interval
 }
 
 struct Table {
@@ -44,19 +43,39 @@ struct Table {
   2: string name
 }
 
+enum SetOpType {
+  ADD,
+  REMOVE,
+  CONTAINS,
+  SIZE
+}
+
+struct SetOp {
+  1: SetOpType op
+  2: uuid key
+  3: optional Primitive value
+}
+
 service ReservationService {
   /**
    * Initialize new UuidSet
    * TODO: make generic version
    */
-  void createUuidset(1: Table tbl, 2: double sizeTolerance) throws (1: ReservationException e)
+  void createUuidset(1: Table tbl, 2: double sizeTolerance)
+    throws (1: ReservationException e)
 
   /** Initialize new Counter table. */
-  void createCounter(1: Table tbl, 2: double tolerance) throws (1: ReservationException e)
+  void createCounter(1: Table tbl, 2: double tolerance)
+    throws (1: ReservationException e)
 
-  void incr(1: Table tbl, uuid key, i64 by) throws (1: ReservationException e)
+  void incr(1: Table tbl, 2: uuid key, 3: i64 by)
+    throws (1: ReservationException e)
 
-  IntervalLong readInterval(1: Table tbl, uuid key) throws (1: ReservationException e)
+  IntervalLong readInterval(1: Table tbl, 2: uuid key)
+    throws (1: ReservationException e)
+
+  Result set_op(1: Table tbl, 2: SetOp op)
+    throws (1: ReservationException e)
 
   void metricsReset()
   string metricsJson()

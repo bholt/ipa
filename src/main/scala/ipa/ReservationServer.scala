@@ -26,11 +26,17 @@ import scala.collection.JavaConversions._
 import scala.collection.mutable
 import owl.Consistency._
 
+import scala.collection.immutable.HashMap
+
 case class Timestamped[T](value: T, time: Long = System.nanoTime) {
   def expired: Boolean = (System.nanoTime - time) > config.lease.periodNanos
   def get: Option[T] = if (!expired) Some(value) else None
 }
 
+case class Alloc(key: UUID, allocs: Map[String, Long] = Map()) {
+  def total = allocs.values.sum
+  def allocated = allocs.getOrElse(this_host, 0L)
+}
 
 class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationService[tw.Future] {
   import imps._
@@ -55,39 +61,38 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   }
 
   object alloc {
-    case class AllocEntry(key: UUID, alloc: Set[Long])
-    class AllocEntryTable extends CassandraTable[AllocEntryTable, AllocEntry] {
+
+    class AllocTable extends CassandraTable[AllocTable, Alloc] {
       object key extends UUIDColumn(this) with PartitionKey[UUID]
-      object alloc extends SetColumn[AllocEntryTable, AllocEntry, Long](this)
+      object map extends MapColumn[AllocTable, Alloc, String, Long](this)
       override val tableName = "allocs"
-      override def fromRow(r: Row) = AllocEntry(key(r), alloc(r))
+      override def fromRow(r: Row) = Alloc(key(r), map(r))
     }
 
-    val table = new AllocEntryTable
+    val table = new AllocTable
 
     object prepared {
-      private val (k, a) = (table.key.name, table.alloc.name)
+      private val (k, a) = (table.key.name, table.map.name)
       private val tname = s"${space.name}.${table.tableName}"
 
       val get: (UUID) => (CLevel) => BoundStatement = {
-        val ps = session.prepare(s"SELECT $a FROM $tname WHERE $k = ? LIMIT 1")
+        val ps = session.prepare(s"SELECT * FROM $tname WHERE $k = ? LIMIT 1")
         key: UUID => ps.bindWith(key)
       }
-      val set: (UUID, Set[Long]) => (CLevel) => BoundStatement = {
-        val ps = session.prepare(s"UPDATE $tname SET $a = ? WHERE $k = ?")
-        (key: UUID, alloc: Set[Long]) => ps.bindWith(key, alloc)
+
+      val update: (UUID, Long) => CLevel => BoundStatement = {
+        val ps = session.prepare(s"UPDATE $tname SET $a = $a + ? WHERE $k = ?")
+        (key: UUID, alloc: Long) => ps.bindWith(Map(this_host -> alloc), key)
       }
     }
 
-//    def get(key: UUID) =
-//      prepared.get(key)(Consistency.Strong).execAsTwitter()
-//          .first(table.alloc(_)) flatMap {
-//        case Some(alloc) => tw.Future.value(alloc)
-//        case None => prepared.set(key, Set())
-//      }
+    def get(key: UUID): Future[Alloc] =
+      prepared.get(key)(Consistency.Strong).execAsTwitter()
+          .first(table.fromRow) map { _.getOrElse(Alloc(key)) }
 
-    def set(key: UUID, alloc: Set[Long]) =
-      prepared.set(key, alloc)(Consistency.Strong).execAsTwitter().unit
+    def update(key: UUID, alloc: Long) =
+      prepared.update(key, alloc)(Consistency.Strong).execAsTwitter().unit
+
   }
 
   def init(): ReservationServer = {
@@ -120,7 +125,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
         val vt = Timestamped(v, rt)
         val res = reservation(key, vt)
         // now that we've synchronized with everyone, we get our tokens back
-        res.update(vt, tolerance)
+        res.update(vt)
         res
       }
     }
@@ -133,18 +138,34 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     var allocated: Long = 0L  // tokens allocated to this replica locally
     var available: Long = 0L // local tokens remaining
 
+    def max(tol: Tolerance) = tol.delta(lastRead.value)
 
-    def update(_lastRead: Timestamped[Long], tol: Tolerance): Unit = {
-      lastRead = _lastRead
+    def update(read: Timestamped[Long], allocOpt: Option[Alloc] = None): Unit = {
+      lastRead = read
+      allocOpt match {
+        case Some(alloc) =>
+          total = alloc.total
+          allocated = alloc.allocated
+          available = allocated
+        case None =>
+          // just get back our allocated tokens
+          available = allocated
+      }
+    }
 
-      // TODO: assuming that maximum possible are allocated
-      total = tol.delta(lastRead.value)
+    def allocate(table: Counter, key: UUID, n: Long) = {
+      alloc.update(key, n)
+    }
 
-      // TODO: assuming that each replica gets lower bound of its fair share
-      allocated = total / session.nreplicas
-      available = allocated
-
-      // println(s">> update => $this")
+    def consume(n: Long, exec: CLevel => tw.Future[Unit]): Future[Unit] = {
+      if (available >= n) { // enough tokens available:
+        available -= n
+        exec(CLevel.ONE)
+      } else { // race where some other op took the token
+        m.races += 1
+        // rather than possibly iterating again, just give up and wait
+        exec(CLevel.ALL)
+      }
     }
 
     def used = allocated - available
@@ -156,7 +177,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   object Reservation {
     def apply(entry: Entry, lastRead: Timestamped[Long]): Reservation = {
       val r = new Reservation()
-      r.update(lastRead, entry.tolerance)
+      r.update(lastRead)
       r
     }
   }
@@ -256,13 +277,28 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
           e.table.incrTwitter(cons)(key, n).instrument(timer).instrument()
         }
 
-        if (n >= res.allocated) {
-          m.outOfBounds += 1
-          // cannot execute within error bounds, so must wait until all have received it
-          exec(CLevel.ALL) flatMap { _ => e.refresh(key).unit } map { v =>
-            // make sure we wait until lease period has definitely expired
-            Thread.sleep(config.lease.periodMillis)
-            v
+        if (n > res.allocated) {
+          // being conservative and not allowing one replica to hoard
+          // TODO: try allowing them to exceed this, since it's likely that we'll have cases where the nearest replica is being hit more
+          val max = res.max(e.tolerance) / session.nreplicas
+          if (n > max) {
+            m.outOfBounds += 1
+            // cannot execute within error bounds,
+            // so must do this the slow way (wait for all)
+            exec(CLevel.ALL) flatMap { _ => e.refresh(key).unit } map { v =>
+              // make sure we wait until lease period has definitely expired
+              Thread.sleep(config.lease.periodMillis)
+              v
+            }
+          } else {
+            // we can try to allocate more
+            assert(n <= max)
+            assert(res.allocated < max)
+            for {
+              _ <- alloc.update(key, max)
+              res <- e.refresh(key)
+              out <- res.consume(n, exec)
+            } yield out
           }
         } else {
           if (res.available < n) {
@@ -346,12 +382,16 @@ object ReservationServer extends {
   val host = s"$thisHost:${config.reservations.port}"
 
   def main(args: Array[String]) {
+
+    val rs = new ReservationServer
+
     if (thisHost == allHosts(cluster).head) {
       if (config.do_reset) dropKeyspace()
       createKeyspace()
+      rs.init()
     }
 
-    val server = Thrift.serveIface(host, new ReservationServer().init())
+    val server = Thrift.serveIface(host, rs)
 
     println("[ready]")
     server.await()

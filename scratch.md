@@ -3,10 +3,14 @@
 ### Manual commands to paste into Scala console
 ~~~scala
 import owl._
+import ipa._
 import Util._
 import com.websudos.phantom.dsl._
 object ReplService extends { override implicit val space = KeySpace("repl") } with OwlService
 import ReplService._
+
+implicit val space = KeySpace("reservations")
+implicit val imps = CommonImplicits()
 
 val arthur = User(username = "tealuver", name = "Arthur Dent")
 val ford = User(username = "hastowel", name = "Ford Prefect")

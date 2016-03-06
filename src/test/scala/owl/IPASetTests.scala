@@ -10,7 +10,7 @@ import scala.concurrent.duration._
 
 import Util._
 import Conversions._
-import ipa.Set
+import ipa.IPASet
 
 class IPASetTests extends {
   override implicit val space = KeySpace("ipa_set_tests")
@@ -31,7 +31,7 @@ class IPASetTests extends {
   val u2 = id(2)
   val u3 = id(3)
 
-  def test_generic(s: Set[UUID]): Unit = {
+  def test_generic(s: IPASet[UUID]): Unit = {
 
     "be created" in {
       s.create().await()
@@ -77,14 +77,14 @@ class IPASetTests extends {
   }
 
   "IPA Set with Weak ops" should {
-    val s = new Set[UUID]("s_weak") with Set.WeakOps[UUID]
+    val s = new IPASet[UUID]("s_weak") with IPASet.WeakOps[UUID]
 
     test_generic(s)
 
   }
 
   "IPA Set with Strong ops" should {
-    val s = new Set[UUID]("s_strong") with Set.StrongOps[UUID]
+    val s = new IPASet[UUID]("s_strong") with IPASet.StrongOps[UUID]
 
     test_generic(s)
 
@@ -99,8 +99,8 @@ class IPASetTests extends {
 
   "IPASet with LatencyBound" should {
 
-    val s = new Set[UUID]("s_rush")
-        with Set.LatencyBound[UUID] { override val bound = 100 millis }
+    val s = new IPASet[UUID]("s_rush")
+        with IPASet.LatencyBound[UUID] { override val bound = 100 millis }
 
     test_generic(s)
 
@@ -114,8 +114,8 @@ class IPASetTests extends {
 
   "Quick set" should {
 
-    val s = new Set[UUID]("quick")
-        with Set.LatencyBound[UUID] { override val bound = 1 millis }
+    val s = new IPASet[UUID]("quick")
+        with IPASet.LatencyBound[UUID] { override val bound = 1 millis }
 
     test_generic(s)
 
@@ -124,8 +124,8 @@ class IPASetTests extends {
 
   "Sloth set" should {
 
-    val s = new Set[UUID]("sloth")
-        with Set.LatencyBound[UUID] { override val bound = 2 seconds }
+    val s = new IPASet[UUID]("sloth")
+        with IPASet.LatencyBound[UUID] { override val bound = 2 seconds }
 
     test_generic(s)
 
@@ -133,8 +133,8 @@ class IPASetTests extends {
 
   "Hasty set" should {
 
-    val s = new Set[UUID]("hasty")
-        with Set.LatencyBound[UUID] { override val bound = 10 microseconds }
+    val s = new IPASet[UUID]("hasty")
+        with IPASet.LatencyBound[UUID] { override val bound = 10 microseconds }
 
     "be created" in {
       s.create().await()

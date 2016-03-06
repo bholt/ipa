@@ -19,9 +19,9 @@ import scala.language.higherKinds
 
 import Console.err
 
-object Set {
+object IPASet {
 
-  trait Ops[V] { self: Set[V] =>
+  trait Ops[V] { self: IPASet[V] =>
     type IPAType[T] <: Inconsistent[T]
 
     def add(key: K, value: V): Future[Unit]
@@ -30,7 +30,7 @@ object Set {
     def size(key: K): Future[IPAType[Long]]
   }
 
-  trait WriteOps[V] extends Ops[V] { self: Set[V] =>
+  trait WriteOps[V] extends Ops[V] { self: IPASet[V] =>
     def writeLevel: CLevel
 
     override def add(key: K, value: V): Future[Unit] =
@@ -43,7 +43,7 @@ object Set {
 
   import Consistency._
 
-  trait WeakOps[V] extends WriteOps[V] { self: Set[V] =>
+  trait WeakOps[V] extends WriteOps[V] { self: IPASet[V] =>
 
     type IPAType[T] = Inconsistent[T]
     override val writeLevel = Strong
@@ -58,7 +58,7 @@ object Set {
     }
   }
 
-  trait StrongOps[V] extends WriteOps[V] { self: Set[V] =>
+  trait StrongOps[V] extends WriteOps[V] { self: IPASet[V] =>
 
     type IPAType[T] = Consistent[T]
     override val writeLevel = Strong
@@ -74,7 +74,7 @@ object Set {
   }
 
   trait LatencyBound[V] extends WriteOps[V] with RushImpl {
-    base: Set[V] =>
+    base: IPASet[V] =>
 
     def bound: FiniteDuration
 
@@ -88,7 +88,7 @@ object Set {
       rush(bound)(_size(key))
   }
 
-  trait ErrorTolerance[V] extends Ops[V] { base: Set[V] =>
+  trait ErrorTolerance[V] extends Ops[V] { base: IPASet[V] =>
 
     def tolerance: Tolerance
 
@@ -109,8 +109,8 @@ object Set {
   }
 }
 
-abstract class Set[V:Primitive](val name: String)(implicit imps: CommonImplicits) extends DataType(imps) {
-  self: Set.Ops[V] =>
+abstract class IPASet[V:Primitive](val name: String)(implicit imps: CommonImplicits) extends DataType(imps) {
+  self: IPASet.Ops[V] =>
 
   type K = UUID
 

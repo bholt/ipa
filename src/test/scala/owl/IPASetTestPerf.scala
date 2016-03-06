@@ -44,7 +44,7 @@ trait IPASetTestGeneric extends OwlTest {
     'size -> 0.2
   )
 
-  def set: IPASet[UUID, UUID]
+  def set: OldIPASet[UUID, UUID]
 
   def performanceTest() {
     if (config.disable_perf_tests) {

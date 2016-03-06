@@ -18,7 +18,7 @@ import scala.concurrent._
 import scala.concurrent.duration.{Deadline, Duration, FiniteDuration}
 import scala.util.Try
 
-abstract class IPASet[K, V] extends TableGenerator {
+abstract class OldIPASet[K, V] extends TableGenerator {
   def consistency: ConsistencyLevel
 
   def create(): Future[Unit]
@@ -35,10 +35,10 @@ abstract class IPASet[K, V] extends TableGenerator {
     * @param key  identifier of this Set instance in storage
     */
   class Handle(key: K) {
-    def contains(value: V) = IPASet.this.contains(key, value)
-    def add(value: V) = IPASet.this.add(key, value)
-    def remove(value: V) = IPASet.this.remove(key, value)
-    def size() = IPASet.this.size(key)
+    def contains(value: V) = OldIPASet.this.contains(key, value)
+    def add(value: V) = OldIPASet.this.add(key, value)
+    def remove(value: V) = OldIPASet.this.remove(key, value)
+    def size() = OldIPASet.this.size(key)
   }
 
   def apply(key: K) = new Handle(key)
@@ -47,7 +47,7 @@ abstract class IPASet[K, V] extends TableGenerator {
 /**
   * IPASet implementation using a Cassandra Set collection column
   */
-class IPASetImplCollection[K, V](val name: String, val consistency: ConsistencyLevel)(implicit val evK: Primitive[K], val evV: Primitive[V], val imps: CommonImplicits) extends IPASet[K, V] {
+class IPASetImplCollection[K, V](val name: String, val consistency: ConsistencyLevel)(implicit val evK: Primitive[K], val evV: Primitive[V], val imps: CommonImplicits) extends OldIPASet[K, V] {
   import imps._
 
   case class Entry(key: K, value: Set[V])
@@ -117,7 +117,7 @@ class IPASetImplCollection[K, V](val name: String, val consistency: ConsistencyL
   override def apply(key: K) = new Handle(key)
 }
 
-class IPASetImplPlain[K, V](val name: String, val consistency: ConsistencyLevel)(implicit val evK: Primitive[K], val evV: Primitive[V], val imps: CommonImplicits) extends IPASet[K, V] {
+class IPASetImplPlain[K, V](val name: String, val consistency: ConsistencyLevel)(implicit val evK: Primitive[K], val evV: Primitive[V], val imps: CommonImplicits) extends OldIPASet[K, V] {
   import imps._
 
   case class Entry(key: K, value: V)
@@ -196,7 +196,7 @@ class IPASetImplPlain[K, V](val name: String, val consistency: ConsistencyLevel)
   override def apply(key: K) = new PlainHandle(key)
 }
 
-class IPASetImplWithCounter[K, V](val name: String, val consistency: ConsistencyLevel)(implicit val evK: Primitive[K], val evV: Primitive[V], val imps: CommonImplicits) extends IPASet[K, V] {
+class IPASetImplWithCounter[K, V](val name: String, val consistency: ConsistencyLevel)(implicit val evK: Primitive[K], val evV: Primitive[V], val imps: CommonImplicits) extends OldIPASet[K, V] {
   import imps._
 
   case class Entry(key: K, value: V)

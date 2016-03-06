@@ -5,19 +5,22 @@ import java.util.UUID
 
 import scala.concurrent.duration.{Deadline, Duration, NANOSECONDS}
 import scala.util.{Failure, Success, Try}
-import com.datastax.driver.core.{Cluster, ConsistencyLevel => CLevel}
+import com.datastax.driver.core.{BoundStatement, Cluster, ConsistencyLevel => CLevel}
 import com.twitter.finagle.loadbalancer.Balancers
 import com.twitter.finagle.Thrift
 import com.twitter.util._
 import com.twitter.{util => tw}
+import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.connectors.KeySpace
+import com.websudos.phantom.dsl.{UUID, _}
 import ipa.Counter.WeakOps
-import ipa.thrift.{ReservationException, Result, SetOp, Table}
+import ipa.thrift._
 import ipa.{thrift => th}
 import owl.Connector.config
 import owl.Util._
-import owl.{Connector, OwlService, Tolerance}
+import owl.{Connector, Consistency, OwlService, Tolerance}
 
+import scala.concurrent.blocking
 import scala.collection.concurrent
 import scala.collection.JavaConversions._
 import scala.collection.mutable
@@ -49,6 +52,51 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     val latencyStrongWrite = metrics.create.timer("strong_write_latency")
     val latencyWeakRead    = metrics.create.timer("weak_read_latency")
     val latencyStrongRead  = metrics.create.timer("strong_read_latency")
+  }
+
+  object alloc {
+    case class AllocEntry(key: UUID, alloc: Set[Long])
+    class AllocEntryTable extends CassandraTable[AllocEntryTable, AllocEntry] {
+      object key extends UUIDColumn(this) with PartitionKey[UUID]
+      object alloc extends SetColumn[AllocEntryTable, AllocEntry, Long](this)
+      override val tableName = "allocs"
+      override def fromRow(r: Row) = AllocEntry(key(r), alloc(r))
+    }
+
+    val table = new AllocEntryTable
+
+    object prepared {
+      private val (k, a) = (table.key.name, table.alloc.name)
+      private val tname = s"${space.name}.${table.tableName}"
+
+      val get: (UUID) => (CLevel) => BoundStatement = {
+        val ps = session.prepare(s"SELECT $a FROM $tname WHERE $k = ? LIMIT 1")
+        key: UUID => ps.bindWith(key)
+      }
+      val set: (UUID, Set[Long]) => (CLevel) => BoundStatement = {
+        val ps = session.prepare(s"UPDATE $tname SET $a = ? WHERE $k = ?")
+        (key: UUID, alloc: Set[Long]) => ps.bindWith(key, alloc)
+      }
+    }
+
+//    def get(key: UUID) =
+//      prepared.get(key)(Consistency.Strong).execAsTwitter()
+//          .first(table.alloc(_)) flatMap {
+//        case Some(alloc) => tw.Future.value(alloc)
+//        case None => prepared.set(key, Set())
+//      }
+
+    def set(key: UUID, alloc: Set[Long]) =
+      prepared.set(key, alloc)(Consistency.Strong).execAsTwitter().unit
+  }
+
+  def init(): ReservationServer = {
+    Console.err.println("Creating allocations table")
+    if (config.do_reset) blocking {
+      session.execute(s"DROP TABLE IF EXISTS ${space.name}.${alloc.table.tableName}")
+    }
+    alloc.table.create.ifNotExists().future().await()
+    this
   }
 
   case class Entry(
@@ -141,6 +189,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     * TODO: make generic version
     */
   override def createUuidset(t: Table, sizeTolerance: Double): tw.Future[Unit] = ???
+
 
   /** Initialize new Counter table. */
   override def createCounter(t: Table, error: Double): tw.Future[Unit] = {
@@ -241,6 +290,10 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     }
   }
 
+  override def setOp(tbl: Table, op: SetOp): Future[Result] = ???
+
+//  override def create(tbl: Table, datatype: Datatype, tolerance: Double): Future[Unit] = ???
+
   override def metricsJson(): tw.Future[String] = {
     // session.getCluster.getConfiguration.getPolicies.getLoadBalancingPolicy
     val latencyStats = Connector.latencyMonitor.getScoresSnapshot.getAllStats
@@ -276,7 +329,6 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     tw.Future.Unit
   }
 
-  override def setOp(tbl: Table, op: SetOp): Future[Result] = ???
 }
 
 object ReservationCommon {
@@ -299,7 +351,7 @@ object ReservationServer extends {
       createKeyspace()
     }
 
-    val server = Thrift.serveIface(host, new ReservationServer)
+    val server = Thrift.serveIface(host, new ReservationServer().init())
 
     println("[ready]")
     server.await()

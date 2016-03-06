@@ -136,6 +136,12 @@ object Util {
     }
   }
 
+  implicit class TwFutureResultPlus(f: tw.Future[ResultSet]) {
+    def first[T](convert: Row => T)(implicit ec: ExecutionContext) = {
+      f map { rs => Option(rs.one()).map(convert) }
+    }
+  }
+
   implicit class PreparedStatementPlus(ps: PreparedStatement) {
     def bindWith(args: Any*)(c: ConsistencyLevel) = {
       def flatten(p: Any): AnyRef = p match {

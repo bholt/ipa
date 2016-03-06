@@ -1,6 +1,7 @@
 package owl
 
 import java.io.{ByteArrayOutputStream, PrintStream}
+import java.net.InetAddress
 import java.util.UUID
 import java.util.concurrent.{ArrayBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
@@ -15,8 +16,8 @@ import com.websudos.phantom.builder.query.prepared.{ExecutablePreparedQuery, Pre
 import com.websudos.phantom.connectors.KeySpace
 import ipa.thrift.Table
 import org.joda.time.DateTime
-import scala.collection.JavaConverters._
 
+import scala.collection.JavaConverters._
 import scala.collection.generic.CanBuildFrom
 import scala.concurrent.duration.{Deadline, Duration}
 import scala.concurrent._
@@ -135,6 +136,11 @@ object Util {
       f map { rs => Option(rs.one()).map(convert) }
     }
   }
+
+  val this_host: String = InetAddress.getLocalHost.getHostAddress
+
+  // note: this is actually lossless (they just pack the 4 bytes in)
+  val this_host_hash: Int = InetAddress.getLocalHost.hashCode
 
   implicit class TwFutureResultPlus(f: tw.Future[ResultSet]) {
     def first[T](convert: Row => T)(implicit ec: ExecutionContext) = {

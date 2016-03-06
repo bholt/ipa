@@ -135,10 +135,10 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
 
   case class Count(key: UUID, count: Long)
   class CountTable extends CassandraTable[CountTable, Count] {
-    object ekey extends UUIDColumn(this) with PartitionKey[UUID]
-    object ecount extends CounterColumn(this)
+    object key extends UUIDColumn(this) with PartitionKey[UUID]
+    object value extends CounterColumn(this)
     override val tableName = name
-    override def fromRow(r: Row) = Count(ekey(r), ecount(r))
+    override def fromRow(r: Row) = Count(key(r), value(r))
   }
 
   val tbl = new CountTable
@@ -159,13 +159,13 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
   def apply(key: UUID) = new Handle(key)
 
   object prepared {
-    val (k, c, t) = (tbl.ekey.name, tbl.ecount.name, table.name)
+    val (k, c, t) = (tbl.key.name, tbl.value.name, table.name)
 
 //    lazy val incr =
   }
   lazy val preparedIncr = {
-    val key = tbl.ekey.name
-    val ct = tbl.ecount.name
+    val key = tbl.key.name
+    val ct = tbl.value.name
     session.prepare(s"UPDATE ${space.name}.$name SET $ct=$ct+? WHERE $key=?")
   }
 
@@ -179,8 +179,8 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
     incrStmt(c)(key, by).execAsTwitter().instrument().unit
 
   lazy val preparedRead = {
-    val key = tbl.ekey.name
-    val ct = tbl.ecount.name
+    val key = tbl.key.name
+    val ct = tbl.value.name
     session.prepare(s"SELECT $ct FROM ${space.name}.$name WHERE $key=?")
   }
 

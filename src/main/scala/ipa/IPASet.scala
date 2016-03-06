@@ -116,10 +116,10 @@ abstract class IPASet[V:Primitive](val name: String)(implicit imps: CommonImplic
 
   case class Entry(key: K, value: V)
   class EntryTable extends CassandraTable[EntryTable, Entry] {
-    object ekey extends PrimitiveColumn[EntryTable, Entry, K](this) with PartitionKey[K]
-    object evalue extends PrimitiveColumn[EntryTable, Entry, V](this) with PrimaryKey[V]
+    object key extends PrimitiveColumn[EntryTable, Entry, K](this) with PartitionKey[K]
+    object value extends PrimitiveColumn[EntryTable, Entry, V](this) with PrimaryKey[V]
     override val tableName = name
-    override def fromRow(r: Row) = Entry(ekey(r), evalue(r))
+    override def fromRow(r: Row) = Entry(key(r), value(r))
   }
 
   val tbl = new EntryTable
@@ -144,7 +144,7 @@ abstract class IPASet[V:Primitive](val name: String)(implicit imps: CommonImplic
   def apply(key: UUID) = new Handle(key)
 
   object prepared {
-    val (k, v, t) = (tbl.ekey.name, tbl.evalue.name, table.fullname)
+    val (k, v, t) = (tbl.key.name, tbl.value.name, table.fullname)
 
     lazy val add = {
       session.prepare(s"INSERT INTO $t ($k, $v) VALUES (?, ?)")

@@ -16,7 +16,7 @@ import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success, Try}
 import scala.language.higherKinds
 
-object Counter {
+object IPACounter {
   import Consistency._
 
   trait Ops {
@@ -28,7 +28,7 @@ object Counter {
 
   }
 
-  trait WeakOps extends Ops { base: Counter =>
+  trait WeakOps extends Ops { base: IPACounter =>
     type IPAType[T] = Inconsistent[T]
     override def read(key: UUID) =
       base.read(Weak)(key).map(Inconsistent(_))
@@ -36,7 +36,7 @@ object Counter {
       base.incr(Strong)(key, by)
   }
 
-  trait WeakWeakOps extends Ops { base: Counter =>
+  trait WeakWeakOps extends Ops { base: IPACounter =>
     type IPAType[T] = Inconsistent[T]
     override def read(key: UUID) =
       base.read(Weak)(key).map(Inconsistent(_))
@@ -44,7 +44,7 @@ object Counter {
       base.incr(Weak)(key, by)
   }
 
-  trait StrongOps extends Ops { base: Counter =>
+  trait StrongOps extends Ops { base: IPACounter =>
     type IPAType[T] = Consistent[T]
     override def read(key: UUID): Future[Consistent[Long]] =
       base.read(Strong)(key) map { Consistent(_) }
@@ -53,7 +53,7 @@ object Counter {
   }
 
   trait LatencyBound extends Ops with RushImpl {
-    base: Counter =>
+    base: IPACounter =>
 
     def bound: FiniteDuration
 
@@ -67,7 +67,7 @@ object Counter {
   }
 
   trait ErrorTolerance extends Ops {
-    base: Counter =>
+    base: IPACounter =>
 
     def tolerance: Tolerance
 
@@ -80,7 +80,7 @@ object Counter {
     }
 
     type IPAType[T] = Interval[T]
-    
+
     override def incr(key: UUID, by: Long): Future[Unit] = {
       reservations.client.incr(table, key.toString, by).asScala
     }
@@ -94,31 +94,31 @@ object Counter {
 
   def fromBound(bound: Bound)(implicit imps: CommonImplicits) = bound match {
     case Latency(l) =>
-      new Counter("raw") with Counter.LatencyBound { override val bound = l }
+      new IPACounter("raw") with IPACounter.LatencyBound { override val bound = l }
 
     case Consistency(Weak, Weak) =>
-      new Counter("raw") with Counter.WeakWeakOps
+      new IPACounter("raw") with IPACounter.WeakWeakOps
 
     case Consistency(Weak, Strong) =>
-      new Counter("raw") with Counter.WeakOps
+      new IPACounter("raw") with IPACounter.WeakOps
 
     case Consistency(Strong, _) =>
-      new Counter("raw") with Counter.StrongOps
+      new IPACounter("raw") with IPACounter.StrongOps
 
     case t @ Tolerance(_) =>
-      new Counter("raw") with Counter.ErrorTolerance { override val tolerance = t }
+      new IPACounter("raw") with IPACounter.ErrorTolerance { override val tolerance = t }
 
     case e =>
       println("error parsing bound")
       sys.error(s"impossible case: $e")
   }
 
-  def fromName(name: String)(implicit imps: CommonImplicits): Try[Counter] = {
+  def fromName(name: String)(implicit imps: CommonImplicits): Try[IPACounter] = {
     DataType.lookupMetadata(name) flatMap { metaStr =>
       val meta = Metadata.fromString(metaStr)
       meta.bound match {
         case Some(bound) =>
-          Success(Counter.fromBound(bound))
+          Success(IPACounter.fromBound(bound))
         case _ =>
           Failure(ReservationException(s"Unable to find metadata for $name"))
       }
@@ -129,8 +129,8 @@ object Counter {
   }
 }
 
-class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType(imps) {
-  self: Counter.Ops =>
+class IPACounter(val name: String)(implicit imps: CommonImplicits) extends DataType(imps) {
+  self: IPACounter.Ops =>
 
   case class Count(key: UUID, count: Long)
 

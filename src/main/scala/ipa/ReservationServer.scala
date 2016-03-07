@@ -13,7 +13,7 @@ import com.twitter.{util => tw}
 import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl.{UUID, _}
-import ipa.Counter.WeakOps
+import ipa.IPACounter.WeakOps
 import ipa.thrift._
 import ipa.{thrift => th}
 import owl.Connector.config
@@ -105,7 +105,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   }
 
   case class Entry(
-      table: Counter,
+      table: IPACounter,
       space: KeySpace,
       tolerance: Tolerance
   ) {
@@ -153,7 +153,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
       }
     }
 
-    def allocate(table: Counter, key: UUID, n: Long) = {
+    def allocate(table: IPACounter, key: UUID, n: Long) = {
       alloc.update(key, n)
     }
 
@@ -190,8 +190,8 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
         Console.err.println(s"creating: $t")
         implicit val space = KeySpace(t.space)
         implicit val imps = CommonImplicits()
-        Counter.fromName(t.name) map {
-          case tbl: Counter with Counter.ErrorTolerance =>
+        IPACounter.fromName(t.name) map {
+          case tbl: IPACounter with IPACounter.ErrorTolerance =>
             Entry(tbl, space, tbl.tolerance)
           case tbl =>
             Entry(tbl, space, Tolerance(0))
@@ -216,7 +216,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   override def createCounter(t: Table, error: Double): tw.Future[Unit] = {
     implicit val space = KeySpace(t.space)
     implicit val imps = CommonImplicits()
-    val counter = new Counter(t.name) with WeakOps
+    val counter = new IPACounter(t.name) with WeakOps
     tables += (t -> Entry(counter, space, Tolerance(error)))
     m.rpcs += 1
     tw.Future.Unit

@@ -20,7 +20,7 @@ class CounterTests extends {
 
   "Counter with WeakOps" should {
 
-    val s = new Counter("weak") with Counter.WeakOps
+    val s = new IPACounter("weak") with IPACounter.WeakOps
 
     "be created" in { s.create().await() }
     "be truncated" in { s.truncate().await() }
@@ -45,7 +45,7 @@ class CounterTests extends {
 
   "Counter with StrongOps" should {
 
-    val s = new Counter("strong") with Counter.StrongOps
+    val s = new IPACounter("strong") with IPACounter.StrongOps
 
     "be created" in { s.create().await() }
     "be truncated" in { s.truncate().await() }
@@ -72,8 +72,8 @@ class CounterTests extends {
 
   "Counter with LatencyBound" should {
 
-    val s = new Counter("latencybound")
-        with Counter.LatencyBound { override val bound = 50 millis }
+    val s = new IPACounter("latencybound")
+        with IPACounter.LatencyBound { override val bound = 50 millis }
 
     "be created" in { s.create().await() }
     "be truncated" in { s.truncate().await() }
@@ -105,8 +105,8 @@ class CounterTests extends {
     val large = 1000L
     val large_eps = (large * error).toLong
 
-    val s = new Counter("tolerant")
-        with Counter.ErrorTolerance { override val tolerance = Tolerance(error) }
+    val s = new IPACounter("tolerant")
+        with IPACounter.ErrorTolerance { override val tolerance = Tolerance(error) }
 
     "be created" in { s.create().await() }
     "be truncated" in { s.truncate().await() }

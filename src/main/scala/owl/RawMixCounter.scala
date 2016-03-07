@@ -9,7 +9,7 @@ import scala.concurrent.duration._
 import Util._
 import java.util.concurrent.Semaphore
 
-import ipa.Counter
+import ipa.IPACounter
 
 import scala.util.Random
 
@@ -26,7 +26,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
   def zipfID() = id(zipfDist.sample())
   def urandID() = id(Random.nextInt(nsets))
 
-  val counter = Counter.fromBound(config.bound)
+  val counter = IPACounter.fromBound(config.bound)
 
   val timerIncr = metrics.create.timer("incr_latency")
   val timerRead = metrics.create.timer("read_latency")
@@ -42,7 +42,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
   def recordResult(r: Inconsistent[Long]): Inconsistent[Long] = {
     // some require special additional handling...
     counter match {
-      case _: Counter.ErrorTolerance =>
+      case _: IPACounter.ErrorTolerance =>
         val iv = r.asInstanceOf[Interval[Long]]
         val width = iv.max - iv.min
         histIntervalWidth << width

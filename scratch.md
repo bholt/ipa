@@ -47,6 +47,8 @@ val mapper = new ObjectMapper().registerModule(new MetricsModule(TimeUnit.SECOND
 CREATE KEYSPACE IF NOT EXISTS owl WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 3};
 CREATE TABLE users (id int PRIMARY KEY, username text, name text);
 INSERT INTO users(id,username,name) VALUES (42, 'tealover42', 'Arthur Dent');
+
+CREATE OR REPLACE FUNCTION allocTotal (alloc map<int,bigint>) RETURNS NULL ON NULL INPUT RETURNS bigint LANGUAGE java AS 'return alloc.size();';
 ~~~
 
 ### Docker

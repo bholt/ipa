@@ -24,7 +24,6 @@ object Counter {
 
     def incr(key: UUID, by: Long): Future[Unit]
 
-
     def read(key: UUID): Future[IPAType[Long]]
 
   }
@@ -134,9 +133,11 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
   self: Counter.Ops =>
 
   case class Count(key: UUID, count: Long)
+
   class CountTable extends CassandraTable[CountTable, Count] {
     object key extends UUIDColumn(this) with PartitionKey[UUID]
     object value extends CounterColumn(this)
+
     override val tableName = name
     override def fromRow(r: Row) = Count(key(r), value(r))
   }
@@ -159,43 +160,34 @@ class Counter(val name: String)(implicit imps: CommonImplicits) extends DataType
   def apply(key: UUID) = new Handle(key)
 
   object prepared {
-    val (k, c, t) = (tbl.key.name, tbl.value.name, table.name)
+    private val (k, v, t) = (tbl.key.name, tbl.value.name, s"${space.name}.$name")
 
-//    lazy val incr =
-  }
-  lazy val preparedIncr = {
-    val key = tbl.key.name
-    val ct = tbl.value.name
-    session.prepare(s"UPDATE ${space.name}.$name SET $ct=$ct+? WHERE $key=?")
-  }
+    lazy val read: (UUID) => (CLevel) => BoundStatement = {
+      val ps = session.prepare(s"SELECT $v FROM $t WHERE $k = ?")
+      key: UUID => ps.bindWith(key)
+    }
 
-  def incrStmt(c: CLevel)(key: UUID, by: Long): BoundStatement =
-    preparedIncr.setConsistencyLevel(c).bind(by.asInstanceOf[AnyRef], key.asInstanceOf[AnyRef])
-
-  def incr(c: CLevel)(key: UUID, by: Long) =
-    incrStmt(c)(key,by).execAsScala().instrument().unit
-
-  def incrTwitter(c: CLevel)(key: UUID, by: Long): tw.Future[Unit] =
-    incrStmt(c)(key, by).execAsTwitter().instrument().unit
-
-  lazy val preparedRead = {
-    val key = tbl.key.name
-    val ct = tbl.value.name
-    session.prepare(s"SELECT $ct FROM ${space.name}.$name WHERE $key=?")
+    lazy val incr: (UUID, Long) => (CLevel) => BoundStatement = {
+      val ps = session.prepare(s"UPDATE $t SET $v = $v + ? WHERE $k = ?")
+      (key: UUID, by: Long) => ps.bindWith(by, key)
+    }
   }
 
-  def readStmt(c: CLevel)(key: UUID) =
-    preparedRead.setConsistencyLevel(c).bind().setUUID(0, key)
-
-  def readResult(rs: ResultSet) = {
-    Option(rs.one()).map(_.get(0, classOf[Long])).getOrElse(0L)
+  private def result(rs: ResultSet): Long = {
+    Option(rs.one()).map(tbl.value(_)).getOrElse(0L)
   }
 
   def read(c: CLevel)(key: UUID) =
-    readStmt(c)(key).execAsScala().instrument().map(readResult)
+    prepared.read(key)(c).execAsScala().instrument().map(result)
 
   def readTwitter(c: CLevel)(key: UUID): tw.Future[Long] = {
-    readStmt(c)(key).execAsTwitter().instrument().map(readResult)
+    prepared.read(key)(c).execAsTwitter().instrument().map(result)
   }
+
+  def incr(c: CLevel)(key: UUID, by: Long) =
+    prepared.incr(key,by)(c).execAsScala().instrument().unit
+
+  def incrTwitter(c: CLevel)(key: UUID, by: Long): tw.Future[Unit] =
+    prepared.incr(key, by)(c).execAsTwitter().instrument().unit
 
 }

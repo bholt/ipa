@@ -16,6 +16,7 @@ import com.websudos.phantom.dsl.{UUID, _}
 import ipa.IPACounter.WeakOps
 import ipa.thrift._
 import ipa.{thrift => th}
+import org.joda.time.{DateTime, Period}
 import owl.Connector.config
 import owl.Util._
 import owl.{Connector, Consistency, OwlService, Tolerance}
@@ -33,7 +34,7 @@ case class Timestamped[T](value: T, time: Long = System.nanoTime) {
   def get: Option[T] = if (!expired) Some(value) else None
 }
 
-case class Alloc(key: UUID, allocs: Map[Int, Long] = Map()) {
+case class Alloc(key: UUID, allocs: Map[Int, Long] = Map(), leases: Map[Int,DateTime] = Map()) {
   def total = allocs.values.sum
   def allocated = allocs.getOrElse(this_host_hash, 0L)
 }
@@ -51,6 +52,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     val errors = metrics.create.counter("errors")
     val allocs = metrics.create.counter("allocs")
     val unallocs = metrics.create.counter("unallocs")
+    val reallocs = metrics.create.counter("reallocs")
 
     val cached_reads = metrics.create.counter("cached_reads")
 
@@ -70,14 +72,15 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     class AllocTable extends CassandraTable[AllocTable, Alloc] {
       object key extends UUIDColumn(this) with PartitionKey[UUID]
       object map extends MapColumn[AllocTable, Alloc, Int, Long](this)
+      object leases extends MapColumn[AllocTable, Alloc, Int, DateTime](this)
       override val tableName = "allocs"
-      override def fromRow(r: Row) = Alloc(key(r), map(r))
+      override def fromRow(r: Row) = Alloc(key(r), map(r), leases(r))
     }
 
     val table = new AllocTable
 
     object prepared {
-      private val (k, a) = (table.key.name, table.map.name)
+      private val (k, a, l) = (table.key.name, table.map.name, table.leases.name)
       private val tname = s"${space.name}.${table.tableName}"
 
       val get: (UUID) => (CLevel) => BoundStatement = {
@@ -86,8 +89,12 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
       }
 
       val update: (UUID, Long) => CLevel => BoundStatement = {
-        val ps = session.prepare(s"UPDATE $tname SET $a = $a + ? WHERE $k = ?")
-        (key: UUID, alloc: Long) => ps.bindWith(Map(this_host_hash -> alloc), key)
+        val ps = session.prepare(s"UPDATE $tname SET $a=$a+?, $l=$l+? WHERE $k=?")
+        (key: UUID, alloc: Long) => {
+          val me = this_host_hash
+          val lease = DateTime.now().plus(config.reservations.lease_period)
+          ps.bindWith(Map(this_host_hash -> alloc), Map(me -> lease), key)
+        }
       }
     }
 
@@ -138,6 +145,14 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     var allocated: Long = 0L  // tokens allocated to this replica locally
     var available: Long = 0L // local tokens remaining
 
+    var lease: Option[DateTime] = None
+    var updating = false
+
+    def leaseExpiresSoon = lease match {
+      case Some(l) => l.minus(config.reservations.soon_period).isBeforeNow
+      case None => false
+    }
+
     def max(tol: Tolerance) = tol.delta(lastRead.value)
 
     def update(read: Timestamped[Long], allocOpt: Option[Alloc] = None): Unit = {
@@ -147,6 +162,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
           total = alloc.total
           allocated = alloc.allocated
           available = allocated
+          lease = alloc.leases.get(this_host_hash)
         case None =>
           // just get back our allocated tokens
           available = allocated
@@ -167,14 +183,23 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
         alloc.get(key).instrument(m.latencyAllocRead)
 
       tw.Future.join(f_read, f_alloc) map {
-        case (v, alloc) =>
+        case (v, allocs) =>
           val vt = Timestamped(v, rt)
-          this.update(vt, Some(alloc))
+          this.update(vt, Some(allocs))
+
+          // if our lease has expired, fire off an update to set it to 0
+          for (l <- lease if l.isBeforeNow && allocated > 0 && !updating) {
+            updating = true
+            allocate(key, 0) onSuccess { _ =>
+              updating = false
+            }
+          }
+
           this
       }
     }
 
-    def allocate(key: UUID, n: Long) = {
+    def allocate(key: UUID, n: Long): Future[Unit] = {
       if (n >= allocated) m.allocs += 1 else m.unallocs += 1
       alloc.update(key, n)
     }
@@ -298,8 +323,13 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
           } else {
             for {
               preallocated <-
-                if (n <= res.allocated) tw.Future.value(true)
-                else res.allocate(key, max).map(_ => false)
+                if (n <= res.allocated && !res.leaseExpiresSoon) {
+                  tw.Future.value(true)
+                } else {
+                  // we need to allocate more, or lease is about to expire
+                  if (res.leaseExpiresSoon) m.reallocs += 1
+                  res.allocate(key, max).map(_ => false)
+                }
 
               immediate <-
                 if (n <= res.available) tw.Future.value(true)

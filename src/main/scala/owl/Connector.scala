@@ -18,6 +18,7 @@ import ipa.thrift.ReservationService
 import ipa.{MetricsLatencyTracker, ReservationClient, thrift => th}
 import com.twitter.{util => tw}
 import ipa.policies.ConsistencyLatencyTracker
+import org.joda.time.Period
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable
@@ -59,6 +60,9 @@ object Connector {
 
     object reservations {
       val port = c.getInt("ipa.reservations.port")
+      val lease = Duration(c.getString("ipa.reservations.lease"))
+      val lease_period = Period.millis(lease.toMillis.toInt)
+      val soon_period = Period.millis(lease.toMillis.toInt / 10)
     }
 
     private def getMixMap(field: String) =

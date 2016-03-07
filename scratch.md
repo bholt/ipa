@@ -48,7 +48,13 @@ CREATE KEYSPACE IF NOT EXISTS owl WITH replication = {'class': 'SimpleStrategy',
 CREATE TABLE users (id int PRIMARY KEY, username text, name text);
 INSERT INTO users(id,username,name) VALUES (42, 'tealover42', 'Arthur Dent');
 
-CREATE OR REPLACE FUNCTION allocTotal (alloc map<int,bigint>) RETURNS NULL ON NULL INPUT RETURNS bigint LANGUAGE java AS 'return alloc.size();';
+CREATE OR REPLACE FUNCTION alloc_total (alloc map<int,bigint>) RETURNS NULL ON NULL INPUT RETURNS bigint LANGUAGE java AS '
+  long total = 0;
+  for (Object e : alloc.values()) total += (Long)e;
+  return total;
+';
+
+CREATE OR REPLACE FUNCTION alloc_total (alloc map<int,bigint>) RETURNS NULL ON NULL INPUT RETURNS bigint LANGUAGE java AS 'long total = 0; for (Object e : alloc.values()) total += (Long)e; return total;';
 ~~~
 
 ### Docker

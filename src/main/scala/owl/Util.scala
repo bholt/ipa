@@ -153,9 +153,12 @@ object Util {
       def flatten(p: Any): AnyRef = p match {
         case Some(x) => flatten(x)
         case None => null.asInstanceOf[AnyRef]
-        case x: List[_] => x.asInstanceOf[List[Any]].asJava
-        case x: Set[_] => x.asInstanceOf[Set[Any]].asJava
-        case x: Map[_, _] => x.asInstanceOf[Map[Any, Any]].asJava
+        case x: List[_] =>
+          x map flatten asJava
+        case x: Set[_] =>
+          x map flatten asJava
+        case x: Map[_, _] =>
+          x map { case (k, v) => flatten(k) -> flatten(v) } asJava
         case x: DateTime => x.toDate
         case x: Enumeration#Value => x.asInstanceOf[Enumeration#Value].toString
         case x: BigDecimal => x.bigDecimal

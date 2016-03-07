@@ -33,9 +33,9 @@ case class Timestamped[T](value: T, time: Long = System.nanoTime) {
   def get: Option[T] = if (!expired) Some(value) else None
 }
 
-case class Alloc(key: UUID, allocs: Map[String, Long] = Map()) {
+case class Alloc(key: UUID, allocs: Map[Int, Long] = Map()) {
   def total = allocs.values.sum
-  def allocated = allocs.getOrElse(this_host, 0L)
+  def allocated = allocs.getOrElse(this_host_hash, 0L)
 }
 
 class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationService[tw.Future] {
@@ -49,6 +49,8 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     val reads = metrics.create.counter("reads")
     val incrs = metrics.create.counter("incrs")
     val errors = metrics.create.counter("errors")
+    val allocs = metrics.create.counter("allocs")
+    val unallocs = metrics.create.counter("unallocs")
 
     val cached_reads = metrics.create.counter("cached_reads")
 
@@ -58,13 +60,16 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     val latencyStrongWrite = metrics.create.timer("strong_write_latency")
     val latencyWeakRead    = metrics.create.timer("weak_read_latency")
     val latencyStrongRead  = metrics.create.timer("strong_read_latency")
+
+    val latencyAllocUpdate = metrics.create.timer("alloc_update_latency")
+    val latencyAllocRead   = metrics.create.timer("alloc_read_latency")
   }
 
   object alloc {
 
     class AllocTable extends CassandraTable[AllocTable, Alloc] {
       object key extends UUIDColumn(this) with PartitionKey[UUID]
-      object map extends MapColumn[AllocTable, Alloc, String, Long](this)
+      object map extends MapColumn[AllocTable, Alloc, Int, Long](this)
       override val tableName = "allocs"
       override def fromRow(r: Row) = Alloc(key(r), map(r))
     }
@@ -82,7 +87,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
 
       val update: (UUID, Long) => CLevel => BoundStatement = {
         val ps = session.prepare(s"UPDATE $tname SET $a = $a + ? WHERE $k = ?")
-        (key: UUID, alloc: Long) => ps.bindWith(Map(this_host -> alloc), key)
+        (key: UUID, alloc: Long) => ps.bindWith(Map(this_host_hash -> alloc), key)
       }
     }
 
@@ -91,7 +96,8 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
           .first(table.fromRow) map { _.getOrElse(Alloc(key)) }
 
     def update(key: UUID, alloc: Long) =
-      prepared.update(key, alloc)(Consistency.Strong).execAsTwitter().unit
+      prepared.update(key, alloc)(Consistency.Strong).execAsTwitter()
+          .instrument(m.latencyAllocUpdate).unit
 
   }
 
@@ -101,6 +107,10 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
       session.execute(s"DROP TABLE IF EXISTS ${space.name}.${alloc.table.tableName}")
     }
     alloc.table.create.ifNotExists().future().await()
+
+    // TODO: try reservations with UDFs
+    // session.execute("CREATE OR REPLACE FUNCTION reservations.alloc_total (alloc map<int,bigint>) RETURNS NULL ON NULL INPUT RETURNS b  igint LANGUAGE java AS 'long total = 0; for (Object e : alloc.values()) total += (Long)e; return total;';")
+
     this
   }
 
@@ -111,22 +121,12 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   ) {
     val reservations = new mutable.HashMap[UUID, Reservation]
 
-    def reservation(key: UUID) = reservations.get(key)
-
-    def reservation(key: UUID, lastRead: => Timestamped[Long]) =
-      reservations.getOrElseUpdate(key, Reservation(this, lastRead))
-
-    def refresh(key: UUID): tw.Future[Reservation] = {
-      // read strong always performs read repair so this suffices to ensure that everyone is up-to-date and we can start using our reservations again
-      // TODO: verify read repair is happening
-      // TODO: check reservations table rather than assuming `allocated` is constant
-      val rt = System.nanoTime // conservative read time
-      table.readTwitter(Strong)(key).instrument(m.latencyStrongRead) map { v =>
-        val vt = Timestamped(v, rt)
-        val res = reservation(key, vt)
-        // now that we've synchronized with everyone, we get our tokens back
-        res.update(vt)
-        res
+    def reservation(key: UUID): Future[Reservation] = {
+      val r = reservations.getOrElseUpdate(key, new Reservation)
+      if (r.lastRead.expired) {
+        tw.Future.value(r)
+      } else {
+        r.fetchAndUpdate(table, key, Weak)
       }
     }
 
@@ -153,7 +153,29 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
       }
     }
 
-    def allocate(table: IPACounter, key: UUID, n: Long) = {
+    def refresh(table: IPACounter, key: UUID) = {
+      m.refreshes += 1
+      fetchAndUpdate(table, key, CLevel.ALL)
+    }
+
+    def fetchAndUpdate(table: IPACounter, key: UUID, cons: CLevel): Future[Reservation] = {
+      val rt = System.nanoTime
+      val f_read =
+        table.readTwitter(cons)(key)
+          .instrument(m.latencyWeakRead).instrument()
+      val f_alloc =
+        alloc.get(key).instrument(m.latencyAllocRead)
+
+      tw.Future.join(f_read, f_alloc) map {
+        case (v, alloc) =>
+          val vt = Timestamped(v, rt)
+          this.update(vt, Some(alloc))
+          this
+      }
+    }
+
+    def allocate(key: UUID, n: Long) = {
+      if (n >= allocated) m.allocs += 1 else m.unallocs += 1
       alloc.update(key, n)
     }
 
@@ -171,13 +193,15 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     def used = allocated - available
     def delta = total - used
 
+    def interval = th.IntervalLong(lastRead.value, lastRead.value + delta)
+
     override def toString = s"Reservation(read: $lastRead, total: $total, alloc: $allocated, avail: $available)"
   }
 
   object Reservation {
-    def apply(entry: Entry, lastRead: Timestamped[Long]): Reservation = {
+    def apply(entry: Entry, lastRead: Timestamped[Long], allocOpt: Option[Alloc]): Reservation = {
       val r = new Reservation()
-      r.update(lastRead)
+      r.update(lastRead, allocOpt)
       r
     }
   }
@@ -230,21 +254,14 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
       case Success(e) =>
         // try to find cached read in reservation
         e.reservation(key) flatMap { res => // if we found a reservation
-          res.lastRead.get map { v => // if cached read not expired
+          if (res.lastRead.expired) {
+            res.fetchAndUpdate(e.table, key, Weak) map { res =>
+              res.interval
+            }
+          } else {
             m.cached_reads += 1
             // return the cached value
-            tw.Future.value(th.IntervalLong(v - res.delta, v + res.delta))
-          }
-        } getOrElse { // if no reservation or expired read:
-          // read from local cassandra replica
-          val rt = System.nanoTime
-          e.table.readTwitter(Weak)(key)
-              .instrument(m.latencyWeakRead)
-              .instrument() map { v =>
-            val vt = Timestamped(v, rt)
-            // first time, create new Reservation and store in hashmap
-            val res = e.reservation(key, vt)
-            th.IntervalLong(v - res.delta, v + res.delta)
+            tw.Future.value(res.interval)
           }
         }
       case Failure(e) =>
@@ -259,66 +276,45 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
 
     table(t) match {
       case Success(e) =>
-        // may need to get the latest value of the counter if we haven't created a reservation for this record yet
-        val get = { () =>
-          val rt = System.nanoTime
-          e.table.readTwitter(CLevel.ONE)(key)
-              .instrument(m.latencyStrongRead)
-              .instrument()
-              .map(Timestamped(_, rt))
-              .await()
-        }
-        val res = e.reservation(key, get())
 
         // execute the increment on durable store
         val exec = { cons: CLevel =>
           val timer = if (cons == Strong) m.latencyStrongWrite
-                      else                m.latencyWeakWrite
+                      else m.latencyWeakWrite
           e.table.incrTwitter(cons)(key, n).instrument(timer).instrument()
         }
 
-        if (n > res.allocated) {
+        // may need to get the latest value of the counter if we haven't created a reservation for this record yet
+        e.reservation(key) flatMap { res =>
           // being conservative and not allowing one replica to hoard
           // TODO: try allowing them to exceed this, since it's likely that we'll have cases where the nearest replica is being hit more
           val max = res.max(e.tolerance) / session.nreplicas
+
           if (n > max) {
             m.outOfBounds += 1
-            // cannot execute within error bounds,
-            // so must do this the slow way (wait for all)
-            exec(CLevel.ALL) flatMap { _ => e.refresh(key).unit } map { v =>
-              // make sure we wait until lease period has definitely expired
-              Thread.sleep(config.lease.periodMillis)
-              v
+            exec(CLevel.ALL) map { _ =>
+              blocking(Thread.sleep(config.lease.periodMillis))
             }
           } else {
-            // we can try to allocate more
-            assert(n <= max)
-            assert(res.allocated < max)
             for {
-              _ <- alloc.update(key, max)
-              res <- e.refresh(key)
-              out <- res.consume(n, exec)
-            } yield out
-          }
-        } else {
-          if (res.available < n) {
-            m.refreshes += 1
-            // println(s">> incr($n) need to refresh: $res")
-            // need to get more
-            e.refresh(key) flatMap { _ =>
-              if (res.available >= n) { // enough tokens available:
-                res.available -= n
-                exec(CLevel.ONE)
-              } else { // race where some other op took the token
-                m.races += 1
-                // rather than possibly iterating again, just give up and wait
-                exec(CLevel.ALL)
-              }
-            }
-          } else { // enough tokens available:
-            m.immediates += 1
-            res.available -= n
-            exec(CLevel.ONE) // just needs to be fault-tolerant
+              preallocated <-
+                if (n <= res.allocated) tw.Future.value(true)
+                else res.allocate(key, max).map(_ => false)
+
+              immediate <-
+                if (n <= res.available) tw.Future.value(true)
+                else res.refresh(e.table, key).map(_ => false)
+
+              _ <-
+                if (res.available >= n) {
+                  res.available -= n
+                  if (preallocated && immediate) m.immediates += 1
+                  exec(CLevel.ONE)
+                } else {
+                  m.races += 1
+                  exec(CLevel.ALL)
+                }
+            } yield ()
           }
         }
       case Failure(e) =>

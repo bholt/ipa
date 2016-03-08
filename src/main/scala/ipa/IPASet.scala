@@ -157,7 +157,7 @@ abstract class IPASet[V:Primitive](val name: String)(implicit imps: CommonImplic
       session.prepare(s"SELECT $v FROM $t WHERE $k = ? AND $v = ? LIMIT 1")
 
     lazy val size =
-      session.prepare(s"SELECT COUNT(*) FROM $t WHERE $k = ? LIMIT 1")
+      session.prepare(s"SELECT COUNT(*) FROM $t WHERE $k = ?")
   }
 
 

@@ -22,6 +22,7 @@ import scala.collection.generic.CanBuildFrom
 import scala.concurrent.duration.{Deadline, Duration}
 import scala.concurrent._
 import scala.language.higherKinds
+import scala.reflect.ClassTag
 import scala.util.{Failure, Random, Success, Try}
 
 object Util {
@@ -131,6 +132,10 @@ object Util {
     }
   }
 
+  implicit class ResultSetPlus(rs: ResultSet) {
+    def first: Option[Row] = Option(rs.one())
+  }
+
   implicit class FutureResultPlus(f: Future[ResultSet]) {
     def first[T](convert: Row => T)(implicit ec: ExecutionContext) = {
       f map { rs => Option(rs.one()).map(convert) }
@@ -148,8 +153,15 @@ object Util {
     }
   }
 
+  case class BoundOp[T](bs: BoundStatement, getResult: ResultSet => T) {
+    def execAsTwitter()(implicit session: Session) =
+      bs.execAsTwitter().map(getResult)
+    def execAsScala()(implicit session: Session, ec: ExecutionContext) =
+      bs.execAsScala().map(getResult)
+  }
+
   implicit class PreparedStatementPlus(ps: PreparedStatement) {
-    def bindWith(args: Any*)(c: ConsistencyLevel) = {
+    def bindWith[T](args: Any*)(getResult: ResultSet => T)(c: ConsistencyLevel) = {
       def flatten(p: Any): AnyRef = p match {
         case Some(x) => flatten(x)
         case None => null.asInstanceOf[AnyRef]
@@ -165,7 +177,7 @@ object Util {
         case x: BigInt => x.bigInteger
         case x => x.asInstanceOf[AnyRef]
       }
-      ps.setConsistencyLevel(c).bind(args map flatten :_*)
+      BoundOp(ps.setConsistencyLevel(c).bind(args map flatten :_*), getResult)
     }
   }
 

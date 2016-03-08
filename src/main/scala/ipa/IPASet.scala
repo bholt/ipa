@@ -145,40 +145,38 @@ abstract class IPASet[V:Primitive](val name: String)(implicit imps: CommonImplic
   object prepared {
     val (k, v, t) = (tbl.key.name, tbl.value.name, table.fullname)
 
-    lazy val add: (UUID, V) => (CLevel) => BoundStatement = {
+    lazy val add: (UUID, V) => (CLevel) => BoundOp[Unit] = {
       val ps = session.prepare(s"INSERT INTO $t ($k, $v) VALUES (?, ?)")
-      (key: UUID, value: V) => ps.bindWith(key, value)
+      (key: UUID, value: V) => ps.bindWith(key, value)(_ => ())
     }
 
-    lazy val remove: (UUID, V) => (CLevel) => BoundStatement = {
+    lazy val remove: (UUID, V) => (CLevel) => BoundOp[Unit] = {
       val ps = session.prepare(s"DELETE FROM $t WHERE $k=? AND $v=?")
-      (key: UUID, value: V) => ps.bindWith(key, value)
+      (key: UUID, value: V) => ps.bindWith(key, value)(_ => ())
     }
 
-    lazy val contains: (UUID, V) => (CLevel) => BoundStatement = {
+    lazy val contains: (UUID, V) => (CLevel) => BoundOp[Boolean] = {
       val ps = session.prepare(s"SELECT $v FROM $t WHERE $k=? AND $v=? LIMIT 1")
-      (key: UUID, value: V) => ps.bindWith(key, value)
+      (key: UUID, value: V) => ps.bindWith(key, value)(rs => rs.one() != null)
     }
 
-    lazy val size: (UUID) => (CLevel) => BoundStatement = {
+    lazy val size: (UUID) => (CLevel) => BoundOp[Long] = {
       val ps = session.prepare(s"SELECT COUNT(*) FROM $t WHERE $k = ?")
-      (key: UUID) => ps.bindWith(key)
+      (key: UUID) => ps.bindWith(key)(_.first.map(_.get(0, classOf[Long])).getOrElse(0L))
     }
   }
 
 
-  def _add(key: K, value: V)(c: CLevel) =
-    prepared.add(key, value)(c).execAsScala().unit
+  def _add(key: K, value: V)(c: CLevel): Future[Unit] =
+    prepared.add(key, value)(c).execAsScala()
 
-  def _remove(key: K, value: V)(c: CLevel) =
-    prepared.remove(key, value)(c).execAsScala().unit
+  def _remove(key: K, value: V)(c: CLevel): Future[Unit] =
+    prepared.remove(key, value)(c).execAsScala()
 
   def _contains(k: K, v: V)(c: CLevel): Future[Boolean] =
-    prepared.contains(k, v)(c)
-        .execAsScala().map(rs => rs.one() != null)
+    prepared.contains(k, v)(c).execAsScala()
 
   def _size(k: K)(c: CLevel): Future[Long] =
-    prepared.size(k)(c)
-        .execAsScala().first(_.get(0, classOf[Long])).map(_.getOrElse(0L))
+    prepared.size(k)(c).execAsScala()
 
 }

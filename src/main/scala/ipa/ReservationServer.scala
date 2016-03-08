@@ -84,28 +84,29 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
       private val (k, a, l) = (table.key.name, table.map.name, table.leases.name)
       private val tname = s"${space.name}.${table.tableName}"
 
-      val get: (UUID) => (CLevel) => BoundStatement = {
+      val get: (UUID) => (CLevel) => BoundOp[Alloc] = {
         val ps = session.prepare(s"SELECT * FROM $tname WHERE $k = ? LIMIT 1")
-        key: UUID => ps.bindWith(key)
+        key: UUID => ps.bindWith(key) {
+          _.first.map(table.fromRow).getOrElse(Alloc(key))
+        }
       }
 
-      val update: (UUID, Long) => CLevel => BoundStatement = {
+      val update: (UUID, Long) => (CLevel) => BoundOp[Unit] = {
         val ps = session.prepare(s"UPDATE $tname SET $a=$a+?, $l=$l+? WHERE $k=?")
         (key: UUID, alloc: Long) => {
           val me = this_host_hash
           val lease = DateTime.now().plus(config.reservations.lease_period)
-          ps.bindWith(Map(this_host_hash -> alloc), Map(me -> lease), key)
+          ps.bindWith(Map(this_host_hash -> alloc), Map(me -> lease), key)(_ => ())
         }
       }
     }
 
     def get(key: UUID): Future[Alloc] =
       prepared.get(key)(CLevel.ONE).execAsTwitter()
-          .first(table.fromRow) map { _.getOrElse(Alloc(key)) }
 
     def update(key: UUID, alloc: Long) =
       prepared.update(key, alloc)(CLevel.ALL).execAsTwitter()
-          .instrument(m.latencyAllocUpdate).unit
+          .instrument(m.latencyAllocUpdate)
 
   }
 

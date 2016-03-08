@@ -4,7 +4,7 @@ import java.util.UUID
 
 import com.datastax.driver.core.{BoundStatement, Row, ConsistencyLevel => CLevel}
 import com.twitter.{util => tw}
-import com.websudos.phantom.dsl._
+import com.websudos.phantom.dsl.{UUID, _}
 import com.websudos.phantom.keys.PartitionKey
 import ipa.thrift.{ReservationException, Table}
 import owl.Conversions._
@@ -162,32 +162,28 @@ class IPACounter(val name: String)(implicit imps: CommonImplicits) extends DataT
   object prepared {
     private val (k, v, t) = (tbl.key.name, tbl.value.name, s"${space.name}.$name")
 
-    lazy val read: (UUID) => (CLevel) => BoundStatement = {
+    lazy val read: (UUID) => (CLevel) => BoundOp[Long] = {
       val ps = session.prepare(s"SELECT $v FROM $t WHERE $k = ?")
-      key: UUID => ps.bindWith(key)
+      key: UUID => ps.bindWith(key)(_.first.map(tbl.value(_)).getOrElse(0L))
     }
 
-    lazy val incr: (UUID, Long) => (CLevel) => BoundStatement = {
+    lazy val incr: (UUID, Long) => (CLevel) => BoundOp[Unit] = {
       val ps = session.prepare(s"UPDATE $t SET $v = $v + ? WHERE $k = ?")
-      (key: UUID, by: Long) => ps.bindWith(by, key)
+      (key: UUID, by: Long) => ps.bindWith(by, key)(_ => ())
     }
-  }
-
-  private def result(rs: ResultSet): Long = {
-    Option(rs.one()).map(tbl.value(_)).getOrElse(0L)
   }
 
   def read(c: CLevel)(key: UUID) =
-    prepared.read(key)(c).execAsScala().instrument().map(result)
+    prepared.read(key)(c).execAsScala().instrument()
 
   def readTwitter(c: CLevel)(key: UUID): tw.Future[Long] = {
-    prepared.read(key)(c).execAsTwitter().instrument().map(result)
+    prepared.read(key)(c).execAsTwitter().instrument()
   }
 
   def incr(c: CLevel)(key: UUID, by: Long) =
-    prepared.incr(key,by)(c).execAsScala().instrument().unit
+    prepared.incr(key,by)(c).execAsScala().instrument()
 
   def incrTwitter(c: CLevel)(key: UUID, by: Long): tw.Future[Unit] =
-    prepared.incr(key, by)(c).execAsTwitter().instrument().unit
+    prepared.incr(key, by)(c).execAsTwitter().instrument()
 
 }

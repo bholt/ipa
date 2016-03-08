@@ -53,6 +53,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     val allocs = metrics.create.counter("allocs")
     val unallocs = metrics.create.counter("unallocs")
     val reallocs = metrics.create.counter("reallocs")
+    val initialized = metrics.create.counter("initialized")
 
     val cached_reads = metrics.create.counter("cached_reads")
 
@@ -130,10 +131,11 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
 
     def reservation(key: UUID): Future[Reservation] = {
       val r = reservations.getOrElseUpdate(key, new Reservation)
-      if (r.lastRead.expired) {
-        tw.Future.value(r)
-      } else {
+      if (r.lastRead.time == 0L) {
+        m.initialized += 1
         r.fetchAndUpdate(table, key, Weak)
+      } else {
+        tw.Future.value(r)
       }
     }
 

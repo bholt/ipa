@@ -27,6 +27,11 @@ modes:
     2: [delay 10ms]
     3: [delay 100ms]
 
+  flat5:
+    1: [delay 5ms]
+    2: [delay 5ms]
+    3: [delay 5ms]
+
   fast:
     1: [delay 0ms]
     2: [delay 0ms]

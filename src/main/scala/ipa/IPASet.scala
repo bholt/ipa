@@ -2,11 +2,11 @@ package ipa
 
 import java.util.UUID
 
-import com.datastax.driver.core.{Row, ConsistencyLevel => CLevel}
+import com.datastax.driver.core.{BoundStatement, Row, ConsistencyLevel => CLevel}
 import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.builder.primitives.Primitive
 import com.websudos.phantom.column.PrimitiveColumn
-import com.websudos.phantom.dsl._
+import com.websudos.phantom.dsl.{UUID, _}
 import com.websudos.phantom.keys.PartitionKey
 import owl.{Interval, _}
 import owl.Util._
@@ -16,7 +16,6 @@ import com.websudos.phantom.builder.query.prepared.?
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
 import scala.language.higherKinds
-
 import Console.err
 
 object IPASet {
@@ -146,33 +145,40 @@ abstract class IPASet[V:Primitive](val name: String)(implicit imps: CommonImplic
   object prepared {
     val (k, v, t) = (tbl.key.name, tbl.value.name, table.fullname)
 
-    lazy val add = {
-      session.prepare(s"INSERT INTO $t ($k, $v) VALUES (?, ?)")
+    lazy val add: (UUID, V) => (CLevel) => BoundStatement = {
+      val ps = session.prepare(s"INSERT INTO $t ($k, $v) VALUES (?, ?)")
+      (key: UUID, value: V) => ps.bindWith(key, value)
     }
 
-    lazy val remove =
-      session.prepare(s"DELETE FROM $t WHERE $k = ? AND $v = ?")
+    lazy val remove: (UUID, V) => (CLevel) => BoundStatement = {
+      val ps = session.prepare(s"DELETE FROM $t WHERE $k=? AND $v=?")
+      (key: UUID, value: V) => ps.bindWith(key, value)
+    }
 
-    lazy val contains =
-      session.prepare(s"SELECT $v FROM $t WHERE $k = ? AND $v = ? LIMIT 1")
+    lazy val contains: (UUID, V) => (CLevel) => BoundStatement = {
+      val ps = session.prepare(s"SELECT $v FROM $t WHERE $k=? AND $v=? LIMIT 1")
+      (key: UUID, value: V) => ps.bindWith(key, value)
+    }
 
-    lazy val size =
-      session.prepare(s"SELECT COUNT(*) FROM $t WHERE $k = ?")
+    lazy val size: (UUID) => (CLevel) => BoundStatement = {
+      val ps = session.prepare(s"SELECT COUNT(*) FROM $t WHERE $k = ?")
+      (key: UUID) => ps.bindWith(key)
+    }
   }
 
 
   def _add(key: K, value: V)(c: CLevel) =
-    prepared.add.bindWith(key, value)(c).execAsScala().unit
+    prepared.add(key, value)(c).execAsScala().unit
 
   def _remove(key: K, value: V)(c: CLevel) =
-    prepared.remove.bindWith(key, value)(c).execAsScala().unit
+    prepared.remove(key, value)(c).execAsScala().unit
 
   def _contains(k: K, v: V)(c: CLevel): Future[Boolean] =
-    prepared.contains.bindWith(k, v)(c)
+    prepared.contains(k, v)(c)
         .execAsScala().map(rs => rs.one() != null)
 
   def _size(k: K)(c: CLevel): Future[Long] =
-    prepared.size.bindWith(k)(c)
+    prepared.size(k)(c)
         .execAsScala().first(_.get(0, classOf[Long])).map(_.getOrElse(0L))
 
 }

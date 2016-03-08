@@ -1,20 +1,18 @@
 package ipa
 
-import java.util.UUID
-
-import com.datastax.driver.core.{BoundStatement, Row, ConsistencyLevel => CLevel}
+import com.datastax.driver.core.{Row, ConsistencyLevel => CLevel}
 import com.twitter.{util => tw}
 import com.websudos.phantom.dsl.{UUID, _}
 import com.websudos.phantom.keys.PartitionKey
-import ipa.thrift.{ReservationException, Table}
+import ipa.thrift.ReservationException
 import owl.Conversions._
 import owl.Util._
 import owl._
 
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
-import scala.util.{Failure, Success, Try}
 import scala.language.higherKinds
+import scala.util.{Failure, Success, Try}
 
 object IPACounter {
   import Consistency._

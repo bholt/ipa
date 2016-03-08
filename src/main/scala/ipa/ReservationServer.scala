@@ -1,13 +1,10 @@
 package ipa
 
 import java.net.InetAddress
-import java.util.UUID
 
-import scala.concurrent.duration.{Deadline, Duration, NANOSECONDS}
-import scala.util.{Failure, Success, Try}
-import com.datastax.driver.core.{BoundStatement, Cluster, ConsistencyLevel => CLevel}
-import com.twitter.finagle.loadbalancer.Balancers
+import com.datastax.driver.core.{Cluster, ConsistencyLevel => CLevel}
 import com.twitter.finagle.Thrift
+import com.twitter.finagle.loadbalancer.Balancers
 import com.twitter.util._
 import com.twitter.{util => tw}
 import com.websudos.phantom.CassandraTable
@@ -16,18 +13,16 @@ import com.websudos.phantom.dsl.{UUID, _}
 import ipa.IPACounter.WeakOps
 import ipa.thrift._
 import ipa.{thrift => th}
-import org.joda.time.{DateTime, Period}
+import org.joda.time.DateTime
 import owl.Connector.config
-import owl.Util._
-import owl.{Connector, Consistency, OwlService, Tolerance}
-
-import scala.concurrent.blocking
-import scala.collection.concurrent
-import scala.collection.JavaConversions._
-import scala.collection.mutable
 import owl.Consistency._
+import owl.Util._
+import owl.{Connector, OwlService, Tolerance}
 
-import scala.collection.immutable.HashMap
+import scala.collection.JavaConversions._
+import scala.collection.{concurrent, mutable}
+import scala.concurrent.blocking
+import scala.util.{Failure, Success, Try}
 
 case class Timestamped[T](value: T, time: Long = System.nanoTime) {
   def expired: Boolean = (System.nanoTime - time) > config.lease.periodNanos

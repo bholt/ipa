@@ -12,17 +12,15 @@ import com.google.common.util.concurrent.{FutureCallback, Futures}
 import com.twitter.util.{Return, Throw}
 import com.twitter.{util => tw}
 import com.websudos.phantom.Manager
-import com.websudos.phantom.builder.query.prepared.{ExecutablePreparedQuery, PreparedBlock}
-import com.websudos.phantom.connectors.KeySpace
+import com.websudos.phantom.builder.query.prepared.ExecutablePreparedQuery
 import ipa.thrift.Table
 import org.joda.time.DateTime
 
 import scala.collection.JavaConverters._
 import scala.collection.generic.CanBuildFrom
-import scala.concurrent.duration.{Deadline, Duration}
 import scala.concurrent._
+import scala.concurrent.duration.{Deadline, Duration}
 import scala.language.higherKinds
-import scala.reflect.ClassTag
 import scala.util.{Failure, Random, Success, Try}
 
 object Util {

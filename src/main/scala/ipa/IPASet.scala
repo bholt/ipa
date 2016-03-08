@@ -1,22 +1,18 @@
 package ipa
 
-import java.util.UUID
-
-import com.datastax.driver.core.{BoundStatement, Row, ConsistencyLevel => CLevel}
+import com.datastax.driver.core.{Row, ConsistencyLevel => CLevel}
+import com.twitter.{util => tw}
 import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.builder.primitives.Primitive
 import com.websudos.phantom.column.PrimitiveColumn
 import com.websudos.phantom.dsl.{UUID, _}
 import com.websudos.phantom.keys.PartitionKey
-import owl.{Interval, _}
 import owl.Util._
-import com.twitter.{util => tw}
-import com.websudos.phantom.builder.query.prepared.?
+import owl.{Interval, _}
 
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
 import scala.language.higherKinds
-import Console.err
 
 object IPASet {
 

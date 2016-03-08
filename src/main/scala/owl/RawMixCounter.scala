@@ -1,16 +1,14 @@
 package owl
 
-import com.websudos.phantom.connectors.KeySpace
-import com.websudos.phantom.dsl._
-import org.apache.commons.math3.distribution.ZipfDistribution
-
-import scala.concurrent._
-import scala.concurrent.duration._
-import Util._
 import java.util.concurrent.Semaphore
 
+import com.websudos.phantom.connectors.KeySpace
+import com.websudos.phantom.dsl._
 import ipa.IPACounter
+import org.apache.commons.math3.distribution.ZipfDistribution
+import owl.Util._
 
+import scala.concurrent.duration._
 import scala.util.Random
 
 class RawMixCounter(val duration: FiniteDuration) extends {

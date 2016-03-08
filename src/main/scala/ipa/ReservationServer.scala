@@ -100,11 +100,11 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     }
 
     def get(key: UUID): Future[Alloc] =
-      prepared.get(key)(Consistency.Strong).execAsTwitter()
+      prepared.get(key)(CLevel.ONE).execAsTwitter()
           .first(table.fromRow) map { _.getOrElse(Alloc(key)) }
 
     def update(key: UUID, alloc: Long) =
-      prepared.update(key, alloc)(Consistency.Strong).execAsTwitter()
+      prepared.update(key, alloc)(CLevel.ALL).execAsTwitter()
           .instrument(m.latencyAllocUpdate).unit
 
   }

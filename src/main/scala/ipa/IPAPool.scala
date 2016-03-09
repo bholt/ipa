@@ -2,84 +2,65 @@ package ipa
 
 import java.util.UUID
 
-import com.websudos.phantom.dsl.{UUID, _}
+import com.websudos.phantom.dsl._
 import owl._
 import owl.Util._
 import com.twitter.{util => tw}
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
 
 import scala.concurrent.Future
+import scala.util.Try
 
 abstract class IPAPool(name: String)(implicit imps: CommonImplicits)
     extends DataType(imps)
 { self: IPAPool.Ops =>
 
-  case class Entry(key: UUID, value: UUID, capacity: Option[Long])
+  case class Info(key: UUID, capacity: Long)
 
-  class EntryTable extends CassandraTable[EntryTable, Entry] {
+  class InfoTable extends CassandraTable[InfoTable, Info] {
+
     object key extends UUIDColumn(this) with PartitionKey[UUID]
-    object value extends UUIDColumn(this) with PrimaryKey[UUID]
     object capacity extends LongColumn(this) with StaticColumn[Long]
+
     override val tableName = name
-    override def fromRow(r: Row) = Entry(key(r), value(r), capacity.optional(r).toOption)
+    override def fromRow(r: Row) = Info(key(r), capacity(r))
   }
 
-  case class Count(key: UUID, taken: Long)
-
-  class CountTable extends CassandraTable[CountTable, Count] {
-    object key extends UUIDColumn(this) with PartitionKey[UUID]
-    object taken extends CounterColumn(this)
-
-    override val tableName = name + "_count"
-    override def fromRow(r: Row) = Count(key(r), taken(r))
-  }
-
-  val entries = new EntryTable
-  val counts = new CountTable
+  val info = new InfoTable
+  val entries = new IPASet[UUID](name+"_set") with IPASet.WeakOps[UUID]
+  val counts = new IPACounter(name+"_count") with IPACounter.WeakOps
 
   def createTwitter(): tw.Future[Unit] = {
-    DataType.createWithMetadata(name, entries, meta.toString)
+    tw.Future.join(
+      DataType.createWithMetadata(name, info, meta.toString),
+      entries.createTwitter(),
+      counts.createTwitter()
+    ).unit
   }
 
   override def create(): Future[Unit] =
     createTwitter().asScala
 
   override def truncate(): Future[Unit] =
-    entries.truncate.future().unit
-
+    Seq(
+      info.truncate().future().unit,
+      entries.truncate(),
+      counts.truncate()
+    ).bundle.unit
 
   object prepared {
-    val (k, v, t) = (entries.key.name, entries.value.name, table.fullname)
-
-    lazy val add: (UUID, UUID) => (CLevel) => BoundOp[Unit] = {
-      val ps = session.prepare(s"INSERT INTO $t ($k, $v) VALUES (?, ?)")
-      (key: UUID, value: UUID) => ps.bindWith(key, value)(_ => ())
-    }
-
-    lazy val remove: (UUID, UUID) => (CLevel) => BoundOp[Unit] = {
-      val ps = session.prepare(s"DELETE FROM $t WHERE $k=? AND $v=?")
-      (key: UUID, value: UUID) => ps.bindWith(key, value)(_ => ())
-    }
-
-    lazy val contains: (UUID, UUID) => (CLevel) => BoundOp[Boolean] = {
-      val ps = session.prepare(s"SELECT $v FROM $t WHERE $k=? AND $v=? LIMIT 1")
-      (key: UUID, value: UUID) => ps.bindWith(key, value)(rs => rs.one() != null)
-    }
-
-    lazy val size: (UUID) => (CLevel) => BoundOp[Long] = {
-      val ps = session.prepare(s"SELECT COUNT(*) FROM $t WHERE $k = ?")
-      (key: UUID) => ps.bindWith(key)(_.first.map(_.get(0, classOf[Long])).getOrElse(0L))
-    }
-
-    private val (ctk, ct) = (counts.key.name, counts.taken.name)
-    private val cap = entries.capacity.name
+    private val (t, k, cap) = (info.tableName, info.key.name, info.capacity.name)
 
     lazy val init: (UUID, Long) => (CLevel) => BoundOp[Unit] = {
-      val ps = session.prepare(s"UPDATE ${entries.tableName} SET $cap=? WHERE $k=?")
+      val ps = session.prepare(s"UPDATE $t SET $cap = ? WHERE $k = ?")
       (key: UUID, capacity: Long) => ps.bindWith(capacity, key)(_ => ())
     }
 
-    
+    lazy val capacity: (UUID) => (CLevel) => BoundOp[Long] = {
+      val ps = session.prepare(s"SELECT $cap FROM $t WHERE $k = ?")
+      (key: UUID) => ps.bindWith(key)(_.first.map(info.capacity(_)).getOrElse(0L))
+    }
+
   }
 
 }
@@ -90,16 +71,42 @@ object IPAPool {
     type IPAType[T] <: Inconsistent[T]
 
     def init(key: UUID, capacity: Long): Future[Unit]
-    def take(key: UUID): Future[UUID]
+    def take(key: UUID, capacity: Option[Long]): Future[Option[UUID]]
     def remaining(key: UUID): Future[Long]
   }
 
-  trait WeakOps extends Ops { self: IPAPool =>
+  trait StrongOps extends Ops { self: IPAPool =>
 
-    val base = new IPASet[UUID](name + "_set") with IPASet.WeakOps[UUID]
-
-    override def init(key: UUID, capacity: Long) = {
-
+    override def init(key: UUID, capacity: Long): Future[Unit] = {
+      prepared.init(key, capacity)(CLevel.ALL).execAsScala()
     }
+
+    // FIXME: this isn't atomic, so doesn't actually prevent over-taking
+    // also, this is going to be pretty slow because of all the round-trips
+    override def take(key: UUID, capacity: Option[Long]): Future[Option[UUID]] = {
+      {
+        for {
+          cap <- capacity map {
+            Future(_)
+          } getOrElse {
+            prepared.capacity(key)(CLevel.ONE).execAsScala()
+          }
+          taken <- counts.prepared.read(key)(CLevel.QUORUM).execAsScala()
+          if taken < cap
+          v = UUID.randomUUID()
+          _ <- entries.prepared.add(key, v)(CLevel.QUORUM).execAsScala()
+          _ <- counts.prepared.incr(key, 1)(CLevel.QUORUM).execAsScala()
+        } yield {
+          Some(v)
+        }
+      } recover {
+        case _ => None
+      }
+    }
+
+    override def remaining(key: UUID) = {
+      counts.prepared.read(key)(CLevel.QUORUM).execAsScala()
+    }
+
   }
 }

@@ -273,8 +273,9 @@ def run_rawmix(log, datatype):
             'default': RawMix(add=0.3, contains=0.6, size=0.1)
         },
         'counter': {
-            'no_size': RawMixCounter(read=0.8, incr=0.2),
-            'default': RawMixCounter(read=0.8, incr=0.2)
+            'no_size':    RawMixCounter(read=0.8, incr=0.2),
+            'default':    RawMixCounter(read=0.8, incr=0.2),
+            'read_heavy': RawMixCounter(read=0.99, incr=0.01)
         }
     }
 
@@ -301,13 +302,13 @@ def run_rawmix(log, datatype):
 
             ipa_concurrent_requests   = [128, 512, 2*K, 4*K],
 
-            ipa_bound = ['tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'tolerance:0', 'consistency:strong', 'consistency:weak', 'consistency:weakwrite', 'latency:50ms', 'latency:10ms'],
-            # ipa_bound = ['tolerance:0.1', 'tolerance:0.05'],
-            ipa_lease_period = ['200ms'],
+            # ipa_bound = ['tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'tolerance:0', 'consistency:strong', 'consistency:weak', 'consistency:weakwrite', 'latency:50ms', 'latency:10ms'],
+            ipa_bound = ['tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'tolerance:0'],
+            ipa_lease_period = ['0ms', '200ms'],
             ipa_reservations_lease = ['10s'],
             # ipa_bound = ['consistency:strong', 'consistency:weak', 'latency:50ms', 'latency:10ms'],
             honeycomb_mode = ['normal', 'slowpoke_flat', 'google', 'amazon', 'flat5'],
-            mix = ['no_size']
+            mix = ['no_size', 'read_heavy']
 
         ):
             a['containers'] = containers

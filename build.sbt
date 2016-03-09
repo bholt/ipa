@@ -9,7 +9,8 @@ scalacOptions ++= Seq(
   "-deprecation",
   "-feature",
   "-language:postfixOps",
-  "-language:implicitConversions"
+  "-language:implicitConversions",
+  "-language:higherKinds"
 )
 
 // lazy val reservations = project.in(file("reservations"))

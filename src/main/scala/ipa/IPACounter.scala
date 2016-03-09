@@ -19,11 +19,8 @@ object IPACounter {
 
   trait Ops {
     type IPAType[T] <: Inconsistent[T]
-
     def incr(key: UUID, by: Long): Future[Unit]
-
     def read(key: UUID): Future[IPAType[Long]]
-
   }
 
   trait WeakOps extends Ops { base: IPACounter =>

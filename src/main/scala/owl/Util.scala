@@ -166,6 +166,8 @@ object Util {
           x map flatten asJava
         case x: Set[_] =>
           x map flatten asJava
+        case x: scala.collection.mutable.Map[_, _] =>
+          x map { case (k, v) => flatten(k) -> flatten(v) } asJava
         case x: Map[_, _] =>
           x map { case (k, v) => flatten(k) -> flatten(v) } asJava
         case x: DateTime => x.toDate

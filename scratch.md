@@ -44,6 +44,18 @@ import scala.collection.JavaConversions._
 
 val mapper = new ObjectMapper().registerModule(new MetricsModule(TimeUnit.SECONDS, TimeUnit.MILLISECONDS, false)).registerModule(DefaultScalaModule)
 
+
+import owl._
+import ipa._
+import Util._
+import com.websudos.phantom.dsl._
+object ReplService extends { override implicit val space = KeySpace("repl") } with OwlService
+import ReplService._
+
+implicit val space = KeySpace("bc_tests"); implicit val imps = CommonImplicits()
+val bc = new BoundedCounter("bc")
+val st = bc.init(1.id, 0).await()
+
 ~~~
 
 ### SQL commands

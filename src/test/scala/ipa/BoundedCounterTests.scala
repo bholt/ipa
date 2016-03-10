@@ -16,8 +16,6 @@ class BoundedCounterTests extends {
 } with WordSpec with OwlService with BeforeAndAfterAll
     with Matchers with Inspectors with ScalaFutures with OptionValues {
 
-  import Console.err
-
   def now() = Deadline.now
 
   val twtime = TwDuration(2, TimeUnit.SECONDS)
@@ -30,7 +28,6 @@ class BoundedCounterTests extends {
     def futureValue: T = f.await(twtime)
   }
 
-  println(s"create keyspace ${space.name} in beforeAll")
   if (config.do_reset) dropKeyspace()
   createKeyspace()
 
@@ -57,6 +54,18 @@ class BoundedCounterTests extends {
 
   "have correct value" in {
     assert(c1.value().futureValue == 3)
+  }
+
+  "have rights to decrement" in {
+    TwFuture.join(
+      c1.decr(1),
+      c1.decr(1),
+      c1.decr(1)
+    ).await()
+  }
+
+  "have insufficient rights to decrement again" in {
+    c1.decr(1).await()
   }
 
 }

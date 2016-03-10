@@ -20,7 +20,6 @@ import scala.collection.JavaConverters._
 import scala.collection.generic.CanBuildFrom
 import scala.concurrent._
 import scala.concurrent.duration.{Deadline, Duration}
-import scala.language.higherKinds
 import scala.util.{Failure, Random, Success, Try}
 
 object Util {
@@ -45,7 +44,7 @@ object Util {
   }
 
   implicit class TwAwaitablePlus[T](f: tw.Awaitable[T]) {
-    def await(): T = tw.Await.result(f)
+    def await(d: tw.Duration = tw.Duration.Top): T = tw.Await.result(f, d)
   }
 
   implicit class TwFuturePlus[T](f: tw.Future[T]) {

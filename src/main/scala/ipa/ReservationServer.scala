@@ -17,17 +17,12 @@ import org.joda.time.DateTime
 import owl.Connector.config
 import owl.Consistency._
 import owl.Util._
-import owl.{Connector, OwlService, Tolerance}
+import owl.{Connector, OwlService, Timestamped, Tolerance}
 
 import scala.collection.JavaConversions._
 import scala.collection.{concurrent, mutable}
 import scala.concurrent.blocking
 import scala.util.{Failure, Success, Try}
-
-case class Timestamped[T](value: T, time: Long = System.nanoTime) {
-  def expired: Boolean = (System.nanoTime - time) > config.lease.periodNanos
-  def get: Option[T] = if (!expired) Some(value) else None
-}
 
 case class Alloc(key: UUID, allocs: Map[Int, Long] = Map(), leases: Map[Int,DateTime] = Map()) {
   def total = allocs.values.sum
@@ -351,6 +346,49 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   }
 
   override def setOp(tbl: Table, op: SetOp): Future[Result] = ???
+
+  val boundedCounters = new concurrent.TrieMap[Table, BoundedCounter]
+
+  override def boundedCounter(t: Table, op: BoundedCounterOp) = {
+    import CounterOpType._
+    implicit val space = KeySpace(t.space)
+    implicit val imps = CommonImplicits()
+
+    val bc = boundedCounters.getOrElseUpdate(t, new BoundedCounter(t.name))
+    val key = op.key.toUUID
+
+    op.op match {
+
+      case Init =>
+        bc.init(key, op.n.get.toInt) map { _ => CounterResult() }
+
+      case Incr =>
+        for {
+          st <- bc.local(key)
+          _ <- st.incr(op.n.get.toInt)
+        } yield {
+          CounterResult()
+        }
+
+      case Decr =>
+        for {
+          st <- bc.local(key)
+          _ <- st.decr(op.n.get.toInt)
+        } yield {
+          CounterResult()
+        }
+
+      case Value =>
+        for {
+          st <- bc.local(key)
+        } yield {
+          CounterResult(Some(st.value))
+        }
+
+      case EnumUnknownCounterOpType(e) =>
+        throw ReservationException(s"Unknown op type: $e")
+    }
+  }
 
 //  override def create(tbl: Table, datatype: Datatype, tolerance: Double): Future[Unit] = ???
 

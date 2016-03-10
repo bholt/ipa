@@ -7,11 +7,12 @@ import com.datastax.driver.core.ConsistencyLevel
 import scala.concurrent._
 import scala.concurrent.duration._
 import com.websudos.phantom.dsl._
+
 import scala.language.postfixOps
 import scala.math.Ordering.Implicits._
-
 import Util._
 import Connector.config
+import ipa.BoundedCounter
 
 //
 //abstract class BaseSettings(implicit val space: KeySpace, val session: Session, val cassandraOpMetric: Timer, val ipa_metrics: IPAMetrics) {
@@ -175,6 +176,27 @@ import Connector.config
 class OwlDummy extends {
   override implicit val space = KeySpace("owl_dummy")
 } with OwlTest {
+
+  import BoundedCounter._
+
+  def check(i: Int, j: Int) = {
+    assert(unpack(pack(i, j)) == (i, j))
+  }
+
+  "Idx" should "handle all cases" in {
+    check(5, 7)
+    check(4, -1)
+    check(Int.MaxValue, 7)
+    check(Int.MinValue, -2)
+    check(Int.MaxValue, Int.MaxValue)
+    check(Int.MaxValue, Int.MinValue)
+    check(Int.MinValue, Int.MaxValue)
+    check(Int.MinValue, Int.MinValue)
+    check(7, Int.MaxValue)
+    check(-10, Int.MaxValue)
+    check(-2, Int.MinValue)
+    check(8, Int.MinValue)
+  }
 
   "Dummy" should "run" in {
 

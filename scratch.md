@@ -12,6 +12,10 @@ import ReplService._
 implicit val space = KeySpace("reservations")
 implicit val imps = CommonImplicits()
 
+implicit val space = KeySpace("bc_tests"); implicit val imps = CommonImplicits()
+val bc = new BoundedCounter("bc")
+
+
 val arthur = User(username = "tealuver", name = "Arthur Dent")
 val ford = User(username = "hastowel", name = "Ford Prefect")
 val zaphod = User(username = "froodyprez", name = "Zaphod Beeblebrox")

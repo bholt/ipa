@@ -56,6 +56,18 @@ struct SetOp {
   3: optional Primitive value
 }
 
+enum CounterOpType { INIT, INCR, DECR, VALUE }
+
+struct BoundedCounterOp {
+  1: CounterOpType op
+  2: uuid key
+  3: optional i64 n
+}
+
+struct CounterResult {
+  1: optional i64 value
+}
+
 service ReservationService {
   /**
    * Initialize new UuidSet
@@ -75,6 +87,9 @@ service ReservationService {
     throws (1: ReservationException e)
 
   Result set_op(1: Table tbl, 2: SetOp op)
+    throws (1: ReservationException e)
+
+  CounterResult bounded_counter(1: Table t, 2: BoundedCounterOp op)
     throws (1: ReservationException e)
 
   void metricsReset()

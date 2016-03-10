@@ -7,6 +7,7 @@ import owl.Consistency._
 import scala.math.Ordering.Implicits._
 import ipa.thrift
 import com.twitter.{util => tw}
+import owl.Connector.config
 
 import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.concurrent.{ExecutionContext, Future}
@@ -22,6 +23,12 @@ object Consistency {
   val Strong = CLevel.QUORUM
   val Weak = CLevel.ONE
 }
+
+case class Timestamped[T](value: T, time: Long = System.nanoTime) {
+  def expired: Boolean = (System.nanoTime - time) > config.lease.periodNanos
+  def get: Option[T] = if (!expired) Some(value) else None
+}
+
 
 sealed trait Bound
 final case class Latency(d: FiniteDuration) extends Bound {

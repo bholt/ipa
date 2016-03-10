@@ -15,8 +15,6 @@ import requests
 
 #########################
 # External dependencies
-import signal
-import colors  # ansicolors
 import sh
 
 import honeycomb

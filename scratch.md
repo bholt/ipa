@@ -55,6 +55,9 @@ CREATE OR REPLACE FUNCTION alloc_total (alloc map<int,bigint>) RETURNS NULL ON N
 ';
 
 CREATE OR REPLACE FUNCTION alloc_total (alloc map<int,bigint>) RETURNS NULL ON NULL INPUT RETURNS bigint LANGUAGE java AS 'long total = 0; for (Object e : alloc.values()) total += (Long)e; return total;';
+
+CREATE OR REPLACE FUNCTION sum_values (alloc map<int,int>) RETURNS NULL ON NULL INPUT RETURNS int LANGUAGE java AS 'int total = 0; for (Object e : alloc.values()) total += (Integer)e; return total;';
+
 ~~~
 
 ### Docker

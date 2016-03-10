@@ -1,19 +1,31 @@
 #######################################################
 # Extension of basic dev image for Scala development.
 #######################################################
-FROM bholt/base
+FROM bholt/cassandra
 MAINTAINER Brandon Holt <holt.bg@gmail.com>
 
-RUN echo deb https://dl.bintray.com/sbt/debian / > /etc/apt/sources.list.d/sbt.list && \
-    apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 642AC823 && \
-    apt-get install apt-transport-https && \
-    apt-get update
+RUN apt-get install -y zsh vim locales
 
-RUN apt-get install -y openjdk-8-jdk scala sbt
+# Set up nice zsh environment
+RUN git clone http://github.com/bholt/vm.git &&\
+    sh /vm/base/oh-my-zsh-install.sh || true &&\
+    cat /vm/base/profile.bash >> /root/.bashrc; \
+    cat /vm/base/profile.zsh > /root/.zshrc; \
+    cat /vm/base/gitconfig >> /root/.gitconfig; \
+    rm -r /root/.oh-my-zsh/custom; \
+    cp -r /vm/base/oh-my-zsh-custom /root/.oh-my-zsh/custom; \
+    cp /vm/base/dircolorsrc /root/.dircolorsrc; \
+    echo '🐳 ' > /root/.box-name &&\
+    rm -r /vm &&\
+    chsh -s /usr/bin/zsh root
 
-RUN apt-get install -y inetutils-ping
+ENV SHELL /usr/bin/zsh
 
-# fix java certs & pre-install latest sbt version
-RUN update-ca-certificates -f && sbt version
+
+# So we can use unicode (and emoji!)
+RUN locale-gen en_US.UTF-8
+ENV LANG en_US.UTF-8
+ENV LANGUAGE en_US:en
+
 
 CMD ["/usr/bin/zsh"]

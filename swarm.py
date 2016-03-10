@@ -124,7 +124,7 @@ def add_keys(args=None, opt=None):
         ex.sh(c='cat > ~/.ssh/id_rsa.pub', _in=open(expand("~/.ssh/id_rsa.pub")))
         ex.sh(c='cat > ~/.ssh/id_rsa; chmod go-r ~/.ssh/id_rsa', _in=open(expand("~/.ssh/id_rsa")))
         ex.sh(c='cat >> ~/.ssh/config', _in=open(expand("~/.ssh/bistromath.config")))
-        ex.sh(c='cat >> ~/.bashrc', _in="up(){ pushd /src >/dev/null; rsync -a bistromath:/sync/ipa/owl . --exclude=target/ --exclude=.idea/; popd >/dev/null; };\n")
+        ex.sh(c='cat >> ~/.bashrc', _in="up(){ pushd /src >/dev/null; rsync -a bistromath:~/sync/owl . --exclude=target/ --exclude=.idea/; popd >/dev/null; };\n")
 
 
 def cass(args=None, opt=None):

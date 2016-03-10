@@ -136,6 +136,14 @@ object IPAPool {
         Consistent(cap - taken)
       }
     }
-    
+
+  }
+
+  trait StrongReservations extends Ops { self: IPAPool =>
+    type IPAType[T] = Consistent[T]
+
+    val counts = new IPACounter(name) with IPACounter.StrongOps
+
+
   }
 }

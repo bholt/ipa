@@ -76,7 +76,8 @@ object IPAPool {
       ).bundle.unit
 
     object prepared {
-      private val (t, k, cap) = (info.tableName, info.key.name, info.capacity.name)
+      private val (k, cap) = (info.key.name, info.capacity.name)
+      private val t = s"${space.name}.${info.tableName}"
 
       lazy val init: (UUID, Long) => (CLevel) => BoundOp[Unit] = {
         val ps = session.prepare(s"UPDATE $t SET $cap = ? WHERE $k = ?")

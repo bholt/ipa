@@ -17,6 +17,8 @@ class IPAPoolTests extends {
 } with WordSpec with OwlService with BeforeAndAfterAll
     with Matchers with Inspectors with ScalaFutures with OptionValues {
 
+  import Console.err
+
   def now() = Deadline.now
 
   val timeout = 2 seconds
@@ -31,15 +33,15 @@ class IPAPoolTests extends {
 
   def test_generic(pools: IPAPool): Unit = {
 
-    "be created" in {
-      pools.create().await()
-    }
+    err.println("creating table")
+    pools.create().await()
+
+    err.println("initializing p1")
+    val p1 = pools(1.id).init(3L).await(timeout)
 
     "be truncated" in {
       pools.truncate().await(timeout)
     }
-
-    val p1 = pools(1.id).init(3L).await(timeout)
 
     "take 2 unique ids" in {
       val i1 = p1.take().futureValue.get

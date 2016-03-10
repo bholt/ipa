@@ -23,7 +23,7 @@ abstract class IPAPool(val name: String)(implicit val imps: CommonImplicits)
       }
     }
     def take() = self.take(key, capacity)
-    def remaining() = self.remaining(key)
+    def remaining() = self.remaining(key, capacity)
   }
 
   def apply(key: UUID, capacity: Option[Long] = None) = new Handle(key, capacity)
@@ -37,7 +37,7 @@ object IPAPool {
 
     def init(key: UUID, capacity: Long): Future[Unit]
     def take(key: UUID, capacity: Option[Long]): Future[IPAType[Option[UUID]]]
-    def remaining(key: UUID): Future[IPAType[Long]]
+    def remaining(key: UUID, capacity: Option[Long]): Future[IPAType[Long]]
   }
 
   trait SetPlusCounter extends Ops { self: IPAPool =>
@@ -47,7 +47,7 @@ object IPAPool {
     class InfoTable extends CassandraTable[InfoTable, Info] {
 
       object key extends UUIDColumn(this) with PartitionKey[UUID]
-      object capacity extends LongColumn(this) with StaticColumn[Long]
+      object capacity extends LongColumn(this)
 
       override val tableName = name
       override def fromRow(r: Row) = Info(key(r), capacity(r))
@@ -92,7 +92,8 @@ object IPAPool {
     }
   }
 
-  trait StrongOps extends SetPlusCounter { self: IPAPool =>
+  trait StrongOps extends SetPlusCounter {
+    self: IPAPool =>
 
     type IPAType[T] = Consistent[T]
 
@@ -123,9 +124,18 @@ object IPAPool {
       }
     }
 
-    override def remaining(key: UUID): Future[IPAType[Long]] = {
-      counts.prepared.read(key)(CLevel.QUORUM).execAsScala() map { Consistent(_) }
+    override def remaining(key: UUID, capacity: Option[Long]): Future[IPAType[Long]] = {
+      for {
+        cap <- capacity map {
+          Future(_)
+        } getOrElse {
+          prepared.capacity(key)(CLevel.ONE).execAsScala()
+        }
+        taken <- counts.prepared.read(key)(CLevel.QUORUM).execAsScala()
+      } yield {
+        Consistent(cap - taken)
+      }
     }
-
+    
   }
 }

@@ -84,6 +84,13 @@ object Connector {
       }
     }
 
+    object tickets {
+      object initial {
+        val events = c.getInt("ipa.tickets.initial.events")
+        val remaining = c.getInt("ipa.tickets.initial.remaining")
+      }
+    }
+
     lazy val bound = Bound.fromString(c.getString("ipa.bound"))
 
     def nthreads = c.getInt("ipa.nthreads")

@@ -14,8 +14,8 @@ import scala.concurrent.duration._
 class BoundedCounterTests extends {
   override implicit val space = KeySpace("bc_tests")
 } with WordSpec with OwlService with BeforeAndAfterAll
-    with Matchers with Inspectors with ScalaFutures with OptionValues {
-
+    with Matchers with Inspectors with ScalaFutures with OptionValues with TryValues {
+  import Console.err
   def now() = Deadline.now
 
   val twtime = TwDuration(2, TimeUnit.SECONDS)
@@ -44,7 +44,7 @@ class BoundedCounterTests extends {
   val c1 = bc(1.id)
 
   "init a new counter with min = 0" in {
-    c1.init(0)
+    c1.init(0).futureValue
   }
 
   "increment counter" in {
@@ -57,15 +57,17 @@ class BoundedCounterTests extends {
   }
 
   "have rights to decrement" in {
-    TwFuture.join(
+    val decrs = TwFuture.join(
       c1.decr(1),
       c1.decr(1),
       c1.decr(1)
-    ).await()
+    ).futureValue
+    assert(decrs == (true, true, true))
   }
 
   "have insufficient rights to decrement again" in {
-    c1.decr(1).await()
+    assert(c1.value().futureValue == 0)
+    assert(!c1.decr(1).futureValue)
   }
 
 }

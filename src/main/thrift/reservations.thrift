@@ -66,6 +66,7 @@ struct BoundedCounterOp {
 
 struct CounterResult {
   1: optional i64 value
+  2: optional bool success
 }
 
 service ReservationService {

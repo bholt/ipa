@@ -373,16 +373,16 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
       case Decr =>
         for {
           st <- bc.local(key)
-          _ <- st.decr(op.n.get.toInt)
+          success <- st.decr(op.n.get.toInt)
         } yield {
-          CounterResult()
+          CounterResult(success = Some(success))
         }
 
       case Value =>
         for {
           st <- bc.local(key)
         } yield {
-          CounterResult(Some(st.value))
+          CounterResult(value = Some(st.value))
         }
 
       case EnumUnknownCounterOpType(e) =>

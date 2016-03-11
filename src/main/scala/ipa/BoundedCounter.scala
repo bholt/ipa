@@ -23,11 +23,13 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
   object m {
     val balances = metrics.create.counter("balance")
     val balance_retries = metrics.create.counter("balance_retry")
+    val piggybacks = metrics.create.counter("piggybacks")
   }
 
   val me: Int = this_host_hash
 
   class State(val key: UUID, var min: Int = 0, var version: Int = 0) {
+    var updating: Option[TwPromise[Unit]] = None
     var lastReadAt = 0L
     val rights = new mutable.HashMap[(Int, Int), Int].withDefaultValue(0)
     val consumed = new mutable.HashMap[Int, Int].withDefaultValue(0)
@@ -54,17 +56,30 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
           }.sum
     }
 
-    def update(): TwFuture[Unit] = {
-      val time = System.nanoTime
-      prepared.get(key)(CLevel.QUORUM).execAsTwitter() map {
-        case Some(st) =>
-          Console.err.println(s"update @ $this_host")
-          lastReadAt = time
-          min = st.min
-          rights ++= st.rights
-          consumed ++= st.consumed
-        case _ =>
-          sys.error(s"Unable to get State($key) on $this_host")
+    def update(): TwFuture[Unit] = this.synchronized {
+      updating match {
+        case Some(pr) =>
+          m.piggybacks += 1
+          pr
+        case None =>
+          val pr = TwPromise[Unit]()
+          updating = Some(pr)
+          val time = System.nanoTime
+          prepared.get(key)(CLevel.QUORUM).execAsTwitter() onSuccess { opt =>
+            opt match {
+              case Some(st) =>
+                Console.err.println(s"update @ $this_host")
+                lastReadAt = time
+                min = st.min
+                rights ++= st.rights
+                consumed ++= st.consumed
+              case _ =>
+                sys.error(s"Unable to get State($key) on $this_host")
+            }
+            updating = None
+            pr.setDone()
+          }
+          pr
       }
     }
 
@@ -74,18 +89,22 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       prepared.set(key, me, me, v)(CLevel.ONE).execAsTwitter()
     }
 
-    def decr(n: Int = 1): TwFuture[Try[Unit]] = {
+    def decr(n: Int = 1): TwFuture[Boolean] = {
       if (value - n >= min) {
         {
           if (localRights() < n) balance() else TwFuture.Unit
         } flatMap { _ =>
-          val v = consumed(me) + n
-          consumed += (me -> v)
-          prepared.consume(key, me, v)(CLevel.ONE).execAsTwitter()
-              .map { _ => Success(()) }
+            if (localRights() >= n) {
+              val v = consumed(me) + n
+              consumed += (me -> v)
+              prepared.consume(key, me, v)(CLevel.ONE).execAsTwitter()
+                  .map { _ => true }
+            } else {
+              TwFuture.value(false)
+            }
         }
       } else {
-        TwFuture.value(Failure(DecrementException(value)))
+        TwFuture.value(false)
       }
     }
 
@@ -258,10 +277,10 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         .boundedCounter(table, BoundedCounterOp(Incr, key.toString, Some(by)))
         .unit
 
-    def decr(by: Int = 1): TwFuture[Unit] =
+    def decr(by: Int = 1): TwFuture[Boolean] =
       reservations.client
         .boundedCounter(table, BoundedCounterOp(Decr, key.toString, Some(by)))
-        .unit
+        .map(_.success.get)
 
     def value(): TwFuture[Int] =
       reservations.client

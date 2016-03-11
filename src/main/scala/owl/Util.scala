@@ -181,8 +181,7 @@ object Util {
   }
 
   implicit class StatementPlus(stmt: Statement) {
-    def execAsTwitter()(implicit session: Session): tw.Future[ResultSet] = {
-      val promise = tw.Promise[ResultSet]()
+    def execWithPromise(promise: tw.Promise[ResultSet])(implicit session: Session) = {
       val future = session.executeAsync(stmt)
       val callback = new FutureCallback[ResultSet] {
         def onSuccess(result: ResultSet): Unit = {
@@ -195,6 +194,10 @@ object Util {
       }
       Futures.addCallback(future, callback, Manager.executor)
       promise
+    }
+
+    def execAsTwitter()(implicit session: Session): tw.Future[ResultSet] = {
+      execWithPromise(tw.Promise[ResultSet]())
     }
 
     def execAsScala()(implicit session: Session): Future[ResultSet] = {

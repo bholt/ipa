@@ -8,7 +8,7 @@ import com.datastax.driver.core.{ConsistencyLevel => CLevel}
 import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.dsl._
 import com.twitter.util.{Future => TwFuture, Promise => TwPromise}
-import ipa.thrift.{BoundedCounterOp, Table}
+import ipa.thrift._
 import owl.Connector.config
 import owl.Util._
 
@@ -23,7 +23,11 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
   object m {
     val balances = metrics.create.counter("balance")
     val balance_retries = metrics.create.counter("balance_retry")
+    val consume_others = metrics.create.counter("consume_other")
     val piggybacks = metrics.create.counter("piggybacks")
+
+    val consume_latency = metrics.create.timer("consume_latency")
+    val consume_other_latency = metrics.create.timer("consume_other_latency")
   }
 
   val me: Int = this_host_hash
@@ -86,21 +90,34 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     def incr(n: Int = 1): TwFuture[Unit] = {
       val v = rights((me, me)) + n
       rights += ((me, me) -> v)
-      prepared.set(key, me, me, v)(CLevel.ONE).execAsTwitter()
+      prepared.set(key, me, me, v)(CLevel.QUORUM).execAsTwitter()
     }
 
     def decr(n: Int = 1): TwFuture[Boolean] = {
-      if (value - n >= min) {
+      if (value - n >= min) { // it should be possible to decrement
         {
           if (localRights() < n) balance() else TwFuture.Unit
         } flatMap { _ =>
             if (localRights() >= n) {
               val v = consumed(me) + n
               consumed += (me -> v)
-              prepared.consume(key, me, v)(CLevel.ONE).execAsTwitter()
+              prepared.consume(key, me, v)(CLevel.QUORUM).execAsTwitter()
+                  .instrument(m.consume_latency)
                   .map { _ => true }
             } else {
-              TwFuture.value(false)
+              m.consume_others += 1
+              // load the latest and try consuming from some other replica (much slower)
+              update() flatMap { _ =>
+                if (value - n >= min) {
+                  // find replica with the most rights
+                  val who = replicas.map(i => i -> localRights(i)).maxBy(_._2)._1
+                  val c = consumed(who)
+                  prepared.consume_other(key, who, c, c + 1)(CLevel.QUORUM)
+                      .execAsTwitter().instrument(m.consume_other_latency)
+                } else {
+                  TwFuture.value(false)
+                }
+              }
             }
         }
       } else {
@@ -125,10 +142,11 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       p
     }
 
+    def replicas = (consumed.keySet ++ rights.keys.flatMap { case (i, j) => Set(i, j) }).toSeq
+
     def balance(promise: TwPromise[Unit] = null): TwPromise[Unit] = {
       val pr = if (promise != null) promise else TwPromise[Unit]()
 
-      val replicas = (consumed.keySet ++ rights.keys.flatMap { case (i, j) => Set(i, j) }).toSeq
       val flatRights = replicas map { localRights(_) }
       val total = flatRights.sum
       assert(total == value)
@@ -212,13 +230,14 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       }
     }
 
+    /** get the outcome of a conditional update */
+    private def condOutcome(rs: ResultSet) = rs.first.exists(_.get(0, classOf[Boolean]))
+
     lazy val transfer: (UUID, (Int, Int), Int, Int) => (CLevel) => BoundOp[Boolean] = {
       val ps = session.prepare(s"UPDATE $t SET $s=$s+? WHERE $k = ? IF $s[?] = ?")
       (key: UUID, ij: (Int, Int), v: Int, prev: Int) => {
         val pij = pack(ij._1, ij._2)
-        ps.bindWith(Map(pij -> v), key, pij, prev) {
-          _.first.exists(_.get(0, classOf[Boolean]))
-        }
+        ps.bindWith(Map(pij -> v), key, pij, prev)(condOutcome)
       }
     }
 
@@ -236,9 +255,15 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       (key: UUID, i: Int, v: Int) => ps.bindWith(Map(i -> v), key)(_ => ())
     }
 
+    /** consume from another replica, must do with conditional to force serial execution and ensure no one else beat us to it */
+    lazy val consume_other: (UUID, Int, Int, Int) => (CLevel) => BoundOp[Boolean] = {
+      val ps = session.prepare(s"UPDATE $t SET $c=$c+? WHERE $k=? IF $c[?] = ?")
+      (key: UUID, who: Int, prev: Int, v: Int) =>
+        ps.bindWith(Map(who -> v), key, who, prev)(condOutcome)
+    }
+
   }
 
-//  val localStates = new concurrent.TrieMap[UUID, State]
   val localStates = new ConcurrentHashMap[UUID, State]
 
   def init(key: UUID, min: Int): TwFuture[State] =

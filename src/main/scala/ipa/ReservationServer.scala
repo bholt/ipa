@@ -349,45 +349,11 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
 
   val boundedCounters = new concurrent.TrieMap[Table, BoundedCounter]
 
-  override def boundedCounter(t: Table, op: BoundedCounterOp) = {
-    import CounterOpType._
+  override def boundedCounter(t: Table, op: BoundedCounterOp): Future[CounterResult] = {
     implicit val space = KeySpace(t.space)
     implicit val imps = CommonImplicits()
-
     val bc = boundedCounters.getOrElseUpdate(t, new BoundedCounter(t.name))
-    val key = op.key.toUUID
-
-    op.op match {
-
-      case Init =>
-        bc.init(key, op.n.get.toInt) map { _ => CounterResult() }
-
-      case Incr =>
-        for {
-          st <- bc.local(key)
-          _ <- st.incr(op.n.get.toInt)
-        } yield {
-          CounterResult()
-        }
-
-      case Decr =>
-        for {
-          st <- bc.local(key)
-          success <- st.decr(op.n.get.toInt)
-        } yield {
-          CounterResult(success = Some(success))
-        }
-
-      case Value =>
-        for {
-          st <- bc.local(key)
-        } yield {
-          CounterResult(value = Some(st.value))
-        }
-
-      case EnumUnknownCounterOpType(e) =>
-        throw ReservationException(s"Unknown op type: $e")
-    }
+    bc.handle(op)
   }
 
 //  override def create(tbl: Table, datatype: Datatype, tolerance: Double): Future[Unit] = ???

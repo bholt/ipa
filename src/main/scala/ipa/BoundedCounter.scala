@@ -288,6 +288,43 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     }
   }
 
+  def handle(op: BoundedCounterOp): TwFuture[CounterResult] = {
+    import CounterOpType._
+    val key = op.key.toUUID
+
+    op.op match {
+
+      case Init =>
+        init(key, op.n.get.toInt) map { _ => CounterResult() }
+
+      case Incr =>
+        for {
+          st <- local(key)
+          _ <- st.incr(op.n.get.toInt)
+        } yield {
+          CounterResult()
+        }
+
+      case Decr =>
+        for {
+          st <- local(key)
+          success <- st.decr(op.n.get.toInt)
+        } yield {
+          CounterResult(success = Some(success))
+        }
+
+      case Value =>
+        for {
+          st <- local(key)
+        } yield {
+          CounterResult(value = Some(st.value))
+        }
+
+      case EnumUnknownCounterOpType(e) =>
+        throw ReservationException(s"Unknown op type: $e")
+    }
+  }
+
   class Handle(key: UUID) {
     import ipa.thrift.CounterOpType._
     def table = Table(space.name, name)

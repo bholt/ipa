@@ -24,6 +24,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     val balances = metrics.create.counter("balance")
     val balance_retries = metrics.create.counter("balance_retry")
     val consume_others = metrics.create.counter("consume_other")
+    val consume_other_attempts = metrics.create.counter("consume_other_attempt")
     val piggybacks = metrics.create.counter("piggybacks")
 
     val consume_latency = metrics.create.timer("consume_latency")
@@ -98,27 +99,36 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         {
           if (localRights() < n) balance() else TwFuture.Unit
         } flatMap { _ =>
-            if (localRights() >= n) {
-              val v = consumed(me) + n
-              consumed += (me -> v)
-              prepared.consume(key, me, v)(CLevel.QUORUM).execAsTwitter()
-                  .instrument(m.consume_latency)
-                  .map { _ => true }
-            } else {
-              m.consume_others += 1
+          if (localRights() >= n) {
+            val v = consumed(me) + n
+            consumed += (me -> v)
+            prepared.consume(key, me, v)(CLevel.QUORUM).execAsTwitter()
+                .instrument(m.consume_latency)
+                .map { _ => true }
+          } else {
+            m.consume_others += 1
+
+            retry { r: Boolean => r || value - n < min } {
+              m.consume_other_attempts += 1
               // load the latest and try consuming from some other replica (much slower)
               update() flatMap { _ =>
                 if (value - n >= min) {
                   // find replica with the most rights
-                  val who = replicas.map(i => i -> localRights(i)).maxBy(_._2)._1
-                  val c = consumed(who)
-                  prepared.consume_other(key, who, c, c + 1)(CLevel.QUORUM)
-                      .execAsTwitter().instrument(m.consume_other_latency)
+                  val reps = for {i <- replicas if localRights(i) >= n} yield i
+                  if (reps.isEmpty) {
+                    TwFuture.value(false)
+                  } else {
+                    val who = reps.toIndexedSeq.sample
+                    val c = consumed(who)
+                    prepared.consume_other(key, who, c, c + 1)(CLevel.QUORUM)
+                        .execAsTwitter().instrument(m.consume_other_latency)
+                  }
                 } else {
                   TwFuture.value(false)
                 }
               }
             }
+          }
         }
       } else {
         TwFuture.value(false)

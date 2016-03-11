@@ -11,6 +11,7 @@ import com.datastax.driver.core._
 import com.google.common.util.concurrent.{FutureCallback, Futures}
 import com.twitter.util.{Return, Throw}
 import com.twitter.{util => tw}
+import com.twitter.util.{Future => TwFuture, Promise => TwPromise}
 import com.websudos.phantom.Manager
 import com.websudos.phantom.builder.query.prepared.ExecutablePreparedQuery
 import ipa.thrift.Table
@@ -28,6 +29,20 @@ object Util {
 
   implicit class IntToId(v: Int) {
     def id = Util.id(v)
+  }
+
+  def retry[T](done: T => Boolean)(work: => TwFuture[T], pr_in: TwPromise[T] = null): TwFuture[T] = {
+    val pr = if (pr_in != null) pr_in else TwPromise[T]()
+    work onSuccess { r =>
+      if (done(r)) {
+        pr.setValue(r)
+      } else {
+        retry(done)(work, pr)
+      }
+    } onFailure { e =>
+      pr.setException(e)
+    }
+    pr
   }
 
   implicit class VectorPlus[T](v: IndexedSeq[T]) {

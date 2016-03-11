@@ -32,6 +32,7 @@ class BoundedCounterTests extends {
   createKeyspace()
 
   val bc = new BoundedCounter("bc")
+  val c1 = bc(1.id)
 
   "be created" in {
     bc.create().await()
@@ -40,8 +41,6 @@ class BoundedCounterTests extends {
   "be truncated" in {
     bc.truncate().await()
   }
-
-  val c1 = bc(1.id)
 
   "init a new counter with min = 0" in {
     c1.init(0).futureValue
@@ -70,4 +69,7 @@ class BoundedCounterTests extends {
     assert(!c1.decr(1).futureValue)
   }
 
+  "dump metrics" in {
+    metrics.dump()
+  }
 }

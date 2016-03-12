@@ -28,23 +28,16 @@ trait FutureSerializer[T] {
   var running: TwFuture[T] = null
 
   def submit(task: => TwFuture[T]): TwFuture[T] = synchronized {
-    if (running == null) {
-      val f = task
-      running = f
-      f onSuccess { _ =>
-        synchronized {
-          if (running == f) running = null
-        }
-      }
+    if (running == null || running.poll.isDefined) {
+      running = task
       running
     } else {
       val pr = TwPromise[T]()
-      running onSuccess { _ =>
+      running ensure {
         task onSuccess { r =>
-          synchronized {
-            if (running == pr) running = null
-          }
           pr.setValue(r)
+        } onFailure { e =>
+          pr.setException(e)
         }
       }
       running = pr

@@ -111,11 +111,10 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         var myr = localRights(me)
         for (i <- replicas; r = localRights(i); if myr > 2*r && myr/3 > 0) {
           val t = myr/3
-          if (t > 0)
           myr -= t
           m.transfers += 1
           Console.err.println(s"## incr:transfer $t $me->$i")
-          transfer(t, i) map { success => if (!success) m.transfers_failed += 1 }
+          transfer(t, i)
         }
       }
     }
@@ -157,8 +156,14 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       require(localRights() >= n)
       val prev = rights(me, to)
       val v = prev + n
-      rights += ((me, to) -> v)
       prepared.transfer(key, (me, to), v, prev)(CLevel.QUORUM).execAsTwitter()
+          .map {
+            case (true, _) => true
+            case (false, con) => // failed
+              m.transfers_failed += 1
+              Console.err.println(s"## transfer failed: $me->$to, new:$v, prev:$prev, saw consumed: $con")
+              false
+          }
     }
 
     def balance(promise: TwPromise[Unit] = null): TwPromise[Unit] = {
@@ -258,11 +263,14 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       rs.first.exists(_.get(0, classOf[Boolean]))
     }
 
-    lazy val transfer: (UUID, (Int, Int), Int, Int) => (CLevel) => BoundOp[Boolean] = {
+    lazy val transfer: (UUID, (Int, Int), Int, Int) => (CLevel) => BoundOp[(Boolean, Option[Map[Int,Int]])] = {
       val ps = session.prepare(s"UPDATE $t SET $r=$r+? WHERE $k = ? IF $r[?] = ?")
       (key: UUID, ij: (Int, Int), v: Int, prev: Int) => {
         val pij = pack(ij._1, ij._2)
-        ps.bindWith(Map(pij -> v), key, pij, prev)(condOutcome)
+        ps.bindWith(Map(pij -> v), key, pij, prev){ rs =>
+          val row = rs.first.get
+          (row.outcome, states.consumed.optional(row).toOption)
+        }
       }
     }
 

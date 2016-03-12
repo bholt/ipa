@@ -114,7 +114,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
           val t = myr/3
           myr -= t
           m.transfers += 1
-          Console.err.println(s"## incr:transfer $key => $t $me->$i")
+          // Console.err.println(s"## incr:transfer $key => $t $me->$i")
           submit { transfer(t, i).map(_ => CounterResult()) }
         }
       }
@@ -126,7 +126,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       if (!sufficient(n)) return TwFuture(false)
 
       if (localRights() >= n) {
-        Console.err.println(s"## consuming locally")
+        // Console.err.println(s"## consuming locally")
         val v = consumed(me) + n
         consumed += (me -> v)
         prepared.consume(key, me, v)(CLevel.QUORUM).execAsTwitter()
@@ -140,11 +140,11 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         } else {
           m.forwards += 1
           val who = addrFromInt(reps.sample)
-          Console.err.println(s"### trying $who ($this)")
+          // Console.err.println(s"### trying $who ($this)")
           reservations.clients.get(who) map { client =>
             new Handle(key, client).decr(n)
           } getOrElse {
-            Console.err.println(s"Missing direct client to ReservationServer $who")
+            // Console.err.println(s"Missing direct client to ReservationServer $who")
             TwFuture(false)
           }
         }
@@ -158,10 +158,10 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       val prev = rights(me, to)
       val v = prev + n
       prepared.transfer(key, (me, to), v, prev)(CLevel.QUORUM)
-          .execAsTwitter() map { _ =>
+          .execAsTwitter() onSuccess { _ =>
             rights += ((me, to) -> v)
-            Console.err.println(s"## transferred $n, $me -> $to: $this")
-          } rescue {
+             // Console.err.println(s"## transferred $n, $me -> $to: $this")
+          } onFailure {
             case e =>
               Console.err.println(s"## error with transfer: ${e.getMessage}")
               TwFuture(false)
@@ -171,7 +171,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     def balance(promise: TwPromise[Unit] = null): TwPromise[Unit] = {
       val pr = if (promise != null) promise else TwPromise[Unit]()
 
-      Console.err.println(s"## balancing $this")
+      // Console.err.println(s"## balancing $this")
 
       val flatRights = replicas map { localRights(_) }
       val total = flatRights.sum
@@ -269,7 +269,6 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       val ps = session.prepare(s"UPDATE $t SET $r=$r+? WHERE $k = ?")
       (key: UUID, ij: (Int, Int), v: Int, prev: Int) => {
         val pij = pack(ij._1, ij._2)
-        Console.err.println(s"## binding transfer")
         ps.bindWith(Map(pij -> v), key)(_ => ())
       }
     }
@@ -357,7 +356,6 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
           for {
             _ <- s.update_if_expired()
           } yield {
-            Console.err.println(s"## value => ${s.value} $s")
             CounterResult(value = Some(s.value))
           }
         }
@@ -367,7 +365,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     }
   }
 
-  class Handle(key: UUID, client: ReservationService = reservations.client) {
+  class Handle(val key: UUID, client: ReservationService = reservations.client) {
     import ipa.thrift.CounterOpType._
     def table = Table(space.name, name)
 

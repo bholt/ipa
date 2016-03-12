@@ -25,7 +25,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     val balances = metrics.create.counter("balance")
     val balance_retries = metrics.create.counter("balance_retry")
     val consume_others = metrics.create.counter("consume_other")
-    val consume_other_attempts = metrics.create.counter("consume_other_attempt")
+    val forwards = metrics.create.counter("forwards")
     val piggybacks = metrics.create.counter("piggybacks")
 
     val cached = metrics.create.counter("cached")
@@ -115,6 +115,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       } flatMap { _ =>
         Console.err.println(s"## consumable($n) -> ${rights.values.toList} ${consumed.values.toList}")
         if (localRights() >= n) {
+          Console.err.println(s"## consuming locally")
           val v = consumed(me) + n
           consumed += (me -> v)
           prepared.consume(key, me, v)(CLevel.QUORUM).execAsTwitter()
@@ -180,6 +181,8 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
     def balance(promise: TwPromise[Unit] = null): TwPromise[Unit] = {
       val pr = if (promise != null) promise else TwPromise[Unit]()
+
+      Console.err.println(s"## balancing $this")
 
       val flatRights = replicas map { localRights(_) }
       val total = flatRights.sum
@@ -366,7 +369,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
           for {
             _ <- s.update_if_expired()
           } yield {
-            Console.err.println(s"## value => ${s.value} ${s}")
+            Console.err.println(s"## value => ${s.value} $s")
             CounterResult(value = Some(s.value))
           }
         }

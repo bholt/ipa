@@ -396,6 +396,9 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
 }
 
 object ReservationCommon {
+
+  def replicaAddrs(cluster: Cluster) = cluster.getMetadata.getAllHosts.map(_.getAddress)
+
   def allHosts(cluster: Cluster) =
     cluster.getMetadata.getAllHosts.map { _.getAddress.getHostAddress }
 
@@ -431,9 +434,11 @@ class ReservationClient(cluster: Cluster) {
   import ReservationCommon._
 
   val port = config.reservations.port
-  val addrs = allHosts(cluster).map { h => s"$h:$port" }
+  val addrs = replicaAddrs(cluster) map { addr =>
+    addr -> s"${addr.getHostAddress}:$port"
+  } toMap
 
-  def newClient(hosts: String) = {
+  def newClient(hosts: String): ReservationService = {
     val service =
       Thrift.client
           .withLoadBalancer(Balancers.p2cPeakEwma())
@@ -442,11 +447,11 @@ class ReservationClient(cluster: Cluster) {
     Thrift.newMethodIface(service)
   }
 
-  println(s"hosts: ${addrs.mkString(",")}")
+  println(s"hosts: ${addrs.values.mkString(",")}")
 
-  val client = newClient(addrs.mkString(","))
+  val client = newClient(addrs.values.mkString(","))
 
-  val all = addrs map { addr => newClient(addr) }
+  val clients = addrs map { case (addr,host) => addr -> newClient(host) }
 }
 
 

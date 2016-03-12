@@ -2,6 +2,7 @@ package owl
 
 import java.io.{ByteArrayOutputStream, PrintStream}
 import java.net.InetAddress
+import java.nio.ByteBuffer
 import java.util.UUID
 import java.util.concurrent.{ArrayBlockingQueue, ConcurrentLinkedQueue, ThreadPoolExecutor, TimeUnit}
 
@@ -185,6 +186,9 @@ object Util {
 
   // note: this is actually lossless (they just pack the 4 bytes in)
   val this_host_hash: Int = InetAddress.getLocalHost.hashCode
+
+  def addrFromInt(i: Int) =
+    InetAddress.getByAddress(ByteBuffer.allocate(4).putInt(i).array)
 
   implicit class TwFutureResultPlus(f: tw.Future[ResultSet]) {
     def first[T](convert: Row => T)(implicit ec: ExecutionContext) = {

@@ -184,7 +184,7 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef], cluster: Cluster) 
   }
 
   def fromReservationServers()(implicit reservations: ReservationClient) = {
-    reservations.all
+    reservations.clients.values
         .map { client => client.metricsJson() }
         .map { f => f map { j => json.readValue(j, classOf[Map[String,Any]]) } }
         .bundle()

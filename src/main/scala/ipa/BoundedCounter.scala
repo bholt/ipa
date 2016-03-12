@@ -10,6 +10,7 @@ import com.twitter.util.{Future => TwFuture, Promise => TwPromise}
 import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.dsl._
 import ipa.thrift._
+import owl.FutureSerializer
 import owl.Connector.config
 import owl.Util._
 
@@ -27,6 +28,9 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     val consume_other_attempts = metrics.create.counter("consume_other_attempt")
     val piggybacks = metrics.create.counter("piggybacks")
 
+    val cached = metrics.create.counter("cached")
+    val expired = metrics.create.counter("expired")
+
     val consume_latency = metrics.create.timer("consume_latency")
     val consume_other_latency = metrics.create.timer("consume_other_latency")
   }
@@ -36,11 +40,12 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
   val me: Int = this_host_hash
 
-  class State(val key: UUID, var min: Int = 0, var version: Int = 0) {
-    var updating: Option[TwPromise[Unit]] = None
+  class State(val key: UUID, var min: Int = 0, var version: Int = 0) extends FutureSerializer[CounterResult] {
     var lastReadAt = 0L
     val rights = new mutable.HashMap[(Int, Int), Int].withDefaultValue(0)
     val consumed = new mutable.HashMap[Int, Int].withDefaultValue(0)
+
+    var tail: Option[TwFuture[CounterResult]] = None
 
     def rightsPacked = rights map { case ((i,j),v) => pack(i, j) -> v } toMap
 
@@ -64,30 +69,33 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
           }.sum
     }
 
-    def update(): TwFuture[Unit] = this.synchronized {
-      updating match {
-        case Some(pr) =>
-          m.piggybacks += 1
-          pr
-        case None =>
-          val pr = TwPromise[Unit]()
-          updating = Some(pr)
-          val time = System.nanoTime
-          prepared.get(key)(CLevel.QUORUM).execAsTwitter() onSuccess { opt =>
-            opt match {
-              case Some(st) =>
-                lastReadAt = time
-                min = st.min
-                rights ++= st.rights
-                consumed ++= st.consumed
-              case _ =>
-                sys.error(s"Unable to get State($key) on $this_host")
-            }
-            updating = None
-            pr.setDone()
-          }
-          pr
+    def update_if_expired(): TwFuture[State] = {
+      if (expired) {
+        m.expired += 1
+        update() map { _ => this }
+      } else {
+        m.cached += 1
+        TwFuture { this }
       }
+    }
+
+    def init(min: Int): TwFuture[Unit] = {
+      this.min = min
+      prepared.init(key, min)(CLevel.QUORUM).execAsTwitter()
+    }
+
+
+    def update(): TwFuture[Unit] = {
+      val time = System.nanoTime
+      prepared.get(key)(CLevel.QUORUM).execAsTwitter() map {
+        case Some(st) =>
+          lastReadAt = time
+          min = st.min
+          rights ++= st.rights
+          consumed ++= st.consumed
+        case _ =>
+          sys.error(s"Unable to get State($key) on $this_host")
+      } unit
     }
 
     def incr(n: Int = 1): TwFuture[Unit] = {
@@ -105,7 +113,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         if (localRights() < n) balance()
         else TwFuture.Unit
       } flatMap { _ =>
-        Console.err.println(s"## balanced: $key -> ${rights.values.toList} ${consumed.values.toList}")
+        Console.err.println(s"## consumable($n) -> ${rights.values.toList} ${consumed.values.toList}")
         if (localRights() >= n) {
           val v = consumed(me) + n
           consumed += (me -> v)
@@ -132,7 +140,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
                 .flatMap {
                   case (true, _, _) =>
                     TwFuture.value(true)
-                  case (false, nconsumed, Some(nversion)) =>
+                  case (false, Some(nconsumed), Some(nversion)) =>
                     if (nversion != version) {
                       Console.err.println("#### concurrent re-balance!")
                       update().map(_ => false)
@@ -142,8 +150,8 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
                       consumed ++= nconsumed
                       TwFuture.value(false)
                     }
-                  case _ =>
-                    sys.error("Incorrect values from consume_other")
+                  case e =>
+                    sys.error(s"Incorrect values from consume_other: $e")
                 }
             }
           }
@@ -288,12 +296,12 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     }
 
     /** consume from another replica, must do with conditional to force serial execution and ensure no one else beat us to it */
-    lazy val consume_other: (UUID, Int, Int, Int, Int) => (CLevel) => BoundOp[(Boolean,Map[Int,Int], Option[Int])] = {
+    lazy val consume_other: (UUID, Int, Int, Int, Int) => (CLevel) => BoundOp[(Boolean,Option[Map[Int,Int]], Option[Int])] = {
       val ps = session.prepare(s"UPDATE $t SET $c=$c+? WHERE $k=? IF $c[?] = ? AND $version=?")
       (key: UUID, who: Int, prev: Int, newv: Int, version: Int) =>
         ps.bindWith(Map(who -> newv), key, who, prev, version) { rs =>
           val r = rs.first.get
-          (r.outcome, states.consumed(r), states.version.optional(r).toOption)
+          (r.outcome, states.consumed.optional(r).toOption, states.version.optional(r).toOption)
         }
     }
 
@@ -301,21 +309,18 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
   val localStates = new ConcurrentHashMap[UUID, State]
 
-  def init(key: UUID, min: Int): TwFuture[State] =
-    prepared.init(key, min)(CLevel.QUORUM).execAsTwitter()
-      .map { _ =>
-        val st = State(key, min, Map(), Map())
-        localStates.put(key, st)
-        st
-      }
-
   def get(key: UUID): TwFuture[Option[State]] =
     prepared.get(key)(CLevel.QUORUM).execAsTwitter()
 
-  def local(key: UUID): TwFuture[State] = {
-    val st = localStates.computeIfAbsent(key, new Function[UUID,State] {
+  def state(key: UUID): State = {
+    localStates.computeIfAbsent(key, new Function[UUID,State] {
       override def apply(key: UUID) = new State(key)
     })
+  }
+
+  def local(key: UUID): TwFuture[State] = {
+    val st = state(key)
+
     if (st.expired) {
       st.update().map(_ => st)
     } else {
@@ -327,32 +332,43 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     import CounterOpType._
     val key = op.key.toUUID
 
+    val s = state(key)
+
     op.op match {
 
       case Init =>
-        init(key, op.n.get.toInt) map { _ => CounterResult() }
+        s submit {
+          s.init(op.n.get.toInt) map { _ => CounterResult() }
+        }
 
       case Incr =>
-        for {
-          st <- local(key)
-          _ <- st.incr(op.n.get.toInt)
-        } yield {
-          CounterResult()
+        s submit {
+          for {
+            _ <- s.update_if_expired()
+            _ <- s.incr(op.n.get.toInt)
+          } yield {
+            CounterResult()
+          }
         }
 
       case Decr =>
-        for {
-          st <- local(key)
-          success <- st.decr(op.n.get.toInt)
-        } yield {
-          CounterResult(success = Some(success))
+        s submit {
+          for {
+            _ <- s.update_if_expired()
+            success <- s.decr(op.n.get.toInt)
+          } yield {
+            CounterResult(success = Some(success))
+          }
         }
 
       case Value =>
-        for {
-          st <- local(key)
-        } yield {
-          CounterResult(value = Some(st.value))
+        s submit {
+          for {
+            _ <- s.update_if_expired()
+          } yield {
+            Console.err.println(s"## value => ${s.value} ${s}")
+            CounterResult(value = Some(s.value))
+          }
         }
 
       case EnumUnknownCounterOpType(e) =>

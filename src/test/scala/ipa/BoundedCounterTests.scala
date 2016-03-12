@@ -69,6 +69,19 @@ class BoundedCounterTests extends {
     assert(!c1.decr(1).futureValue)
   }
 
+  "do a bunch more increments and decrements" in {
+    err.println("initializing a bunch")
+    (2 to 10).map(i => bc(i.id).init(0)).bundle().await()
+    err.println("incrementing a bunch")
+    (1 to 10).map(i => bc(i.id).incr(100)).bundle().await()
+
+    err.println("doing decrements")
+    val results = {
+      for (i <- 1 to 10; j <- 1 to 20) yield bc(i.id).decr()
+    }.bundle().await()
+    assert(results.forall(identity))
+  }
+
   "dump metrics" in {
     metrics.dump()
   }

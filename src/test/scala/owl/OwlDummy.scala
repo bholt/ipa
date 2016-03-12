@@ -12,7 +12,10 @@ import scala.language.postfixOps
 import scala.math.Ordering.Implicits._
 import Util._
 import Connector.config
-import ipa.BoundedCounter
+import com.twitter.concurrent.{Broker, LocalScheduler, Offer}
+import ipa.{BoundedCounter, IPACounter}
+import org.scalatest.WordSpec
+import com.twitter.util.{Future => TwFuture, Promise => TwPromise}
 
 //
 //abstract class BaseSettings(implicit val space: KeySpace, val session: Session, val cassandraOpMetric: Timer, val ipa_metrics: IPAMetrics) {
@@ -175,7 +178,13 @@ import ipa.BoundedCounter
 /** Dummy tests (don't run as part of default test suite) */
 class OwlDummy extends {
   override implicit val space = KeySpace("owl_dummy")
-} with OwlTest {
+} with OwlWordSpec with OwlService {
+
+  case class State() extends FutureSerializer[Int] {
+    var counter = 0
+  }
+
+  createKeyspace()
 
   import BoundedCounter._
 
@@ -183,7 +192,7 @@ class OwlDummy extends {
     assert(unpack(pack(i, j)) == (i, j))
   }
 
-  "Idx" should "handle all cases" in {
+  "Index handles all cases" in {
     check(5, 7)
     check(4, -1)
     check(Int.MaxValue, 7)
@@ -198,7 +207,29 @@ class OwlDummy extends {
     check(8, Int.MinValue)
   }
 
-  "Dummy" should "run" in {
+  "Dummy runs" in {
+
+    val counter = new IPACounter("counter") with IPACounter.StrongOps
+
+    counter.createTwitter().await()
+
+    val c1 = counter(1.id)
+
+    val st = State()
+
+    def work(i: Int): TwFuture[Int] = {
+      Console.err.println(s"started $i (${st.counter})")
+      counter.incrTwitter(Consistency.Strong)(1.id, 1) map { _ =>
+        st.counter += 1
+        Console.err.println(s"finished $i (${st.counter})")
+        st.counter
+      }
+    }
+
+    st submit { work(1) }
+    st submit { work(2) }
+    st submit { work(3) }
+
 
 //    val myset = new SetBase with RushedSize with RushedContains with WeakAdd {
 //      val name = "myset"

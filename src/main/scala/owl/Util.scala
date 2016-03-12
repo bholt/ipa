@@ -3,7 +3,7 @@ package owl
 import java.io.{ByteArrayOutputStream, PrintStream}
 import java.net.InetAddress
 import java.util.UUID
-import java.util.concurrent.{ArrayBlockingQueue, ThreadPoolExecutor, TimeUnit}
+import java.util.concurrent.{ArrayBlockingQueue, ConcurrentLinkedQueue, ThreadPoolExecutor, TimeUnit}
 
 import com.codahale.metrics
 import com.codahale.metrics.Timer
@@ -22,6 +22,36 @@ import scala.collection.generic.CanBuildFrom
 import scala.concurrent._
 import scala.concurrent.duration.{Deadline, Duration}
 import scala.util.{Failure, Random, Success, Try}
+
+trait FutureSerializer[T] {
+
+  var running: TwFuture[T] = null
+
+  def submit(task: => TwFuture[T]): TwFuture[T] = synchronized {
+    if (running == null) {
+      val f = task
+      running = f
+      f onSuccess { _ =>
+        synchronized {
+          if (running == f) running = null
+        }
+      }
+      running
+    } else {
+      val pr = TwPromise[T]()
+      running onSuccess { _ =>
+        task onSuccess { r =>
+          synchronized {
+            if (running == pr) running = null
+          }
+          pr.setValue(r)
+        }
+      }
+      running = pr
+      pr
+    }
+  }
+}
 
 object Util {
 

@@ -144,6 +144,10 @@ object Util {
     }
   }
 
+  implicit class RowPlus(row: Row) {
+    def outcome = row.get(0, classOf[Boolean])
+  }
+
   implicit class ResultSetPlus(rs: ResultSet) {
     def first: Option[Row] = Option(rs.one())
   }

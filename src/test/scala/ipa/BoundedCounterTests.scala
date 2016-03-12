@@ -56,12 +56,12 @@ class BoundedCounterTests extends {
   }
 
   "have rights to decrement" in {
-    val decrs = TwFuture.join(
+    val outcomes = TwFuture.join(
       c1.decr(1),
       c1.decr(1),
       c1.decr(1)
     ).futureValue
-    assert(decrs == (true, true, true))
+    assert(outcomes == (true, true, true))
   }
 
   "have insufficient rights to decrement again" in {

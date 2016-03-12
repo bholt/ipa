@@ -1,21 +1,21 @@
 package ipa
 
 import java.util.UUID
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
+import java.util.concurrent.ConcurrentHashMap
 import java.util.function.Function
 
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
+import com.twitter.concurrent.AsyncQueue
+import com.twitter.util.{Future => TwFuture, Promise => TwPromise}
 import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.dsl._
-import com.twitter.util.{Future => TwFuture, Promise => TwPromise}
 import ipa.thrift._
 import owl.Connector.config
 import owl.Util._
 
-import scala.collection.mutable
-import scala.collection.concurrent
-import scala.util.{Failure, Success, Try}
 import scala.collection.JavaConversions._
+import scala.collection.immutable.IndexedSeq
+import scala.collection.mutable
 
 class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) extends DataType(imps) {
   import BoundedCounter._
@@ -30,6 +30,9 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     val consume_latency = metrics.create.timer("consume_latency")
     val consume_other_latency = metrics.create.timer("consume_other_latency")
   }
+
+  def replicas: IndexedSeq[Int] =
+    session.getCluster.getMetadata.getAllHosts.map(_.getAddress.hashCode).toIndexedSeq
 
   val me: Int = this_host_hash
 
@@ -73,7 +76,6 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
           prepared.get(key)(CLevel.QUORUM).execAsTwitter() onSuccess { opt =>
             opt match {
               case Some(st) =>
-                Console.err.println(s"update @ $this_host")
                 lastReadAt = time
                 min = st.min
                 rights ++= st.rights
@@ -94,44 +96,60 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       prepared.set(key, me, me, v)(CLevel.QUORUM).execAsTwitter()
     }
 
-    def decr(n: Int = 1): TwFuture[Boolean] = {
-      if (value - n >= min) { // it should be possible to decrement
-        {
-          if (localRights() < n) balance() else TwFuture.Unit
-        } flatMap { _ =>
-          if (localRights() >= n) {
-            val v = consumed(me) + n
-            consumed += (me -> v)
-            prepared.consume(key, me, v)(CLevel.QUORUM).execAsTwitter()
-                .instrument(m.consume_latency)
-                .map { _ => true }
-          } else {
-            m.consume_others += 1
+    def sufficient(n: Int): Boolean = value - n >= min
 
-            retry { r: Boolean => r || value - n < min } {
-              m.consume_other_attempts += 1
-              // load the latest and try consuming from some other replica (much slower)
-              update() flatMap { _ =>
-                if (value - n >= min) {
-                  // find replica with the most rights
-                  val reps = for {i <- replicas if localRights(i) >= n} yield i
-                  if (reps.isEmpty) {
-                    TwFuture.value(false)
-                  } else {
-                    val who = reps.toIndexedSeq.sample
-                    val c = consumed(who)
-                    prepared.consume_other(key, who, c, c + 1)(CLevel.QUORUM)
-                        .execAsTwitter().instrument(m.consume_other_latency)
-                  }
-                } else {
-                  TwFuture.value(false)
+    def decr(n: Int = 1): TwFuture[Boolean] = {
+      if (!sufficient(n)) return TwFuture.value(false)
+
+      {
+        if (localRights() < n) balance()
+        else TwFuture.Unit
+      } flatMap { _ =>
+        Console.err.println(s"## balanced: $key -> ${rights.values.toList} ${consumed.values.toList}")
+        if (localRights() >= n) {
+          val v = consumed(me) + n
+          consumed += (me -> v)
+          prepared.consume(key, me, v)(CLevel.QUORUM).execAsTwitter()
+              .instrument(m.consume_latency)
+              .map { _ => true }
+        } else if (sufficient(n)) {
+          m.consume_others += 1
+          var retries = 0
+          retry { r: Boolean => r || !sufficient(n) || retries > 10} {
+            Console.err.println(s"### consume_other: $consumed")
+            retries += 1
+            m.consume_other_attempts += 1
+            // find replicas with rights available
+            val reps = for {i <- replicas if localRights(i) >= n} yield i
+            if (reps.isEmpty) {
+              TwFuture.value(false)
+            } else {
+              val who = reps.sample
+              Console.err.println(s"### trying $who ($this)")
+              val c = consumed(who)
+              prepared.consume_other(key, who, c, c + 1, version)(CLevel.QUORUM)
+                .execAsTwitter().instrument(m.consume_other_latency)
+                .flatMap {
+                  case (true, _, _) =>
+                    TwFuture.value(true)
+                  case (false, nconsumed, Some(nversion)) =>
+                    if (nversion != version) {
+                      Console.err.println("#### concurrent re-balance!")
+                      update().map(_ => false)
+                    } else {
+                      Console.err.println(s"### failed\n### tried: {$who: ${c+1}}\n### saw: $consumed\n- $this")
+                      // update so we can try again
+                      consumed ++= nconsumed
+                      TwFuture.value(false)
+                    }
+                  case _ =>
+                    sys.error("Incorrect values from consume_other")
                 }
-              }
             }
           }
+        } else {
+          TwFuture.value(false)
         }
-      } else {
-        TwFuture.value(false)
       }
     }
 
@@ -152,14 +170,12 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       p
     }
 
-    def replicas = (consumed.keySet ++ rights.keys.flatMap { case (i, j) => Set(i, j) }).toSeq
-
     def balance(promise: TwPromise[Unit] = null): TwPromise[Unit] = {
       val pr = if (promise != null) promise else TwPromise[Unit]()
 
       val flatRights = replicas map { localRights(_) }
       val total = flatRights.sum
-      assert(total == value)
+      assert(total == value, s"balance: total($total) != value($value)")
       val n = flatRights.size
 
       val balanced =
@@ -170,6 +186,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
       consumed.clear()
       rights.clear()
+      consumed ++= replicas.map(_ -> 0).toMap
       rights ++= balanced
       version += 1
 
@@ -205,11 +222,11 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     object key extends UUIDColumn(this) with PartitionKey[UUID]
     object min extends IntColumn(this)
     object version extends IntColumn(this)
-    object state extends MapColumn[StateTable, State, Long, Int](this)
+    object rights extends MapColumn[StateTable, State, Long, Int](this)
     object consumed extends MapColumn[StateTable, State, Int, Int](this)
 
     override val tableName = name
-    override def fromRow(r: Row) = State(key(r), min(r), state(r), consumed(r))
+    override def fromRow(r: Row) = State(key(r), min(r), rights(r), consumed(r))
   }
 
   val states = new StateTable
@@ -218,13 +235,16 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
   override def truncate() = states.truncate().future().unit
 
   object prepared {
-    private val (t, k, s, c) = (s"${space.name}.${states.tableName}", states.key.name, states.state.name, states.consumed.name)
+    private val (t, k, r, c) = (s"${space.name}.${states.tableName}", states.key.name, states.rights.name, states.consumed.name)
     private val (min, version) = (states.min.name, states.version.name)
 
     lazy val init: (UUID, Int) => (CLevel) => BoundOp[Unit] = {
+      // initialize with replicas
+      val rights = replicas map { i => pack(i,i) -> 0 } toMap
+      val consumed = replicas map { i => i -> 0 } toMap
       val ps = session.prepare(
-        s"UPDATE $t SET $min=?, $s={}, $c={}, $version=0 WHERE $k=?")
-      (key: UUID, min: Int) => ps.bindWith(min, key)(_ => ())
+        s"UPDATE $t SET $min=?, $r=?, $c=?, $version=0 WHERE $k=?")
+      (key: UUID, min: Int) => ps.bindWith(min, rights, consumed, key)(_ => ())
     }
 
     lazy val get: (UUID) => (CLevel) => BoundOp[Option[State]] = {
@@ -234,17 +254,19 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     }
 
     lazy val set: (UUID, Int, Int, Int) => (CLevel) => BoundOp[Unit] = {
-      val ps = session.prepare(s"UPDATE $t SET $s=$s+? WHERE $k = ?")
+      val ps = session.prepare(s"UPDATE $t SET $r=$r+? WHERE $k = ?")
       (key: UUID, i: Int, j: Int, v: Int) => {
         ps.bindWith(Map(pack(i,j) -> v), key)(_ => ())
       }
     }
 
     /** get the outcome of a conditional update */
-    private def condOutcome(rs: ResultSet) = rs.first.exists(_.get(0, classOf[Boolean]))
+    private def condOutcome(rs: ResultSet) = {
+      rs.first.exists(_.get(0, classOf[Boolean]))
+    }
 
     lazy val transfer: (UUID, (Int, Int), Int, Int) => (CLevel) => BoundOp[Boolean] = {
-      val ps = session.prepare(s"UPDATE $t SET $s=$s+? WHERE $k = ? IF $s[?] = ?")
+      val ps = session.prepare(s"UPDATE $t SET $r=$r+? WHERE $k = ? IF $r[?] = ?")
       (key: UUID, ij: (Int, Int), v: Int, prev: Int) => {
         val pij = pack(ij._1, ij._2)
         ps.bindWith(Map(pij -> v), key, pij, prev)(condOutcome)
@@ -252,7 +274,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     }
 
     lazy val balance: (State) => (CLevel) => BoundOp[Boolean] = {
-      val ps = session.prepare(s"UPDATE $t SET $s=?, $c=?, $version=? WHERE $k=? IF $version=?")
+      val ps = session.prepare(s"UPDATE $t SET $r=?, $c=?, $version=? WHERE $k=? IF $version=?")
       (st: State) => {
         ps.bindWith(st.rightsPacked, st.consumed, st.version, st.key, st.version-1) {
           _.first.exists(_.get(0, classOf[Boolean]))
@@ -266,10 +288,13 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     }
 
     /** consume from another replica, must do with conditional to force serial execution and ensure no one else beat us to it */
-    lazy val consume_other: (UUID, Int, Int, Int) => (CLevel) => BoundOp[Boolean] = {
-      val ps = session.prepare(s"UPDATE $t SET $c=$c+? WHERE $k=? IF $c[?] = ?")
-      (key: UUID, who: Int, prev: Int, v: Int) =>
-        ps.bindWith(Map(who -> v), key, who, prev)(condOutcome)
+    lazy val consume_other: (UUID, Int, Int, Int, Int) => (CLevel) => BoundOp[(Boolean,Map[Int,Int], Option[Int])] = {
+      val ps = session.prepare(s"UPDATE $t SET $c=$c+? WHERE $k=? IF $c[?] = ? AND $version=?")
+      (key: UUID, who: Int, prev: Int, newv: Int, version: Int) =>
+        ps.bindWith(Map(who -> newv), key, who, prev, version) { rs =>
+          val r = rs.first.get
+          (r.outcome, states.consumed(r), states.version.optional(r).toOption)
+        }
     }
 
   }

@@ -30,6 +30,9 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     val forwards = metrics.create.counter("forwards")
     val piggybacks = metrics.create.counter("piggybacks")
 
+    val transfers = metrics.create.counter("transfer")
+    val transfers_failed = metrics.create.counter("transfer_failure")
+
     val cached = metrics.create.counter("cached")
     val expired = metrics.create.counter("expired")
 
@@ -103,69 +106,59 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     def incr(n: Int = 1): TwFuture[Unit] = {
       val v = rights((me, me)) + n
       rights += ((me, me) -> v)
-      prepared.set(key, me, me, v)(CLevel.QUORUM).execAsTwitter()
+      prepared.set(key, me, me, v)(CLevel.QUORUM).execAsTwitter() onSuccess { _ =>
+        // in the background, see if we should re-balance
+        var myr = localRights(me)
+        for (i <- replicas; r = localRights(i); if myr > 2*r && myr/3 > 0) {
+          val t = myr/3
+          if (t > 0)
+          myr -= t
+          m.transfers += 1
+          Console.err.println(s"## incr:transfer $t $me->$i")
+          transfer(t, i) map { success => if (!success) m.transfers_failed += 1 }
+        }
+      }
     }
 
     def sufficient(n: Int): Boolean = value - n >= min
 
     def decr(n: Int = 1): TwFuture[Boolean] = {
-      if (!sufficient(n)) return TwFuture.value(false)
+      if (!sufficient(n)) return TwFuture(false)
 
-      {
-        if (localRights() < n) balance()
-        else TwFuture.Unit
-      } flatMap { _ =>
-        Console.err.println(s"## consumable($n) -> ${rights.values.toList} ${consumed.values.toList}")
-        if (localRights() >= n) {
-          Console.err.println(s"## consuming locally")
-          val v = consumed(me) + n
-          consumed += (me -> v)
-          prepared.consume(key, me, v)(CLevel.QUORUM).execAsTwitter()
-              .instrument(m.consume_latency)
-              .map { _ => true }
-        } else if (sufficient(n)) {
-          m.consume_others += 1
-          var retries = 0
-          retry { r: Boolean => r || !sufficient(n) || retries > 10} {
-            Console.err.println(s"### consume_other: $consumed")
-            retries += 1
-            // find replicas with rights available
-            val reps = for {i <- replicas if localRights(i) >= n} yield i
-            if (reps.isEmpty) {
-              TwFuture(false)
-            } else {
-              m.forwards += 1
-              val who = addrFromInt(reps.sample)
-              Console.err.println(s"### trying $who ($this)")
-              reservations.clients.get(who) map { client =>
-                new Handle(key, client).decr(n)
-              } getOrElse {
-                Console.err.println(s"Missing direct client to ReservationServer $who")
-                TwFuture(false)
-              }
-            }
-          }
-        } else {
+      if (localRights() >= n) {
+        Console.err.println(s"## consuming locally")
+        val v = consumed(me) + n
+        consumed += (me -> v)
+        prepared.consume(key, me, v)(CLevel.QUORUM).execAsTwitter()
+            .instrument(m.consume_latency)
+            .map { _ => true }
+      } else if (sufficient(n)) {
+        // find replicas with rights available
+        val reps = for {i <- replicas if localRights(i) >= n} yield i
+        if (reps.isEmpty) {
           TwFuture(false)
+        } else {
+          m.forwards += 1
+          val who = addrFromInt(reps.sample)
+          Console.err.println(s"### trying $who ($this)")
+          reservations.clients.get(who) map { client =>
+            new Handle(key, client).decr(n)
+          } getOrElse {
+            Console.err.println(s"Missing direct client to ReservationServer $who")
+            TwFuture(false)
+          }
         }
+      } else {
+        TwFuture(false)
       }
     }
 
-    def transfer(n: Int, to: Int, promise: TwPromise[Int] = null, retries: Int = 0): TwFuture[Int] = {
+    def transfer(n: Int, to: Int): TwFuture[Boolean] = {
       require(localRights() >= n)
-      val p = if (promise != null) promise else TwPromise[Int]()
       val prev = rights(me, to)
       val v = prev + n
       rights += ((me, to) -> v)
-      prepared.transfer(key, (me, to), v, prev)(CLevel.QUORUM).execAsTwitter() onSuccess {
-        success =>
-          if (success) {
-            promise.setValue(retries)
-          } else {
-            update() flatMap { _ => transfer(n, to, p, retries + 1) }
-          }
-      }
-      p
+      prepared.transfer(key, (me, to), v, prev)(CLevel.QUORUM).execAsTwitter()
     }
 
     def balance(promise: TwPromise[Unit] = null): TwPromise[Unit] = {

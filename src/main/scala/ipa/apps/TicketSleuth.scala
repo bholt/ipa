@@ -17,6 +17,7 @@ import scala.util.Random
 class TicketSleuth(val duration: FiniteDuration) extends {
   override implicit val space = KeySpace("tickets")
 } with OwlService {
+  import Console.err
   import Consistency._
 
   object m {
@@ -47,7 +48,13 @@ class TicketSleuth(val duration: FiniteDuration) extends {
     tickets.create().await()
     tickets.truncate().await()
 
-    0 to nevents map { i => tickets(i.id).init(ntickets.sample().toInt) }
+    (0 to nevents) map { i =>
+        val t = tickets(i.id)
+        for {
+          _ <- t.init(0)
+          _ <- t.incr(ntickets.sample().toInt)
+        } yield ()
+    } bundle() await()
   }
 
   val mix = Map(
@@ -63,21 +70,22 @@ class TicketSleuth(val duration: FiniteDuration) extends {
 
     while (deadline.hasTimeLeft) {
       sem.acquire()
-      val tick = tickets(zipfID())
+      val i = zipfDist.sample()
+      val handle = tickets(i.id)
       val op = weightedSample(mix)
       val f = op match {
         case 'take =>
-          for (taken <- tick.decr(1).instrument(m.takeLatency)) {
-            if (taken) m.take_success += 1 else m.take_failure += 1
+          for (taken <- handle.decr(1).instrument(m.takeLatency)) {
+            if (taken) { m.take_success += 1 } else { m.take_failure += 1 }
           }
         case 'read =>
-          for (remaining <- tick.value().instrument(m.readLatency)) {
+          for (remaining <- handle.value().instrument(m.readLatency)) {
             m.remaining << remaining
           }
       }
       f onSuccess { case _ => sem.release() }
       f onFailure { case e: Throwable =>
-        Console.err.println(e.getMessage)
+        err.println(s"Error with $i (key: ${handle.key}, op: $op)\n  e.getMessage")
         sys.exit(1)
       }
     }
@@ -98,7 +106,7 @@ object TicketSleuth extends {
     createKeyspace()
 
     val warmup = new TicketSleuth(5 seconds)
-    println(s">>> generating (${warmup.nevents}")
+    println(s">>> generating (${warmup.nevents})")
     warmup.generate()
 
     println(s">>> warmup (${warmup.duration})")

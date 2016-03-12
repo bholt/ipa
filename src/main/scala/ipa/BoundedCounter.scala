@@ -19,6 +19,7 @@ import owl.Util._
 import scala.collection.JavaConversions._
 import scala.collection.immutable.IndexedSeq
 import scala.collection.mutable
+import scala.util.Try
 
 class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) extends DataType(imps) {
   import BoundedCounter._
@@ -109,12 +110,12 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       prepared.set(key, me, me, v)(CLevel.QUORUM).execAsTwitter() onSuccess { _ =>
         // in the background, see if we should re-balance
         var myr = localRights(me)
-        for (i <- replicas; r = localRights(i); if myr > 2*r && myr/3 > 0) {
+        for (i <- replicas; r = localRights(i); if myr > 2*r && myr/3 > 0) yield {
           val t = myr/3
           myr -= t
           m.transfers += 1
-          Console.err.println(s"## incr:transfer $t $me->$i")
-          transfer(t, i)
+          Console.err.println(s"## incr:transfer $key => $t $me->$i")
+          submit { transfer(t, i).map(_ => CounterResult()) }
         }
       }
     }
@@ -152,17 +153,18 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       }
     }
 
-    def transfer(n: Int, to: Int): TwFuture[Boolean] = {
+    def transfer(n: Int, to: Int): TwFuture[Unit] = {
       require(localRights() >= n)
       val prev = rights(me, to)
       val v = prev + n
-      prepared.transfer(key, (me, to), v, prev)(CLevel.QUORUM).execAsTwitter()
-          .map {
-            case (true, _) => true
-            case (false, con) => // failed
-              m.transfers_failed += 1
-              Console.err.println(s"## transfer failed: $me->$to, new:$v, prev:$prev, saw consumed: $con")
-              false
+      prepared.transfer(key, (me, to), v, prev)(CLevel.QUORUM)
+          .execAsTwitter() map { _ =>
+            rights += ((me, to) -> v)
+            Console.err.println(s"## transferred $n, $me -> $to: $this")
+          } rescue {
+            case e =>
+              Console.err.println(s"## error with transfer: ${e.getMessage}")
+              TwFuture(false)
           }
     }
 
@@ -263,23 +265,19 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       rs.first.exists(_.get(0, classOf[Boolean]))
     }
 
-    lazy val transfer: (UUID, (Int, Int), Int, Int) => (CLevel) => BoundOp[(Boolean, Option[Map[Int,Int]])] = {
-      val ps = session.prepare(s"UPDATE $t SET $r=$r+? WHERE $k = ? IF $r[?] = ?")
+    lazy val transfer: (UUID, (Int, Int), Int, Int) => (CLevel) => BoundOp[Unit] = {
+      val ps = session.prepare(s"UPDATE $t SET $r=$r+? WHERE $k = ?")
       (key: UUID, ij: (Int, Int), v: Int, prev: Int) => {
         val pij = pack(ij._1, ij._2)
-        ps.bindWith(Map(pij -> v), key, pij, prev){ rs =>
-          val row = rs.first.get
-          (row.outcome, states.consumed.optional(row).toOption)
-        }
+        Console.err.println(s"## binding transfer")
+        ps.bindWith(Map(pij -> v), key)(_ => ())
       }
     }
 
     lazy val balance: (State) => (CLevel) => BoundOp[Boolean] = {
       val ps = session.prepare(s"UPDATE $t SET $r=?, $c=?, $version=? WHERE $k=? IF $version=?")
       (st: State) => {
-        ps.bindWith(st.rightsPacked, st.consumed, st.version, st.key, st.version-1) {
-          _.first.exists(_.get(0, classOf[Boolean]))
-        }
+        ps.bindWith(st.rightsPacked, st.consumed, st.version, st.key, st.version-1)(condOutcome)
       }
     }
 

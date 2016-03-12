@@ -27,6 +27,8 @@ RUN locale-gen en_US.UTF-8
 ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en
 
-RUN echo 'up(){ pushd /src >/dev/null; rsync -a /sync/owl . --exclude=target/ --exclude=.idea/; popd >/dev/null; };\n' >> ~/.zshrc
+ENV SYNC bistromath:~/sync/owl
+
+RUN echo 'up(){ pushd /src >/dev/null; rsync -a $SYNC . --exclude=target/ --exclude=.idea/; popd >/dev/null; };\n' >> ~/.zshrc
 
 CMD ["/usr/bin/zsh"]

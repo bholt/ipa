@@ -1,5 +1,7 @@
 package ipa
 
+import java.net.InetAddress
+import java.nio.ByteBuffer
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.Function
@@ -127,37 +129,24 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
           retry { r: Boolean => r || !sufficient(n) || retries > 10} {
             Console.err.println(s"### consume_other: $consumed")
             retries += 1
-            m.consume_other_attempts += 1
             // find replicas with rights available
             val reps = for {i <- replicas if localRights(i) >= n} yield i
             if (reps.isEmpty) {
-              TwFuture.value(false)
+              TwFuture(false)
             } else {
-              val who = reps.sample
+              m.forwards += 1
+              val who = addrFromInt(reps.sample)
               Console.err.println(s"### trying $who ($this)")
-              val c = consumed(who)
-              prepared.consume_other(key, who, c, c + 1, version)(CLevel.QUORUM)
-                .execAsTwitter().instrument(m.consume_other_latency)
-                .flatMap {
-                  case (true, _, _) =>
-                    TwFuture.value(true)
-                  case (false, Some(nconsumed), Some(nversion)) =>
-                    if (nversion != version) {
-                      Console.err.println("#### concurrent re-balance!")
-                      update().map(_ => false)
-                    } else {
-                      Console.err.println(s"### failed\n### tried: {$who: ${c+1}}\n### saw: $consumed\n- $this")
-                      // update so we can try again
-                      consumed ++= nconsumed
-                      TwFuture.value(false)
-                    }
-                  case e =>
-                    sys.error(s"Incorrect values from consume_other: $e")
-                }
+              reservations.clients.get(who) map { client =>
+                new Handle(key, client).decr(n)
+              } getOrElse {
+                Console.err.println(s"Missing direct client to ReservationServer $who")
+                TwFuture(false)
+              }
             }
           }
         } else {
-          TwFuture.value(false)
+          TwFuture(false)
         }
       }
     }
@@ -379,28 +368,22 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     }
   }
 
-  class Handle(key: UUID) {
+  class Handle(key: UUID, client: ReservationService = reservations.client) {
     import ipa.thrift.CounterOpType._
     def table = Table(space.name, name)
 
     def init(min: Int = 0): TwFuture[Unit] =
-      reservations.client
-          .boundedCounter(table, BoundedCounterOp(Init, key.toString, Some(min)))
-          .unit
+      client.boundedCounter(table, BoundedCounterOp(Init, key.toString, Some(min))).unit
 
     def incr(by: Int = 1): TwFuture[Unit] =
-      reservations.client
-        .boundedCounter(table, BoundedCounterOp(Incr, key.toString, Some(by)))
-        .unit
+      client.boundedCounter(table, BoundedCounterOp(Incr, key.toString, Some(by))).unit
 
     def decr(by: Int = 1): TwFuture[Boolean] =
-      reservations.client
-        .boundedCounter(table, BoundedCounterOp(Decr, key.toString, Some(by)))
+      client.boundedCounter(table, BoundedCounterOp(Decr, key.toString, Some(by)))
         .map(_.success.get)
 
     def value(): TwFuture[Int] =
-      reservations.client
-          .boundedCounter(table, BoundedCounterOp(Value, key.toString))
+      client.boundedCounter(table, BoundedCounterOp(Value, key.toString))
           .map(_.value.get.toInt)
   }
 

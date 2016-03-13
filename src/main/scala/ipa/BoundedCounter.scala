@@ -34,16 +34,20 @@ object BoundedCounter {
 
   trait Bounds {
     def cbound: Consistency
-    type IPAType[T] <: Inconsistent[T]
+    type IPAValueType[T] <: Inconsistent[T]
+    type IPADecrType[T] <: Inconsistent[T]
 
-    def valueResult(r: th.CounterResult): IPAType[Int]
-    def decrResult(r: th.CounterResult): IPAType[Boolean]
+    def ebound: Option[Tolerance] = None
+
+    def valueResult(r: th.CounterResult): IPAValueType[Int]
+    def decrResult(r: th.CounterResult): IPADecrType[Boolean]
   }
 
   trait StrongBounds extends Bounds { self: BoundedCounter =>
     override val cbound = Consistency(CLevel.QUORUM, CLevel.QUORUM)
     override def meta = Metadata(Some(cbound))
-    type IPAType[T] = Consistent[T]
+    type IPAValueType[T] = Consistent[T]
+    type IPADecrType[T] = Consistent[T]
     def valueResult(r: th.CounterResult) = Consistent(r.value.get.toInt)
     def decrResult(r: th.CounterResult) = Consistent(r.success.get)
   }
@@ -51,7 +55,8 @@ object BoundedCounter {
   trait WeakBounds extends Bounds { self: BoundedCounter =>
     override val cbound = Consistency(CLevel.ONE, CLevel.ONE)
     override def meta = Metadata(Some(cbound))
-    type IPAType[T] = Inconsistent[T]
+    type IPAValueType[T] = Inconsistent[T]
+    type IPADecrType[T] = Inconsistent[T]
     def valueResult(r: th.CounterResult) = Inconsistent(r.value.get.toInt)
     def decrResult(r: th.CounterResult) = Inconsistent(r.success.get)
   }
@@ -59,10 +64,15 @@ object BoundedCounter {
   trait ErrorBound extends Bounds { self: BoundedCounter =>
     def bound: Tolerance
     override val cbound = Consistency(CLevel.ONE, CLevel.ONE)
+    override val ebound = Some(bound)
+
     override def meta = Metadata(Some(bound))
-    type IPAType[T] = Interval[T]
-    def valueResult(r: th.CounterResult) = ???
-    def decrResult(r: th.CounterResult) = ???
+
+    type IPAValueType[T] = Interval[T]
+    type IPADecrType[T] = Inconsistent[T]
+
+    def valueResult(r: th.CounterResult) = Interval(r.min.get, r.max.get)
+    def decrResult(r: th.CounterResult) = Inconsistent(r.success.get)
   }
 
   def fromNameAndBound(name: String, bound: Bound)(implicit imps: CommonImplicits): BoundedCounter with Bounds = bound match {
@@ -126,6 +136,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     val decrs = metrics.create.counter("decr")
     val reads = metrics.create.counter("read")
 
+    val syncs = metrics.create.counter("sync")
     val cached = metrics.create.counter("cached")
     val expired = metrics.create.counter("expired")
 
@@ -157,6 +168,17 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
             case ((i,j),v) if i == j => v
             case _ => 0
           }.sum
+
+    def interval: Interval[Int] = {
+      ebound match {
+        case Some(t) =>
+          val v = value
+          val d = t.delta(v)
+          Interval(v-d, v+d)
+        case None =>
+          throw th.ReservationException("Called interval without an error bound.")
+      }
+    }
 
     def localRights(who: Int = me): Int = {
       rights((who,who)) - consumed(who) +
@@ -215,6 +237,31 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     }
 
     def sufficient(n: Int): Boolean = value - n >= min
+
+    def sync(): TwFuture[Unit] = {
+      m.syncs += 1
+      rights((me,me)) -= consumed(me)
+      consumed(me) = 0
+      prepared.sync(key, me, rights((me,me)), consumed(me))(CLevel.ALL)
+          .execAsTwitter()
+    }
+
+    def should_sync_soon: Boolean =
+      ebound.isDefined && consumed(me) >= (maxConsumable * 2 / 3)
+
+    def sync_if_needed(n: Int): TwFuture[Unit] = {
+      if (ebound.isDefined && consumed(me) + n >= maxConsumable) {
+        sync()
+      } else {
+        TwFuture.Unit
+      }
+    }
+
+    def maxConsumable = ebound map { t =>
+      t.delta(value) / session.nreplicas
+    } getOrElse {
+      Int.MaxValue
+    }
 
     def decr(n: Int = 1, retrying: Boolean = false): TwFuture[Boolean] = {
       if (!retrying) m.decrs += 1
@@ -371,6 +418,13 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       }
     }
 
+    // cancel out rights/consumed to show that we've synchronized our changes
+    lazy val sync: (UUID, Int, Int, Int) => (CLevel) => BoundOp[Unit] = {
+      val ps = session.prepare(s"UPDATE $t SET $r=$r+?, $c=$c+? WHERE $k=?")
+      (key: UUID, me: Int, newRights: Int, newConsumed: Int) =>
+        ps.bindWith(Map(pack(me,me) -> newRights), Map(me -> newConsumed), key)(_=>())
+    }
+
     lazy val consume: (UUID, Int, Int) => (CLevel) => BoundOp[Unit] = {
       val ps = session.prepare(s"UPDATE $t SET $c=$c+? WHERE $k=?")
       (key: UUID, i: Int, v: Int) => ps.bindWith(Map(i -> v), key)(_ => ())
@@ -434,9 +488,11 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
       case Decr =>
         s submit {
+          val n = op.n.get.toInt
           for {
             _ <- s.update_if_expired()
-            success <- s.decr(op.n.get.toInt)
+            _ <- s.sync_if_needed(n)
+            success <- s.decr(n)
           } yield {
             th.CounterResult(success = Some(success))
           }
@@ -448,7 +504,12 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
             _ <- s.update_if_expired()
           } yield {
             m.reads += 1
-            th.CounterResult(value = Some(s.value))
+            if (ebound.isDefined) {
+              val i = s.interval
+              th.CounterResult(min = Some(i.min), max = Some(i.max))
+            } else {
+              th.CounterResult(value = Some(s.value))
+            }
           }
         }
 
@@ -470,7 +531,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     def incr(by: Int = 1): TwFuture[Unit] =
       client.boundedCounter(table, Op(Incr, key.toString, Some(by))).unit
 
-    def decr(by: Int = 1): TwFuture[IPAType[Boolean]] = {
+    def decr(by: Int = 1): TwFuture[IPADecrType[Boolean]] = {
       client.boundedCounter(table, Op(Decr, key.toString, Some(by)))
           .map(decrResult)
           .rescue {
@@ -479,7 +540,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
           }
     }
 
-    def value(): TwFuture[IPAType[Int]] =
+    def value(): TwFuture[IPAValueType[Int]] =
       client.boundedCounter(table, Op(Value, key.toString)).map(valueResult)
   }
 

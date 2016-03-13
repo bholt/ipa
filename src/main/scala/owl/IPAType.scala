@@ -47,6 +47,7 @@ final case class Consistency(read: CLevel, write: CLevel = Consistency.Strong) e
 }
 final case class Tolerance(error: Double) extends Bound {
   def delta(value: Long) = (value * error).toLong
+  def delta(value: Int) = (value * error).toInt
   override def toString = s"tolerance:$error"
 }
 

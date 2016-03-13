@@ -121,6 +121,11 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     val transfers = metrics.create.counter("transfer")
     val transfers_failed = metrics.create.counter("transfer_failure")
 
+    val inits = metrics.create.counter("init")
+    val incrs = metrics.create.counter("incr")
+    val decrs = metrics.create.counter("decr")
+    val reads = metrics.create.counter("read")
+
     val cached = metrics.create.counter("cached")
     val expired = metrics.create.counter("expired")
 
@@ -135,8 +140,8 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
   class State(val key: UUID, var min: Int = 0, var version: Int = 0) extends FutureSerializer[th.CounterResult] {
     var lastReadAt = 0L
-    val rights = new mutable.HashMap[(Int, Int), Int].withDefaultValue(0)
-    val consumed = new mutable.HashMap[Int, Int].withDefaultValue(0)
+    var rights = new mutable.HashMap[(Int, Int), Int].withDefaultValue(0)
+    var consumed = new mutable.HashMap[Int, Int].withDefaultValue(0)
 
     var tail: Option[TwFuture[th.CounterResult]] = None
 
@@ -173,7 +178,11 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     }
 
     def init(min: Int): TwFuture[Unit] = {
+      Console.err.println(s"##----- init $key $min -------------------")
+      m.inits += 1
       this.min = min
+      this.rights.clear()
+      this.consumed.clear()
       prepared.init(key, min)(CLevel.ALL).execAsTwitter()
     }
 
@@ -184,23 +193,23 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         case Some(st) =>
           lastReadAt = time
           min = st.min
-          rights ++= st.rights
-          consumed ++= st.consumed
+          rights = st.rights
+          consumed = st.consumed
         case _ =>
           sys.error(s"Unable to get State($key) on $this_host")
       } unit
     }
 
     def incr(n: Int = 1): TwFuture[Unit] = {
+      m.incrs += 1
       val v = rights((me, me)) + n
-      rights += ((me, me) -> v)
+      rights((me, me)) = v
       prepared.set(key, me, me, v)(cbound.write).execAsTwitter() onSuccess { _ =>
         // in the background, see if we should re-balance
         var myr = localRights(me)
         for (i <- replicas; r = localRights(i); if myr > 2*r && myr/3 > 0) yield {
           val t = myr/3
           myr -= t
-          m.transfers += 1
           // Console.err.println(s"## incr:transfer $key => $t $me->$i")
           submit { transfer(t, i).map(_ => th.CounterResult()) }
         }
@@ -210,16 +219,17 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     def sufficient(n: Int): Boolean = value - n >= min
 
     def decr(n: Int = 1, retrying: Boolean = false): TwFuture[Boolean] = {
-      if (!sufficient(n)) return TwFuture(false)
+      if (!retrying) m.decrs += 1
 
       if (localRights() >= n) {
-        // Console.err.println(s"## consuming locally")
+        Console.err.println(s"## decr: local $this")
         val v = consumed(me) + n
-        consumed += (me -> v)
+        consumed(me) = v
         prepared.consume(key, me, v)(cbound.write).execAsTwitter()
             .instrument(m.consume_latency)
             .map { _ => true }
       } else if (sufficient(n)) {
+        Console.err.println(s"## decr: attempting to forward $this")
         // find replicas with rights available
         val reps = for {i <- replicas if localRights(i) >= n} yield i
         if (reps.isEmpty) {
@@ -228,37 +238,38 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
           m.forwards += 1
           val who = addrFromInt(reps.sample)
           // Console.err.println(s"### trying $who ($this)")
-          reservations.clients.get(who) map { client =>
-            new Handle(key, client).decr(n).map(_.get)
-          } getOrElse {
-            // Console.err.println(s"Missing direct client to ReservationServer $who")
-            TwFuture(false)
-          }
+          // val cl = reservations.clients(who)
+          // new Handle(key, cl).decr(n).map(_.get)
+          TwFuture.exception(th.ForwardTo(who.getHostAddress))
         }
-      } else {
+      } else if (cbound.write == Strong && !retrying) {
+        Console.err.println(s"## decr: retrying $this")
         // if this is supposed to be Strong consistency,
-        if (cbound.write == Strong && !retrying) {
-          // then we have to try bypassing the cache to ensure we find any available
-          update() flatMap { _ => decr(n, retrying = true) }
-        } else {
-          TwFuture(false)
-        }
+        // then we have to try bypassing the cache to ensure we find any available
+        update() flatMap { _ => decr(n, retrying = true) }
+      } else {
+        Console.err.println(s"## decr: aborting $this")
+        TwFuture(false)
       }
     }
 
     def transfer(n: Int, to: Int): TwFuture[Unit] = {
-      require(localRights() >= n)
-      val prev = rights(me, to)
-      val v = prev + n
-      prepared.transfer(key, (me, to), v, prev)(cbound.write)
-          .execAsTwitter() onSuccess { _ =>
-            rights += ((me, to) -> v)
-             // Console.err.println(s"## transferred $n, $me -> $to: $this")
-          } onFailure {
-            case e =>
-              Console.err.println(s"## error with transfer: ${e.getMessage}")
-              TwFuture(false)
-          }
+      if (localRights() >= n) {
+        m.transfers += 1
+        val prev = rights(me, to)
+        val v = prev + n
+        prepared.transfer(key, (me, to), v, prev)(cbound.write)
+            .execAsTwitter() onSuccess { _ =>
+          rights += ((me, to) -> v)
+          // Console.err.println(s"## transferred $n, $me -> $to: $this")
+        } onFailure {
+          case e =>
+            Console.err.println(s"## error with transfer: ${e.getMessage}")
+        }
+      } else {
+        m.transfers_failed += 1
+        TwFuture.Unit
+      }
     }
 
     def balance(promise: TwPromise[Unit] = null): TwPromise[Unit] = {
@@ -420,11 +431,13 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     op.op match {
 
       case Init =>
+        Console.err.println(s"## <- submit init($key)")
         s submit {
           s.init(op.n.get.toInt) map { _ => th.CounterResult() }
         }
 
       case Incr =>
+        Console.err.println(s"## <- submit incr($key)")
         s submit {
           for {
             _ <- s.update_if_expired()
@@ -435,6 +448,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         }
 
       case Decr =>
+        Console.err.println(s"## <- submit decr($key)")
         s submit {
           for {
             _ <- s.update_if_expired()
@@ -445,10 +459,12 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         }
 
       case Value =>
+        Console.err.println(s"## <- submit value($key)")
         s submit {
           for {
             _ <- s.update_if_expired()
           } yield {
+            m.reads += 1
             th.CounterResult(value = Some(s.value))
           }
         }
@@ -471,8 +487,14 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     def incr(by: Int = 1): TwFuture[Unit] =
       client.boundedCounter(table, Op(Incr, key.toString, Some(by))).unit
 
-    def decr(by: Int = 1): TwFuture[IPAType[Boolean]] =
-      client.boundedCounter(table, Op(Decr, key.toString, Some(by))).map(decrResult)
+    def decr(by: Int = 1): TwFuture[IPAType[Boolean]] = {
+      client.boundedCounter(table, Op(Decr, key.toString, Some(by)))
+          .map(decrResult)
+          .rescue {
+            case th.ForwardTo(who) =>
+              new Handle(key, reservations.clients(InetAddress.getByName(who))).decr(by)
+          }
+    }
 
     def value(): TwFuture[IPAType[Int]] =
       client.boundedCounter(table, Op(Value, key.toString)).map(valueResult)

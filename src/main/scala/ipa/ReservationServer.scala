@@ -14,7 +14,7 @@ import ipa.IPACounter.WeakOps
 import ipa.thrift._
 import ipa.{thrift => th}
 import org.joda.time.DateTime
-import owl.Connector.config
+import owl.Connector._
 import owl.Consistency._
 import owl.Util._
 import owl.{Connector, OwlService, Timestamped, Tolerance}
@@ -458,6 +458,17 @@ class ReservationClient(cluster: Cluster) {
   val client = newClient(addrs.values.mkString(","))
 
   val clients = addrs map { case (addr,host) => addr -> newClient(host) }
+
+  def resetMetrics() = clients.values.map(_.metricsReset()).bundle().unit.await()
+
+  def getMetrics()(implicit reservations: ReservationClient) = {
+    clients.values
+        .map { client => client.metricsJson() }
+        .map { f => f map { j => json.readValue(j, classOf[Map[String,Any]]) } }
+        .bundle()
+        .await()
+        .reduce(combine)
+  }
 }
 
 

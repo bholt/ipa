@@ -12,6 +12,10 @@ exception ReservationException {
   1: string why
 }
 
+exception ForwardTo {
+  1: string who
+}
+
 typedef string uuid
 
 union Primitive {
@@ -91,7 +95,7 @@ service ReservationService {
     throws (1: ReservationException e)
 
   CounterResult bounded_counter(1: Table t, 2: BoundedCounterOp op)
-    throws (1: ReservationException e)
+    throws (1: ReservationException e, 2: ForwardTo fwd)
 
   void metricsReset()
   string metricsJson()

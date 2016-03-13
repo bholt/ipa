@@ -183,15 +183,6 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef], cluster: Cluster) 
     out.println(writer.writeValueAsString(mConfig ++ mMetrics ++ mOutput ++ extras))
   }
 
-  def fromReservationServers()(implicit reservations: ReservationClient) = {
-    reservations.clients.values
-        .map { client => client.metricsJson() }
-        .map { f => f map { j => json.readValue(j, classOf[Map[String,Any]]) } }
-        .bundle()
-        .await()
-        .reduce(combine)
-  }
-
   def dump()(implicit reservations: ReservationClient): Unit = {
 
     // collect metrics from reservation servers
@@ -213,7 +204,7 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef], cluster: Cluster) 
 
     // dump metrics to stderr (for experiments script to parse)
     if (config.output_json) {
-      write(Console.err, Map("res" -> fromReservationServers()))
+      write(Console.err, Map("res" -> reservations.getMetrics()))
     }
     println("###############################")
   }

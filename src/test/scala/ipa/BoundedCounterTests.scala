@@ -83,8 +83,11 @@ class BoundedCounterTests extends {
       assert(results.forall(_.get))
 
       val m = reservations.getMetrics()
-      val forwards = m("counters").lookup("forwards").lookup("count").asInstanceOf[List[Int]]
-      forwards.sum shouldBe 0
+      val forwards_count = m("counters").lookup("forwards").lookup("count") match {
+        case l: List[_] => l.asInstanceOf[List[Int]].sum
+        case i: Int => i
+      }
+      forwards_count shouldBe 0
       err.println("</consume locally>")
     }
   }

@@ -42,7 +42,7 @@ class TicketSleuth(val duration: FiniteDuration) extends {
   def zipfID() = id(zipfDist.sample())
   def urandID() = id(Random.nextInt(nevents))
 
-  val tickets = new BoundedCounter("tickets")
+  val tickets = new BoundedCounter("tickets") with BoundedCounter.StrongBounds
 
   def generate(): Unit = {
     tickets.create().await()
@@ -76,11 +76,11 @@ class TicketSleuth(val duration: FiniteDuration) extends {
       val f = op match {
         case 'take =>
           for (taken <- handle.decr(1).instrument(m.takeLatency)) {
-            if (taken) { m.take_success += 1 } else { m.take_failure += 1 }
+            if (taken.get) { m.take_success += 1 } else { m.take_failure += 1 }
           }
         case 'read =>
           for (remaining <- handle.value().instrument(m.readLatency)) {
-            m.remaining << remaining
+            m.remaining << remaining.get
           }
       }
       f onSuccess { case _ => sem.release() }

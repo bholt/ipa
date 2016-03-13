@@ -24,7 +24,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
   def zipfID() = id(zipfDist.sample())
   def urandID() = id(Random.nextInt(nsets))
 
-  val counter = IPACounter.fromBound(config.bound)
+  val counter = IPACounter.fromNameAndBound("raw", config.bound)
 
   val timerIncr = metrics.create.timer("incr_latency")
   val timerRead = metrics.create.timer("read_latency")

@@ -352,7 +352,13 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   override def boundedCounter(t: Table, op: BoundedCounterOp): Future[CounterResult] = {
     implicit val space = KeySpace(t.space)
     implicit val imps = CommonImplicits()
-    val bc = boundedCounters.getOrElseUpdate(t, new BoundedCounter(t.name))
+    val bc = boundedCounters.getOrElseUpdate(t,
+      BoundedCounter.fromName(t.name) recoverWith {
+        case e: Throwable =>
+          Console.err.println(s"Error getting BoundedCounter by name: $t")
+          Failure(e)
+      } get
+    )
     bc.handle(op)
   }
 

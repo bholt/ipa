@@ -5,7 +5,7 @@ import java.util.concurrent.TimeUnit
 import com.websudos.phantom.connectors.KeySpace
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest._
-import owl.OwlService
+import owl.{Consistency, Consistent, OwlService}
 import owl.Util._
 import com.twitter.util.{Duration => TwDuration, Future => TwFuture}
 
@@ -31,7 +31,9 @@ class BoundedCounterTests extends {
   if (config.do_reset) dropKeyspace()
   createKeyspace()
 
-  val bc = new BoundedCounter("bc")
+  import owl.Conversions._
+
+  val bc = new BoundedCounter("bc") with BoundedCounter.StrongBounds
   val c1 = bc(1.id)
 
   "be created" in {
@@ -52,7 +54,8 @@ class BoundedCounterTests extends {
   }
 
   "have correct value" in {
-    assert(c1.value().futureValue == 3)
+    val v: Consistent[Int] = c1.value().futureValue
+    assert((v:Int) == 3)
   }
 
   "have rights to decrement" in {
@@ -65,7 +68,7 @@ class BoundedCounterTests extends {
   }
 
   "have insufficient rights to decrement again" in {
-    assert(c1.value().futureValue == 0)
+    assert((c1.value().futureValue:Int) == 0)
     assert(!c1.decr(1).futureValue)
   }
 
@@ -79,7 +82,7 @@ class BoundedCounterTests extends {
     val results = {
       for (i <- 1 to 10; j <- 1 to 20) yield bc(i.id).decr()
     }.bundle().await()
-    assert(results.forall(identity))
+    assert(results.forall(_.get))
   }
 
   "dump metrics" in {

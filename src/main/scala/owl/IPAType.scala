@@ -36,11 +36,13 @@ final case class Latency(d: FiniteDuration) extends Bound {
 }
 final case class Consistency(read: CLevel, write: CLevel = Consistency.Strong) extends Bound {
   import Consistency._
-  override def toString = (read, write) match {
-    case (Weak, Weak) => "weakwrite"
-    case (Weak, Strong) => "weak"
-    case (Strong, _) => "strong"
-    case _ => super.toString
+  override def toString = "consistency:" + {
+    (read, write) match {
+      case (Weak, Weak) => "weakwrite"
+      case (Weak, Strong) => "weak"
+      case (Strong, _) => "strong"
+      case _ => super.toString
+    }
   }
 }
 final case class Tolerance(error: Double) extends Bound {

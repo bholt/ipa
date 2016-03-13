@@ -28,7 +28,7 @@ case class Metadata(bound: Option[Bound] = None) {
 object Metadata {
   def fromString(s: String)(implicit imps: CommonImplicits) = {
     val m = json.readValue(s, classOf[Map[String,String]])
-    Metadata(m get "bound" map Bound.fromString)
+    Metadata(m.get("bound") map Bound.fromString)
   }
 }
 

@@ -87,24 +87,24 @@ object IPACounter {
     }
   }
 
-  def fromBound(bound: Bound)(implicit imps: CommonImplicits) = bound match {
+  def fromNameAndBound(name: String, bound: Bound)(implicit imps: CommonImplicits) = bound match {
     case Latency(l) =>
-      new IPACounter("raw") with IPACounter.LatencyBound { override val bound = l }
+      new IPACounter(name) with IPACounter.LatencyBound { override val bound = l }
 
     case Consistency(Weak, Weak) =>
-      new IPACounter("raw") with IPACounter.WeakWeakOps
+      new IPACounter(name) with IPACounter.WeakWeakOps
 
     case Consistency(Weak, Strong) =>
-      new IPACounter("raw") with IPACounter.WeakOps
+      new IPACounter(name) with IPACounter.WeakOps
 
     case Consistency(Strong, _) =>
-      new IPACounter("raw") with IPACounter.StrongOps
+      new IPACounter(name) with IPACounter.StrongOps
 
     case t @ Tolerance(_) =>
-      new IPACounter("raw") with IPACounter.ErrorTolerance { override val tolerance = t }
+      new IPACounter(name) with IPACounter.ErrorTolerance { override val tolerance = t }
 
     case e =>
-      println("error parsing bound")
+      Console.err.println("error handling bound")
       sys.error(s"impossible case: $e")
   }
 
@@ -113,7 +113,7 @@ object IPACounter {
       val meta = Metadata.fromString(metaStr)
       meta.bound match {
         case Some(bound) =>
-          Success(IPACounter.fromBound(bound))
+          Success(IPACounter.fromNameAndBound(name, bound))
         case _ =>
           Failure(ReservationException(s"Unable to find metadata for $name"))
       }

@@ -11,25 +11,112 @@ import com.twitter.concurrent.AsyncQueue
 import com.twitter.util.{Future => TwFuture, Promise => TwPromise}
 import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.dsl._
-import ipa.thrift._
-import owl.FutureSerializer
+import ipa.{thrift => th}
+import org.apache.commons.lang.NotImplementedException
+import owl._
 import owl.Connector.config
+import owl.Consistency._
 import owl.Util._
 
 import scala.collection.JavaConversions._
 import scala.collection.immutable.IndexedSeq
 import scala.collection.mutable
-import scala.util.Try
+import scala.util.{Failure, Success, Try}
 
-class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) extends DataType(imps) {
+
+object BoundedCounter {
+
+  case class DecrementException(value: Int)
+      extends RuntimeException(s"Unable to decrement, already at minimum ($value).")
+
+  def pack(i: Int, j: Int) = (i.toLong << 32) | (j & 0xffffffffL)
+  def unpack(ij: Long) = ((ij >> 32).toInt, ij.toInt)
+
+  trait Bounds {
+    def cbound: Consistency
+    type IPAType[T] <: Inconsistent[T]
+
+    def valueResult(r: th.CounterResult): IPAType[Int]
+    def decrResult(r: th.CounterResult): IPAType[Boolean]
+  }
+
+  trait StrongBounds extends Bounds { self: BoundedCounter =>
+    override val cbound = Consistency(CLevel.QUORUM, CLevel.QUORUM)
+    override def meta = Metadata(Some(cbound))
+    type IPAType[T] = Consistent[T]
+    def valueResult(r: th.CounterResult) = Consistent(r.value.get.toInt)
+    def decrResult(r: th.CounterResult) = Consistent(r.success.get)
+  }
+
+  trait WeakBound extends Bounds { self: BoundedCounter =>
+    override val cbound = Consistency(CLevel.ONE, CLevel.ONE)
+    override def meta = Metadata(Some(cbound))
+    type IPAType[T] = Inconsistent[T]
+    def valueResult(r: th.CounterResult) = Inconsistent(r.value.get.toInt)
+    def decrResult(r: th.CounterResult) = Inconsistent(r.success.get)
+  }
+
+  trait ErrorBound extends Bounds { self: BoundedCounter =>
+    def bound: Tolerance
+    override val cbound = Consistency(CLevel.ONE, CLevel.ONE)
+    override def meta = Metadata(Some(bound))
+    type IPAType[T] = Interval[T]
+    def valueResult(r: th.CounterResult) = ???
+    def decrResult(r: th.CounterResult) = ???
+  }
+
+  def fromNameAndBound(name: String, bound: Bound)(implicit imps: CommonImplicits): BoundedCounter with Bounds = bound match {
+    case Latency(l) =>
+      throw new NotImplementedException("Latency bounds not implemented for BoundedCounter")
+
+    case Consistency(Weak, Weak) =>
+      new BoundedCounter(name) with WeakBound
+
+    case Consistency(Weak, Strong) =>
+      new BoundedCounter(name) with WeakBound
+
+    case Consistency(Strong, _) =>
+      new BoundedCounter(name) with StrongBounds
+
+    case t @ Tolerance(_) =>
+      new BoundedCounter(name) with ErrorBound { override val bound = t }
+
+    case e =>
+      Console.err.println(s"Error creating BoundedCounter from bound: $e")
+      sys.error(s"impossible case: $e")
+  }
+
+  def fromName(name: String)(implicit imps: CommonImplicits): Try[BoundedCounter with Bounds] = {
+    DataType.lookupMetadata(name) flatMap { metaStr =>
+      val meta = Metadata.fromString(metaStr)
+      meta.bound match {
+        case Some(bound) =>
+          Success(BoundedCounter.fromNameAndBound(name, bound))
+        case _ =>
+          Failure(th.ReservationException(s"Unable to find metadata for $name"))
+      }
+    } recoverWith {
+      case e: Throwable =>
+        Failure(th.ReservationException(s"metadata not found for $name"))
+    }
+  }
+
+  def apply[T <: Bounds](name: String, bound: Bound = null)(implicit imps: CommonImplicits): BoundedCounter with T = {
+    Option(bound) match {
+      case Some(b) => fromNameAndBound(name, bound).asInstanceOf[BoundedCounter with T]
+      case None => fromName(name).get.asInstanceOf[BoundedCounter with T]
+    }
+  }
+}
+
+class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) extends DataType(imps) { self: BoundedCounter.Bounds =>
   import BoundedCounter._
 
   object m {
-    val balances = metrics.create.counter("balance")
-    val balance_retries = metrics.create.counter("balance_retry")
-    val consume_others = metrics.create.counter("consume_other")
+    lazy val balances = metrics.create.counter("balance")
+    lazy val balance_retries = metrics.create.counter("balance_retry")
+    lazy val consume_others = metrics.create.counter("consume_other")
     val forwards = metrics.create.counter("forwards")
-    val piggybacks = metrics.create.counter("piggybacks")
 
     val transfers = metrics.create.counter("transfer")
     val transfers_failed = metrics.create.counter("transfer_failure")
@@ -38,7 +125,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     val expired = metrics.create.counter("expired")
 
     val consume_latency = metrics.create.timer("consume_latency")
-    val consume_other_latency = metrics.create.timer("consume_other_latency")
+    lazy val consume_other_latency = metrics.create.timer("consume_other_latency")
   }
 
   def replicas: IndexedSeq[Int] =
@@ -46,12 +133,12 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
   val me: Int = this_host_hash
 
-  class State(val key: UUID, var min: Int = 0, var version: Int = 0) extends FutureSerializer[CounterResult] {
+  class State(val key: UUID, var min: Int = 0, var version: Int = 0) extends FutureSerializer[th.CounterResult] {
     var lastReadAt = 0L
     val rights = new mutable.HashMap[(Int, Int), Int].withDefaultValue(0)
     val consumed = new mutable.HashMap[Int, Int].withDefaultValue(0)
 
-    var tail: Option[TwFuture[CounterResult]] = None
+    var tail: Option[TwFuture[th.CounterResult]] = None
 
     def rightsPacked = rights map { case ((i,j),v) => pack(i, j) -> v } toMap
 
@@ -87,13 +174,13 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
     def init(min: Int): TwFuture[Unit] = {
       this.min = min
-      prepared.init(key, min)(CLevel.QUORUM).execAsTwitter()
+      prepared.init(key, min)(CLevel.ALL).execAsTwitter()
     }
 
 
     def update(): TwFuture[Unit] = {
       val time = System.nanoTime
-      prepared.get(key)(CLevel.QUORUM).execAsTwitter() map {
+      prepared.get(key)(cbound.read).execAsTwitter() map {
         case Some(st) =>
           lastReadAt = time
           min = st.min
@@ -107,7 +194,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     def incr(n: Int = 1): TwFuture[Unit] = {
       val v = rights((me, me)) + n
       rights += ((me, me) -> v)
-      prepared.set(key, me, me, v)(CLevel.QUORUM).execAsTwitter() onSuccess { _ =>
+      prepared.set(key, me, me, v)(cbound.write).execAsTwitter() onSuccess { _ =>
         // in the background, see if we should re-balance
         var myr = localRights(me)
         for (i <- replicas; r = localRights(i); if myr > 2*r && myr/3 > 0) yield {
@@ -115,7 +202,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
           myr -= t
           m.transfers += 1
           // Console.err.println(s"## incr:transfer $key => $t $me->$i")
-          submit { transfer(t, i).map(_ => CounterResult()) }
+          submit { transfer(t, i).map(_ => th.CounterResult()) }
         }
       }
     }
@@ -129,7 +216,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         // Console.err.println(s"## consuming locally")
         val v = consumed(me) + n
         consumed += (me -> v)
-        prepared.consume(key, me, v)(CLevel.QUORUM).execAsTwitter()
+        prepared.consume(key, me, v)(cbound.write).execAsTwitter()
             .instrument(m.consume_latency)
             .map { _ => true }
       } else if (sufficient(n)) {
@@ -142,7 +229,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
           val who = addrFromInt(reps.sample)
           // Console.err.println(s"### trying $who ($this)")
           reservations.clients.get(who) map { client =>
-            new Handle(key, client).decr(n)
+            new Handle(key, client).decr(n).map(_.get)
           } getOrElse {
             // Console.err.println(s"Missing direct client to ReservationServer $who")
             TwFuture(false)
@@ -157,7 +244,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       require(localRights() >= n)
       val prev = rights(me, to)
       val v = prev + n
-      prepared.transfer(key, (me, to), v, prev)(CLevel.QUORUM)
+      prepared.transfer(key, (me, to), v, prev)(cbound.write)
           .execAsTwitter() onSuccess { _ =>
             rights += ((me, to) -> v)
              // Console.err.println(s"## transferred $n, $me -> $to: $this")
@@ -190,7 +277,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       rights ++= balanced
       version += 1
 
-      prepared.balance(this)(CLevel.QUORUM).execAsTwitter() onSuccess { succeeded =>
+      prepared.balance(this)(cbound.write).execAsTwitter() onSuccess { succeeded =>
         if (succeeded) {
           m.balances += 1
           pr.setDone()
@@ -231,7 +318,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
   val states = new StateTable
 
-  override def create() = states.create.ifNotExists().future().unit
+  override def create() = DataType.createWithMetadata(name, states, meta.toString).asScala
   override def truncate() = states.truncate().future().unit
 
   object prepared {
@@ -300,7 +387,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
   val localStates = new ConcurrentHashMap[UUID, State]
 
   def get(key: UUID): TwFuture[Option[State]] =
-    prepared.get(key)(CLevel.QUORUM).execAsTwitter()
+    prepared.get(key)(cbound.read).execAsTwitter()
 
   def state(key: UUID): State = {
     localStates.computeIfAbsent(key, new Function[UUID,State] {
@@ -318,8 +405,8 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     }
   }
 
-  def handle(op: BoundedCounterOp): TwFuture[CounterResult] = {
-    import CounterOpType._
+  def handle(op: th.BoundedCounterOp): TwFuture[th.CounterResult] = {
+    import th.CounterOpType._
     val key = op.key.toUUID
 
     val s = state(key)
@@ -328,7 +415,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
       case Init =>
         s submit {
-          s.init(op.n.get.toInt) map { _ => CounterResult() }
+          s.init(op.n.get.toInt) map { _ => th.CounterResult() }
         }
 
       case Incr =>
@@ -337,7 +424,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
             _ <- s.update_if_expired()
             _ <- s.incr(op.n.get.toInt)
           } yield {
-            CounterResult()
+            th.CounterResult()
           }
         }
 
@@ -347,7 +434,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
             _ <- s.update_if_expired()
             success <- s.decr(op.n.get.toInt)
           } yield {
-            CounterResult(success = Some(success))
+            th.CounterResult(success = Some(success))
           }
         }
 
@@ -356,43 +443,35 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
           for {
             _ <- s.update_if_expired()
           } yield {
-            CounterResult(value = Some(s.value))
+            th.CounterResult(value = Some(s.value))
           }
         }
 
       case EnumUnknownCounterOpType(e) =>
-        throw ReservationException(s"Unknown op type: $e")
+        throw th.ReservationException(s"Unknown op type: $e")
     }
   }
 
   class Handle(val key: UUID, client: ReservationService = reservations.client) {
+
+    def table = th.Table(space.name, name)
+
     import ipa.thrift.CounterOpType._
-    def table = Table(space.name, name)
+    import th.{BoundedCounterOp => Op}
 
     def init(min: Int = 0): TwFuture[Unit] =
-      client.boundedCounter(table, BoundedCounterOp(Init, key.toString, Some(min))).unit
+      client.boundedCounter(table, Op(Init, key.toString, Some(min))).unit
 
     def incr(by: Int = 1): TwFuture[Unit] =
-      client.boundedCounter(table, BoundedCounterOp(Incr, key.toString, Some(by))).unit
+      client.boundedCounter(table, Op(Incr, key.toString, Some(by))).unit
 
-    def decr(by: Int = 1): TwFuture[Boolean] =
-      client.boundedCounter(table, BoundedCounterOp(Decr, key.toString, Some(by)))
-        .map(_.success.get)
+    def decr(by: Int = 1): TwFuture[IPAType[Boolean]] =
+      client.boundedCounter(table, Op(Decr, key.toString, Some(by))).map(decrResult)
 
-    def value(): TwFuture[Int] =
-      client.boundedCounter(table, BoundedCounterOp(Value, key.toString))
-          .map(_.value.get.toInt)
+    def value(): TwFuture[IPAType[Int]] =
+      client.boundedCounter(table, Op(Value, key.toString)).map(valueResult)
   }
 
   def apply(key: UUID) = new Handle(key)
 
-}
-
-object BoundedCounter {
-
-  case class DecrementException(value: Int)
-      extends RuntimeException(s"Unable to decrement, already at minimum ($value).")
-
-  def pack(i: Int, j: Int) = (i.toLong << 32) | (j & 0xffffffffL)
-  def unpack(ij: Long) = ((ij >> 32).toInt, ij.toInt)
 }

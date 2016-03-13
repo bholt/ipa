@@ -209,7 +209,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
     def sufficient(n: Int): Boolean = value - n >= min
 
-    def decr(n: Int = 1): TwFuture[Boolean] = {
+    def decr(n: Int = 1, retrying: Boolean = false): TwFuture[Boolean] = {
       if (!sufficient(n)) return TwFuture(false)
 
       if (localRights() >= n) {
@@ -236,7 +236,13 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
           }
         }
       } else {
-        TwFuture(false)
+        // if this is supposed to be Strong consistency,
+        if (cbound.write == Strong && !retrying) {
+          // then we have to try bypassing the cache to ensure we find any available
+          update() flatMap { _ => decr(n, retrying = true) }
+        } else {
+          TwFuture(false)
+        }
       }
     }
 

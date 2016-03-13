@@ -37,7 +37,7 @@ class BoundedCounterTests extends {
     bc.truncate().await()
   }
 
-  "init a new counter with min = 0" in {
+  "init a new counter with min of 0" in {
     c1.init(0).futureValue
   }
 

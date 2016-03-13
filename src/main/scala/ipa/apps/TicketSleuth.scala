@@ -4,7 +4,7 @@ import java.util.concurrent.Semaphore
 
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
-import ipa.{BoundedCounter, IPACounter}
+import ipa.{BoundedCounter, IPACounter, IPAPool}
 import org.apache.commons.math3.distribution.{NormalDistribution, ZipfDistribution}
 import owl.Consistency._
 import owl.RawMixCounter._
@@ -25,7 +25,7 @@ class TicketSleuth(val duration: FiniteDuration) extends {
     val readLatency = metrics.create.timer("read_latency")
 
     val take_success = metrics.create.counter("take_success")
-    val take_failure = metrics.create.counter("take_failure")
+    val take_failed = metrics.create.counter("take_failure")
 
     val remaining = metrics.create.histogram("remaining")
   }
@@ -42,19 +42,16 @@ class TicketSleuth(val duration: FiniteDuration) extends {
   def zipfID() = id(zipfDist.sample())
   def urandID() = id(Random.nextInt(nevents))
 
-  val tickets = new BoundedCounter("tickets") with BoundedCounter.StrongBounds
+  val tickets = new IPAPool("tickets") with IPAPool.StrongBounds
 
   def generate(): Unit = {
     tickets.create().await()
     tickets.truncate().await()
 
-    (0 to nevents) map { i =>
-        val t = tickets(i.id)
-        for {
-          _ <- t.init(0)
-          _ <- t.incr(ntickets.sample().toInt)
-        } yield ()
-    } bundle() await()
+    (0 to nevents)
+        .map { i => tickets(i.id).init(ntickets.sample().toInt) }
+        .bundle()
+        .await()
   }
 
   val mix = Map(
@@ -75,12 +72,13 @@ class TicketSleuth(val duration: FiniteDuration) extends {
       val op = weightedSample(mix)
       val f = op match {
         case 'take =>
-          for (taken <- handle.decr(1).instrument(m.takeLatency)) {
-            if (taken.get) { m.take_success += 1 } else { m.take_failure += 1 }
+          for (taken <- handle.take(1).instrument(m.takeLatency)) {
+            if (taken.get.isEmpty) m.take_failed += 1
+            else m.take_success += 1
           }
         case 'read =>
-          for (remaining <- handle.value().instrument(m.readLatency)) {
-            m.remaining << remaining.get
+          for (r <- handle.remaining().instrument(m.readLatency)) {
+            m.remaining << r.get
           }
       }
       f onSuccess { case _ => sem.release() }

@@ -6,7 +6,7 @@ import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest._
-import owl.{Inconsistent, OwlService}
+import owl.{Inconsistent, OwlService, OwlWordSpec}
 import owl.Util._
 
 import scala.concurrent.duration._
@@ -14,14 +14,13 @@ import scala.concurrent.duration._
 
 class IPAPoolTests extends {
   override implicit val space = KeySpace("pool_tests")
-} with WordSpec with OwlService with BeforeAndAfterAll
-    with Matchers with Inspectors with ScalaFutures with OptionValues {
+} with OwlWordSpec with OwlService {
 
   import Console.err
 
   def now() = Deadline.now
 
-  val timeout = 2 seconds
+  implicit val timeout = 2 seconds
   implicit override val patienceConfig: PatienceConfig =
     PatienceConfig(timeout = timeout, interval = 20 millis)
 
@@ -37,25 +36,30 @@ class IPAPoolTests extends {
     pools.create().await()
 
     err.println("initializing p1")
-    val p1 = pools(1.id).init(3L).await(timeout)
+    val p1 = pools(1.id)
 
     "be truncated" in {
-      pools.truncate().await(timeout)
+      pools.truncate().await()
+    }
+
+    "be initialized" in {
+      p1.init(3).futureValue
     }
 
     "take 2 unique ids" in {
       val i1 = p1.take().futureValue.get
       val i2 = p1.take().futureValue.get
-      assert(i1.value != i2.value)
+      assert(i1 != i2)
+      (i1.toSet intersect i2.toSet) shouldBe empty
     }
 
     "have 1 remaining" in {
-      val v: Inconsistent[Long] = p1.remaining().futureValue
+      val v: Inconsistent[Int] = p1.remaining().futureValue
       v.get shouldBe 1
     }
 
     "take last one" in {
-      p1.take().futureValue.get shouldBe defined
+      p1.take().futureValue.get should have size 1
     }
 
     "be empty" in {
@@ -64,9 +68,17 @@ class IPAPoolTests extends {
     }
   }
 
-  "IPA Set with Weak ops" should {
+  "IPAPool with StrongBounds" should {
 
-    val pools = new IPAPool("pool_strong") with IPAPool.StrongOps
+    val pools = new IPAPool("strong") with IPAPool.StrongBounds
+
+    test_generic(pools)
+
+  }
+
+  "IPAPool with WeakBounds" should {
+
+    val pools = new IPAPool("weak") with IPAPool.WeakBounds
 
     test_generic(pools)
 

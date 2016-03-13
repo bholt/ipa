@@ -32,11 +32,11 @@ class IPAPoolTests extends {
 
   def test_generic(pools: IPAPool): Unit = {
 
-    err.println("creating table")
-    pools.create().await()
-
-    err.println("initializing p1")
     val p1 = pools(1.id)
+
+    "be created" in {
+      pools.create().await()
+    }
 
     "be truncated" in {
       pools.truncate().await()

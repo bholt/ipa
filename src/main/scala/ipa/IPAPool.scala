@@ -26,7 +26,7 @@ abstract class IPAPool(val name: String)(implicit val imps: CommonImplicits)
   override def truncate() = counter.truncate()
 
   def generate(n: Int, success: Boolean): Seq[UUID] =
-    if (success) 0 to n map { _ => UUID.randomUUID() }
+    if (success) 0 until n map { _ => UUID.randomUUID() }
     else Seq()
 
 }

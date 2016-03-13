@@ -238,6 +238,52 @@ def run_retwis():
     return nexp
 
 
+def run_tickets(log):
+    nexp = 0
+
+    containers = swarm.containers_str()
+
+    main_class = 'ipa.apps.TicketSleuth'
+
+    for trial in range(1, opt.target+1):
+        if not opt.dry:
+            print '---------------------------------\n# starting trial', trial
+        elif opt.dry and trial > 1:
+            # only need to do one 'trial' to get all the counts if doing dry run
+            continue
+        for a in cartesian(
+            ipa_version               = [version],
+            ipa_output_json           = ['true'],
+
+            ipa_replication_factor    = [3],
+            ipa_reset                 = ['false'],
+
+            ipa_duration              = [60],
+            ipa_zipf                  = ['0.6'],
+
+            ipa_concurrent_requests   = [128, 512, 2*K, 4*K],
+
+            ipa_bound = ['consistency:strong', 'consistency:weakwrite'],
+
+            ipa_lease_period = ['0ms', '200ms'],
+            ipa_reservations_lease = ['10s'],
+
+            honeycomb_mode = ['normal', 'slowpoke_flat', 'google', 'amazon', 'flat5']
+        ):
+            a['containers'] = containers
+
+            ct = count_records(table, ignore=['containers'],
+                               valid='out_actual_time_length is not null', **a)
+            puts(colored.black("→ ")+colored.cyan('count:')+colored.yellow(ct))
+
+            if opt.dry:
+                continue
+            if ct < trial:
+                run(log, *['-main', main_class] , **a)
+                nexp += 1
+    return nexp
+
+
 class RawMix:
     def __init__(self, add, contains, size):
         self.add = str(add)
@@ -378,5 +424,7 @@ if __name__ == '__main__':
         n = run_retwis()
     elif opt.mode == 'rawmix':
         n = run_rawmix(log, opt.type)
+    elif opt.mode == 'tickets':
+        n = run_tickets(log)
 
     notify_slack(fmt("Finished #{n} experiments. :success:"))

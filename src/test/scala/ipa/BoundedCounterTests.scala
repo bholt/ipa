@@ -94,12 +94,11 @@ class BoundedCounterTests extends {
     "never allow more decrements than increments" - {
 
       "initialize" in {
-        err.println("sleeping")
+        err.println("re-initializing")
         Thread.sleep(config.lease.periodMillis)
         reservations.resetMetrics()
         bc.truncate().await()
 
-        err.println(".. initializing")
         val checks = (0 until 10)
             .map { i =>
               val c = bc(i.id)

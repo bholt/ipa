@@ -178,7 +178,6 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     }
 
     def init(min: Int): TwFuture[Unit] = {
-      Console.err.println(s"##----- init $key $min -------------------")
       m.inits += 1
       this.min = min
       this.rights.clear()
@@ -210,7 +209,6 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         for (i <- replicas; r = localRights(i); if myr > 2*r && myr/3 > 0) yield {
           val t = myr/3
           myr -= t
-          // Console.err.println(s"## incr:transfer $key => $t $me->$i")
           submit { transfer(t, i).map(_ => th.CounterResult()) }
         }
       }
@@ -222,14 +220,12 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       if (!retrying) m.decrs += 1
 
       if (localRights() >= n) {
-        Console.err.println(s"## decr: local $this")
         val v = consumed(me) + n
         consumed(me) = v
         prepared.consume(key, me, v)(cbound.write).execAsTwitter()
             .instrument(m.consume_latency)
             .map { _ => true }
       } else if (sufficient(n)) {
-        Console.err.println(s"## decr: attempting to forward $this")
         // find replicas with rights available
         val reps = for {i <- replicas if localRights(i) >= n} yield i
         if (reps.isEmpty) {
@@ -237,18 +233,13 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         } else {
           m.forwards += 1
           val who = addrFromInt(reps.sample)
-          // Console.err.println(s"### trying $who ($this)")
-          // val cl = reservations.clients(who)
-          // new Handle(key, cl).decr(n).map(_.get)
           TwFuture.exception(th.ForwardTo(who.getHostAddress))
         }
       } else if (cbound.write == Strong && !retrying) {
-        Console.err.println(s"## decr: retrying $this")
         // if this is supposed to be Strong consistency,
         // then we have to try bypassing the cache to ensure we find any available
         update() flatMap { _ => decr(n, retrying = true) }
       } else {
-        Console.err.println(s"## decr: aborting $this")
         TwFuture(false)
       }
     }
@@ -261,7 +252,6 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         prepared.transfer(key, (me, to), v, prev)(cbound.write)
             .execAsTwitter() onSuccess { _ =>
           rights += ((me, to) -> v)
-          // Console.err.println(s"## transferred $n, $me -> $to: $this")
         } onFailure {
           case e =>
             Console.err.println(s"## error with transfer: ${e.getMessage}")
@@ -274,9 +264,6 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
     def balance(promise: TwPromise[Unit] = null): TwPromise[Unit] = {
       val pr = if (promise != null) promise else TwPromise[Unit]()
-
-      // Console.err.println(s"## balancing $this")
-
       val flatRights = replicas map { localRights(_) }
       val total = flatRights.sum
       assert(total == value, s"balance: total($total) != value($value)")
@@ -431,13 +418,11 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     op.op match {
 
       case Init =>
-        Console.err.println(s"## <- submit init($key)")
         s submit {
           s.init(op.n.get.toInt) map { _ => th.CounterResult() }
         }
 
       case Incr =>
-        Console.err.println(s"## <- submit incr($key)")
         s submit {
           for {
             _ <- s.update_if_expired()
@@ -448,7 +433,6 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         }
 
       case Decr =>
-        Console.err.println(s"## <- submit decr($key)")
         s submit {
           for {
             _ <- s.update_if_expired()
@@ -459,7 +443,6 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         }
 
       case Value =>
-        Console.err.println(s"## <- submit value($key)")
         s submit {
           for {
             _ <- s.update_if_expired()

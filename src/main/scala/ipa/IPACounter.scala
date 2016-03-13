@@ -148,7 +148,7 @@ class IPACounter(val name: String)(implicit imps: CommonImplicits) extends DataT
   override def truncate(): Future[Unit] =
     tbl.truncate.future().unit
 
-  class Handle(key: UUID) {
+  class Handle(val key: UUID) {
     def incr(by: Long = 1L): Future[Unit] = self.incr(key, by)
     def read(): Future[IPAType[Long]] = self.read(key)
   }

@@ -48,7 +48,7 @@ object BoundedCounter {
     def decrResult(r: th.CounterResult) = Consistent(r.success.get)
   }
 
-  trait WeakBound extends Bounds { self: BoundedCounter =>
+  trait WeakBounds extends Bounds { self: BoundedCounter =>
     override val cbound = Consistency(CLevel.ONE, CLevel.ONE)
     override def meta = Metadata(Some(cbound))
     type IPAType[T] = Inconsistent[T]
@@ -70,10 +70,10 @@ object BoundedCounter {
       throw new NotImplementedException("Latency bounds not implemented for BoundedCounter")
 
     case Consistency(Weak, Weak) =>
-      new BoundedCounter(name) with WeakBound
+      new BoundedCounter(name) with WeakBounds
 
     case Consistency(Weak, Strong) =>
-      new BoundedCounter(name) with WeakBound
+      new BoundedCounter(name) with WeakBounds
 
     case Consistency(Strong, _) =>
       new BoundedCounter(name) with StrongBounds

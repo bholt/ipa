@@ -1,12 +1,20 @@
 package owl
 
+import com.twitter.util.{Future => TwFuture, Await => TwAwait}
 import org.scalactic.Equality
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest._
 
+import scala.concurrent.duration.Duration
+
 trait OwlSpec extends FlatSpec with Matchers with Inspectors with ScalaFutures
 
-trait OwlWordSpec extends WordSpec with Matchers with Inspectors with ScalaFutures
+trait OwlWordSpec extends WordSpec with Matchers with Inspectors with ScalaFutures with OptionValues with TryValues {
+  import Util.durationScalaToTwitter
+  implicit class TwFutureValue[T](f: TwFuture[T]) {
+    def futureValue(implicit timeout: Duration): T = TwAwait.result(f, timeout)
+  }
+}
 
 trait OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll  {
 

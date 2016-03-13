@@ -8,10 +8,9 @@ import Util._
 import com.websudos.phantom.dsl._
 object ReplService extends { override implicit val space = KeySpace("repl") } with OwlService
 import ReplService._
+
 implicit val space = KeySpace("tickets"); implicit val imps = CommonImplicits()
 val tickets = new BoundedCounter("tickets")
-
-
 
 implicit val space = KeySpace("reservations")
 implicit val imps = CommonImplicits()

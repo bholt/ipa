@@ -21,7 +21,7 @@ import org.joda.time.DateTime
 import scala.collection.JavaConverters._
 import scala.collection.generic.CanBuildFrom
 import scala.concurrent._
-import scala.concurrent.duration.{Deadline, Duration}
+import scala.concurrent.duration._
 import scala.util.{Failure, Random, Success, Try}
 
 trait FutureSerializer[T] {
@@ -82,8 +82,22 @@ object Util {
     def fullname = s"${t.space}.${t.name}"
   }
 
+  implicit def durationTwitterToScala(d: tw.Duration): Duration = d match {
+    case tw.Duration.Top => Duration.Inf
+    case tw.Duration.Bottom => Duration.MinusInf
+    case tw.Duration.Zero => Duration.Zero
+    case _ => d.inNanoseconds nanos
+  }
+
+  implicit def durationScalaToTwitter(d: Duration): tw.Duration = d match {
+    case Duration.Inf => tw.Duration.Top
+    case Duration.MinusInf => tw.Duration.Bottom
+    case _ => tw.Duration(d.toNanos, NANOSECONDS)
+  }
+
   implicit class TwAwaitablePlus[T](f: tw.Awaitable[T]) {
     def await(d: tw.Duration = tw.Duration.Top): T = tw.Await.result(f, d)
+    def await(d: Duration): T = tw.Await.result(f, d)
   }
 
   implicit class TwFuturePlus[T](f: tw.Future[T]) {

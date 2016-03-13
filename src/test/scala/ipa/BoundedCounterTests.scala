@@ -5,7 +5,7 @@ import java.util.concurrent.TimeUnit
 import com.websudos.phantom.connectors.KeySpace
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest._
-import owl.{Consistency, Consistent, OwlService}
+import owl.{Consistency, Consistent, OwlService, OwlWordSpec}
 import owl.Util._
 import com.twitter.util.{Duration => TwDuration, Future => TwFuture}
 
@@ -13,20 +13,13 @@ import scala.concurrent.duration._
 
 class BoundedCounterTests extends {
   override implicit val space = KeySpace("bc_tests")
-} with WordSpec with OwlService with BeforeAndAfterAll
-    with Matchers with Inspectors with ScalaFutures with OptionValues with TryValues {
+} with OwlWordSpec with OwlService with BeforeAndAfterAll {
   import Console.err
   def now() = Deadline.now
 
-  val twtime = TwDuration(2, TimeUnit.SECONDS)
-  val timeout = 2 seconds
+  implicit val timeout = 2 seconds
   implicit override val patienceConfig: PatienceConfig =
     PatienceConfig(timeout = timeout, interval = 20 millis)
-
-
-  implicit class TwFutureValue[T](f: TwFuture[T]) {
-    def futureValue: T = f.await(twtime)
-  }
 
   if (config.do_reset) dropKeyspace()
   createKeyspace()
@@ -59,12 +52,8 @@ class BoundedCounterTests extends {
   }
 
   "have rights to decrement" in {
-    val outcomes = TwFuture.join(
-      c1.decr(1),
-      c1.decr(1),
-      c1.decr(1)
-    ).futureValue
-    assert(outcomes == (true, true, true))
+    val outcomes = (0 until 3).map(_ => c1.decr(1)).bundle().futureValue
+    assert(outcomes.forall(_.get), "got: " + outcomes.mkString(", "))
   }
 
   "have insufficient rights to decrement again" in {

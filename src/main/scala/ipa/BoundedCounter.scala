@@ -141,6 +141,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     val expired = metrics.create.counter("expired")
 
     val consume_latency = metrics.create.timer("consume_latency")
+    val get_latency = metrics.create.timer("get_latency")
     lazy val consume_other_latency = metrics.create.timer("consume_other_latency")
   }
 
@@ -210,7 +211,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
     def update(): TwFuture[Unit] = {
       val time = System.nanoTime
-      prepared.get(key)(cbound.read).execAsTwitter() map {
+      prepared.get(key)(cbound.read).execAsTwitter().instrument(m.get_latency) map {
         case Some(st) =>
           lastReadAt = time
           min = st.min

@@ -146,6 +146,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     val get_latency = metrics.create.timer("get_latency")
     lazy val sync_latency = metrics.create.timer("sync_latency")
     lazy val consume_other_latency = metrics.create.timer("consume_other_latency")
+    lazy val transfer_latency = metrics.create.timer("transfer_latency")
   }
 
   def replicas: IndexedSeq[Int] =
@@ -157,6 +158,8 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     var lastReadAt = 0L
     var rights = new mutable.HashMap[(Int, Int), Int].withDefaultValue(0)
     var consumed = new mutable.HashMap[Int, Int].withDefaultValue(0)
+
+    val pendingTransfers = new mutable.HashMap[Int, Int]()
 
     var tail: Option[TwFuture[th.CounterResult]] = None
 
@@ -243,7 +246,8 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
             // transfer the difference to get it up to the even distribution
             val n = each - r
             // transfer 'n' to 'i' in the background
-            submit { transfer(n, i).map(_ => th.CounterResult()) }
+            pendingTransfers(n) = i
+            submit { transfer() }
           }
         }
       }
@@ -292,9 +296,10 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
                 val ts = for (i <- replicas; r = localRights(i); if 2*r < mr) yield (i, r)
                 if (ts.nonEmpty) {
                   val who = ts.minBy(_._2)._1
+                  pendingTransfers(who) = mr / 2
                   submit {
                     m.transfer_reactive += 1
-                    transfer(mr / 2, who)
+                    transfer()
                   }
                 }
               }
@@ -318,21 +323,28 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       }
     }
 
-    def transfer(n: Int, to: Int): TwFuture[Unit] = {
-      if (localRights() >= n) {
-        m.transfers += 1
-        val prev = rights(me, to)
-        val v = prev + n
-        prepared.transfer(key, (me, to), v, prev)(cbound.write)
-            .execAsTwitter() onSuccess { _ =>
-          rights += ((me, to) -> v)
+    def transfer(): TwFuture[Unit] = {
+      lazy val lr = localRights()
+      val ts: Map[Int,Int] = {
+        val tmp = pendingTransfers.filter(_._2 <= lr)
+        if (tmp.values.sum <= lr) tmp.toMap
+        else if (tmp.nonEmpty) Map(tmp.maxBy(_._2)) // otherwise pick the biggest
+        else Map()
+      }
+      m.transfers_failed += (pendingTransfers.size - ts.size)
+      pendingTransfers.clear()
+      if (ts.isEmpty) {
+        m.transfers_failed += 1
+        TwFuture.Unit
+      } else {
+        val newv = ts map { case (to, inc) => to -> (rights((me,to)) + inc) }
+        prepared.transfer(key, newv)(cbound.write)
+            .execAsTwitter().instrument(m.transfer_latency) onSuccess { _ =>
+          rights ++= newv map { case (to, n) => (me, to) -> n }
         } onFailure {
           case e =>
             Console.err.println(s"## error with transfer: ${e.getMessage}")
         }
-      } else {
-        m.transfers_failed += 1
-        TwFuture.Unit
       }
     }
 
@@ -436,11 +448,11 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       rs.first.exists(_.get(0, classOf[Boolean]))
     }
 
-    lazy val transfer: (UUID, (Int, Int), Int, Int) => (CLevel) => BoundOp[Unit] = {
+    lazy val transfer: (UUID, Map[Int, Int]) => (CLevel) => BoundOp[Unit] = {
       val ps = session.prepare(s"UPDATE $t SET $r=$r+? WHERE $k = ?")
-      (key: UUID, ij: (Int, Int), v: Int, prev: Int) => {
-        val pij = pack(ij._1, ij._2)
-        ps.bindWith(Map(pij -> v), key)(_ => ())
+      (key: UUID, transfers: Map[Int,Int]) => {
+        val packed = transfers map { case (to,v) => pack(me,to) -> v }
+        ps.bindWith(packed, key)(_ => ())
       }
     }
 

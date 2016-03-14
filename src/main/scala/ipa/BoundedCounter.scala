@@ -127,10 +127,12 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     lazy val balance_retries = metrics.create.counter("balance_retry")
     lazy val consume_others = metrics.create.counter("consume_other")
     val forwards = metrics.create.counter("forwards")
+    val forwarded_again = metrics.create.counter("forwarded_again")
 
     val transfers = metrics.create.counter("transfer")
     val transfer_reactive = metrics.create.counter("transfer_reactive")
     val transfers_failed = metrics.create.counter("transfer_failure")
+    val transferred_total = metrics.create.counter("transferred_total")
 
     val inits = metrics.create.counter("init")
     val incrs = metrics.create.counter("incr")
@@ -311,6 +313,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         if (reps.isEmpty) {
           TwFuture(false)
         } else {
+          if (forwarded) m.forwarded_again += 1
           m.forwards += 1
           val who = addrFromInt(reps.sample)
           TwFuture.exception(th.ForwardTo(who.getHostAddress))
@@ -334,6 +337,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       }
       m.transfers_failed += (pendingTransfers.size - ts.size)
       pendingTransfers.clear()
+      m.transferred_total += ts.values.sum
       if (ts.isEmpty) {
         m.transfers_failed += 1
         TwFuture.Unit

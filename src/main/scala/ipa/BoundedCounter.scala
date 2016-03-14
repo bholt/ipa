@@ -243,11 +243,11 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
           val total = myr + ts.map(_._2).sum
           // compute how much each should have if it was evenly distributed
           val each = total / (ts.size+1)
-          for ((i, r) <- ts) {
+          for ((who, v) <- ts) {
             // transfer the difference to get it up to the even distribution
-            val n = each - r
+            val n = each - v
             // transfer 'n' to 'i' in the background
-            pendingTransfers(n) = i
+            pendingTransfers(who) = n
             submit { transfer() }
           }
         }

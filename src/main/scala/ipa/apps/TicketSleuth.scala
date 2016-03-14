@@ -83,7 +83,7 @@ class TicketSleuth(val duration: FiniteDuration) extends {
       }
       f onSuccess { case _ => sem.release() }
       f onFailure { case e: Throwable =>
-        err.println(s"Error with $i (key: ${handle.key}, op: $op)\n  e.getMessage")
+        err.println(s"Error with $i (key: ${handle.key}, op: $op)\n  ${e.getMessage}")
         sys.exit(1)
       }
     }

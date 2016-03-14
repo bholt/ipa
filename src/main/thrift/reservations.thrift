@@ -66,6 +66,7 @@ struct BoundedCounterOp {
   1: CounterOpType op
   2: optional uuid key
   3: optional i64 n
+  4: bool forwarded = false
 }
 
 struct CounterResult {

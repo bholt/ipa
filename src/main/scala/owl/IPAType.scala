@@ -44,6 +44,7 @@ final case class Consistency(read: CLevel, write: CLevel = Consistency.Strong) e
       case _ => super.toString
     }
   }
+  def isStrong: Boolean = read == Strong && write == Strong
 }
 final case class Tolerance(error: Double) extends Bound {
   def delta(value: Long) = (value * error).toLong

@@ -193,7 +193,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     }
 
     def update_if_expired(): TwFuture[State] = {
-      if (expired) {
+      if (expired || cbound.isStrong) {
         m.expired += 1
         update() map { _ => this }
       } else {

@@ -42,7 +42,7 @@ class TicketSleuth(val duration: FiniteDuration) extends {
   def zipfID() = id(zipfDist.sample())
   def urandID() = id(Random.nextInt(nevents))
 
-  val tickets = new IPAPool("tickets") with IPAPool.StrongBounds
+  val tickets = IPAPool.fromNameAndBound("tickets", config.bound)
 
   def generate(): Unit = {
     tickets.create().await()

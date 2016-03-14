@@ -228,11 +228,21 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       rights((me, me)) = v
       prepared.set(key, me, me, v)(cbound.write).execAsTwitter() onSuccess { _ =>
         // in the background, see if we should re-balance
-        var myr = localRights(me)
-        for (i <- replicas; r = localRights(i); if myr > 2*r && myr/3 > 0) yield {
-          val t = myr/3
-          myr -= t
-          submit { transfer(t, i).map(_ => th.CounterResult()) }
+        val myr = localRights(me)
+        val rs = replicas
+        if (myr / rs.size > 0) {
+          // transfers: only those with significantly fewer rights
+          val ts = for (i <- rs; r = localRights(i); if myr > 2 * r) yield (i, r)
+
+          val total = myr + ts.map(_._2).sum
+          // compute how much each should have if it was evenly distributed
+          val each = total / (ts.size+1)
+          for ((i, r) <- ts) {
+            // transfer the difference to get it up to the even distribution
+            val n = each - r
+            // transfer 'n' to 'i' in the background
+            submit { transfer(n, i).map(_ => th.CounterResult()) }
+          }
         }
       }
     }

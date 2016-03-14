@@ -33,7 +33,7 @@ class RetwisTest extends {
         .map { _.flatten }
 
 
-    val ts = Await.result(fs, 2 seconds).toSeq
+    val ts = Await.result(fs, Duration.Inf).toSeq
 
     println(s"Tweets:\n- ${ts.mkString("\n- ")}")
     ts.length should be >= 1

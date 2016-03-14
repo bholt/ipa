@@ -86,6 +86,7 @@ object Connector {
 
     object tickets {
       object initial {
+        val venues = c.getInt("ipa.tickets.initial.venues")
         val events = c.getInt("ipa.tickets.initial.events")
         val remaining = c.getInt("ipa.tickets.initial.remaining")
       }

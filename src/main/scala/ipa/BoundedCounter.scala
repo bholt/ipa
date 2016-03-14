@@ -543,16 +543,25 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         }
 
       case Value =>
-        s submit {
-          for {
-            _ <- s.update_if_expired()
-          } yield {
-            m.reads += 1
-            if (ebound.isDefined) {
-              val i = s.interval
-              th.CounterResult(min = Some(i.min), max = Some(i.max))
-            } else {
-              th.CounterResult(value = Some(s.value))
+
+        def result =
+          if (ebound.isDefined) {
+            val i = s.interval
+            th.CounterResult(min = Some(i.min), max = Some(i.max))
+          } else {
+            th.CounterResult(value = Some(s.value))
+          }
+
+        if (!s.expired && !cbound.isStrong) {
+          // don't "wait in line", just grab a reasonably up-to-date value and go
+          TwFuture { result }
+        } else {
+          s submit {
+            for {
+              _ <- s.update_if_expired()
+            } yield {
+              m.reads += 1
+              result
             }
           }
         }

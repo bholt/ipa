@@ -265,10 +265,11 @@ def run_tickets(log):
 
             ipa_bound = ['consistency:strong', 'consistency:weakwrite'],
 
-            ipa_lease_period = ['0ms', '200ms'],
+            ipa_lease_period = ['200ms'],
             ipa_reservations_lease = ['10s'],
 
-            honeycomb_mode = ['normal', 'slowpoke_flat', 'google', 'amazon', 'flat5']
+            # honeycomb_mode = ['normal', 'slowpoke_flat', 'google', 'amazon', 'flat5']
+            honeycomb_mode = ['flat5', 'slowpoke_flat', 'amazon']
         ):
             a['containers'] = containers
 

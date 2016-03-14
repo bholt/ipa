@@ -19,6 +19,9 @@ implicit val space = KeySpace("bc_tests"); implicit val imps = CommonImplicits()
 val bc = new BoundedCounter("bc")
 
 
+import com.twitter.util.{Future => TwFuture, Await => TwAwait}
+implicit class TwFutureValue[T](f: TwFuture[T]) { def fv(): T = TwAwait.result(f) }
+
 val arthur = User(username = "tealuver", name = "Arthur Dent")
 val ford = User(username = "hastowel", name = "Ford Prefect")
 val zaphod = User(username = "froodyprez", name = "Zaphod Beeblebrox")

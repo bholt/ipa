@@ -138,6 +138,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     val reads = metrics.create.counter("read")
 
     val sync_proactive = metrics.create.counter("sync_proactive")
+    val sync_skipped = metrics.create.counter("sync_skipped")
     val sync_blocking = metrics.create.counter("sync_blocking")
     val cached = metrics.create.counter("cached")
     val expired = metrics.create.counter("expired")
@@ -545,8 +546,15 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
             if (s.should_sync_soon) {
               s submit {
-                m.sync_proactive += 1
-                s.sync().map(_ => th.CounterResult())
+                // double-check that we should still do sync
+                // (may have been done already)
+                if (s.should_sync_soon) {
+                  m.sync_proactive += 1
+                  s.sync().map(_ => th.CounterResult())
+                } else {
+                  m.sync_skipped += 1
+                  TwFuture.Unit
+                }
               }
             }
 

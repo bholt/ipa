@@ -136,12 +136,14 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     val decrs = metrics.create.counter("decr")
     val reads = metrics.create.counter("read")
 
-    val syncs = metrics.create.counter("sync")
+    val sync_proactive = metrics.create.counter("sync_proactive")
+    val sync_blocking = metrics.create.counter("sync_blocking")
     val cached = metrics.create.counter("cached")
     val expired = metrics.create.counter("expired")
 
     val consume_latency = metrics.create.timer("consume_latency")
     val get_latency = metrics.create.timer("get_latency")
+    lazy val sync_latency = metrics.create.timer("sync_latency")
     lazy val consume_other_latency = metrics.create.timer("consume_other_latency")
   }
 
@@ -250,11 +252,10 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     def sufficient(n: Int): Boolean = value - n >= min
 
     def sync(): TwFuture[Unit] = {
-      m.syncs += 1
       rights((me,me)) -= consumed(me)
       consumed(me) = 0
       prepared.sync(key, me, rights((me,me)), consumed(me))(CLevel.ALL)
-          .execAsTwitter()
+          .execAsTwitter().instrument(m.sync_latency)
     }
 
     def should_sync_soon: Boolean =
@@ -262,6 +263,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
     def sync_if_needed(n: Int): TwFuture[Unit] = {
       if (ebound.isDefined && consumed(me) + n >= maxConsumable) {
+        m.sync_blocking += 1
         sync()
       } else {
         TwFuture.Unit
@@ -291,6 +293,9 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         } else {
           m.forwards += 1
           val who = addrFromInt(reps.sample)
+
+          // TODO: do a transfer in the background so we don't have to forward next time
+
           TwFuture.exception(th.ForwardTo(who.getHostAddress))
         }
       } else if (cbound.write == Strong && !retrying) {
@@ -505,6 +510,14 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
             _ <- s.sync_if_needed(n)
             success <- s.decr(n)
           } yield {
+
+            if (s.should_sync_soon) {
+              s submit {
+                m.sync_proactive += 1
+                s.sync().map(_ => th.CounterResult())
+              }
+            }
+
             th.CounterResult(success = Some(success))
           }
         }

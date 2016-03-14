@@ -34,14 +34,17 @@ class BoundedCounterTests extends {
   import BoundedCounter._
 
   "BoundedCounter with StrongBounds" - {
-    val bc = new BoundedCounter("bc") with StrongBounds
+    err.println("start StrongBounds")
+    val bc = new BoundedCounter("bc_strong") with StrongBounds
     val c1 = bc(1.id)
 
     "be created" in {
+      err.println("strong: create")
       bc.create().await()
     }
 
     "be truncated" in {
+      err.println("strong: truncate")
       bc.truncate().await()
     }
 
@@ -75,9 +78,9 @@ class BoundedCounterTests extends {
         reservations.resetMetrics()
 
         err.println("initializing a bunch")
-        (2 to 10).map(i => bc(i.id).init(0)).bundle().await()
+        (0 to 10).map(i => bc(i.id).init(0)).bundle().await()
         err.println("incrementing a bunch")
-        (1 to 10).map(i => bc(i.id).incr(100)).bundle().await()
+        (0 to 10).map(i => bc(i.id).incr(100)).bundle().await()
 
         err.println("doing decrements")
         val results = {
@@ -198,13 +201,16 @@ class BoundedCounterTests extends {
         with ErrorBound { override val bound = error }
 
     val c1 = bc(1.id)
+    val n = 100
 
     "create and truncate" in {
       bc.create().await()
       bc.truncate().await()
     }
 
-    val n = 100
+    "init" in {
+      c1.init(0).futureValue
+    }
 
     "incr" in {
       c1.incr(n).futureValue

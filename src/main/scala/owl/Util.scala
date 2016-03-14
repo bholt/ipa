@@ -24,14 +24,14 @@ import scala.concurrent._
 import scala.concurrent.duration._
 import scala.util.{Failure, Random, Success, Try}
 
-trait FutureSerializer[T] {
+trait FutureSerializer {
 
-  var running: TwFuture[T] = null
+  var running: TwFuture[Any] = null
 
-  def submit(task: => TwFuture[T]): TwFuture[T] = synchronized {
+  def submit[T](task: => TwFuture[T]): TwFuture[T] = synchronized {
     if (running == null || running.poll.isDefined) {
       running = task
-      running
+      running.asInstanceOf[TwFuture[T]]
     } else {
       val pr = TwPromise[T]()
       running ensure {

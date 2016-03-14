@@ -150,7 +150,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
   val me: Int = this_host_hash
 
-  class State(val key: UUID, var min: Int = 0, var version: Int = 0) extends FutureSerializer[th.CounterResult] {
+  class State(val key: UUID, var min: Int = 0, var version: Int = 0) extends FutureSerializer {
     var lastReadAt = 0L
     var rights = new mutable.HashMap[(Int, Int), Int].withDefaultValue(0)
     var consumed = new mutable.HashMap[Int, Int].withDefaultValue(0)

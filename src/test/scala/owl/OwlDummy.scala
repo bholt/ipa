@@ -180,9 +180,9 @@ class OwlDummy extends {
   override implicit val space = KeySpace("owl_dummy")
 } with OwlWordSpec with OwlService {
 
-  case class State() extends FutureSerializer[Int] {
-    var counter = 0
-  }
+//  case class State() extends FutureSerializer {
+//    var counter = 0
+//  }
 
   createKeyspace()
 
@@ -213,25 +213,23 @@ class OwlDummy extends {
 
     counter.createTwitter().await()
 
-    val c1 = counter(1.id)
+//    val st = State()
 
-    val st = State()
-
-    def work(i: Int): TwFuture[Int] = {
-      Console.err.println(s"started $i (${st.counter})")
-      counter.incrTwitter(Consistency.Strong)(1.id, 1) map { _ =>
-        st.counter += 1
-        Console.err.println(s"finished $i (${st.counter})")
-        st.counter
-      }
-    }
-
-    st submit { work(1) }
-    st submit { work(2) }
-    st submit { work(3) }
-
-
-//    val myset = new SetBase with RushedSize with RushedContains with WeakAdd {
+//    def work(i: Int): TwFuture[Int] = {
+//      Console.err.println(s"started $i (${st.counter})")
+//      counter.incrTwitter(Consistency.Strong)(1.id, 1) map { _ =>
+//        st.counter += 1
+//        Console.err.println(s"finished $i (${st.counter})")
+//        st.counter
+//      }
+//    }
+//
+//    st submit { work(1) }
+//    st submit { work(2) }
+//    st submit { work(3) }
+//
+//
+////    val myset = new SetBase with RushedSize with RushedContains with WeakAdd {
 //      val name = "myset"
 //      val sizeBound = 50 millis
 //      val containsBound = 50 millis

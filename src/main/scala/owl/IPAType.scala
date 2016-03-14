@@ -80,6 +80,7 @@ class Inconsistent[T](value: T) extends IPAType {
   def consistency = Consistency.Weak
   /** get the value anyway (should we call it 'endorse'?)*/
   def get: T = value
+  override def toString = s"Inconsistent($get)"
 }
 object Inconsistent { def apply[T](value: T) = new Inconsistent(value) }
 

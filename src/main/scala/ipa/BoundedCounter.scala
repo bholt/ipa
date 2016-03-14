@@ -64,7 +64,7 @@ object BoundedCounter {
   trait ErrorBound extends Bounds { self: BoundedCounter =>
     def bound: Tolerance
     override val cbound = Consistency(CLevel.ONE, CLevel.ONE)
-    override val ebound = Some(bound)
+    override def ebound = Some(bound)
 
     override def meta = Metadata(Some(bound))
 

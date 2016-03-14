@@ -89,7 +89,7 @@ object IPAPool {
 
     private def pool_bound = bound // rename so we can pass it in to BoundedCounter
 
-    val bc = new BoundedCounter(name+"_bc")
+    lazy val bc = new BoundedCounter(name+"_bc")
         with BoundedCounter.ErrorBound { override val bound = pool_bound }
 
     override def counter = bc

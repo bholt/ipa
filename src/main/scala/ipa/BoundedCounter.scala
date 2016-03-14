@@ -386,7 +386,13 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
   val states = new StateTable
 
   override def create() = DataType.createWithMetadata(name, states, meta.toString).asScala
-  override def truncate() = states.truncate().future().unit
+  override def truncate() = {
+    states.truncate().future().unit flatMap { _ =>
+      reservations.clients.values map { c =>
+        c.boundedCounter(table, th.BoundedCounterOp(th.CounterOpType.Truncate))
+      } bundle() asScala
+    } unit
+  }
 
   object prepared {
     private val (t, k, r, c) = (s"${space.name}.${states.tableName}", states.key.name, states.rights.name, states.consumed.name)
@@ -481,11 +487,14 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
   def handle(op: th.BoundedCounterOp): TwFuture[th.CounterResult] = {
     import th.CounterOpType._
-    val key = op.key.toUUID
 
-    val s = state(key)
+    lazy val s = state(op.key.get.toUUID)
 
     op.op match {
+      case Truncate =>
+        Console.err.println(s"truncated $table")
+        localStates.clear()
+        TwFuture(th.CounterResult())
 
       case Init =>
         s submit {
@@ -544,19 +553,17 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
   class Handle(val key: UUID, client: ReservationService = reservations.client) {
 
-    def table = th.Table(space.name, name)
-
     import ipa.thrift.CounterOpType._
     import th.{BoundedCounterOp => Op}
 
     def init(min: Int = 0): TwFuture[Unit] =
-      client.boundedCounter(table, Op(Init, key.toString, Some(min))).unit
+      client.boundedCounter(table, Op(Init, Some(key.toString), Some(min))).unit
 
     def incr(by: Int = 1): TwFuture[Unit] =
-      client.boundedCounter(table, Op(Incr, key.toString, Some(by))).unit
+      client.boundedCounter(table, Op(Incr, Some(key.toString), Some(by))).unit
 
     def decr(by: Int = 1): TwFuture[IPADecrType[Boolean]] = {
-      client.boundedCounter(table, Op(Decr, key.toString, Some(by)))
+      client.boundedCounter(table, Op(Decr, Some(key.toString), Some(by)))
           .map(decrResult)
           .rescue {
             case th.ForwardTo(who) =>
@@ -565,7 +572,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     }
 
     def value(): TwFuture[IPAValueType[Int]] =
-      client.boundedCounter(table, Op(Value, key.toString)).map(valueResult)
+      client.boundedCounter(table, Op(Value, Some(key.toString))).map(valueResult)
   }
 
   def apply(key: UUID) = new Handle(key)

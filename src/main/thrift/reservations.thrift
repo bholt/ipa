@@ -60,11 +60,11 @@ struct SetOp {
   3: optional Primitive value
 }
 
-enum CounterOpType { INIT, INCR, DECR, VALUE }
+enum CounterOpType { INIT, INCR, DECR, VALUE, TRUNCATE }
 
 struct BoundedCounterOp {
   1: CounterOpType op
-  2: uuid key
+  2: optional uuid key
   3: optional i64 n
 }
 

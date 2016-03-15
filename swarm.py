@@ -118,7 +118,7 @@ def add_keys(args=None, opt=None):
         cons = opt.containers
 
     for c in cons:
-        puts(colored.magenta("<<#{c}>> ", bold=True) + "add keys")
+        puts(colored.magenta("[#{c}]] ", bold=True) + "add keys")
         ex = swarm_exec(c)
         ex.sh(c='mkdir -p ~/.ssh')
         ex.sh(c='cat > ~/.ssh/id_rsa.pub', _in=open(expand("~/.ssh/id_rsa.pub")))
@@ -136,7 +136,7 @@ def cass(args=None, opt=None):
                 puts(re.sub(pattern, "#{colored.red(pattern)}", line.strip()))
     elif args[0] == 'exec':
         for node in containers('owl_cass'):
-            puts(colored.magenta("\n<<#{node}>> ", bold=True) + ' '.join(args))
+            puts(colored.magenta("\n[#{node}] ", bold=True) + ' '.join(args))
             swarm_exec(node)(*args[1:], _ok_code=[0,1], **LIVE)
 
 
@@ -166,13 +166,13 @@ def reservations(args=None, opt=None):
             # when running as experiment, run with whatever's built-in to the image
             swarm("exec", "-d", c, "bash", "-c", fmt("exec bin/owl -main ipa.ReservationServer #{args} >/opt/docker/service.log 2>&1"))
         else:
-            puts(colored.magenta("<<#{c}>> ", bold=True) + "ipa.ReservationServer #{args}")
+            puts(colored.magenta("[#{c}] ", bold=True) + "ipa.ReservationServer #{args}")
             script = fmt('source ~/.bashrc; up; cd /src/owl; exec sbt "run-main ipa.ReservationServer" #{args} >/opt/docker/service.log 2>&1')
             o = swarm("exec", "-d", c, "bash", "-c", script)
 
     # wait for all reservations to be started
     for c in cons:
-        if verbose: puts(colored.magenta("<<#{c}>> ", bold=True), newline=False, flush=True)
+        if verbose: puts(colored.magenta("[#{c}] ", bold=True), newline=False, flush=True)
         while not reservation_server_ready(c):
             time.sleep(0.5)
             if verbose: puts(".", newline=False, flush=True)

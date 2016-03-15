@@ -269,9 +269,17 @@ def run_tickets(log):
             ipa_reservations_lease = ['10s'],
 
             # honeycomb_mode = ['normal', 'slowpoke_flat', 'google', 'amazon', 'flat5']
-            honeycomb_mode = ['flat5', 'slowpoke_flat', 'amazon']
+            honeycomb_mode = ['flat5', 'slowpoke_flat', 'google', 'amazon']
         ):
             a['containers'] = containers
+
+            if a['ipa_bound'] == 'consistency:strong' and a['ipa_lease_period'] != '0ms':
+                pass
+
+            if 'strong' in a['ipa_bound']:
+                a['ipa_consistency'] = 'strong'
+            elif 'weak' in a['ipa_bound'] or 'tolerance' in a['ipa_bound']:
+                a['ipa_consistency'] = 'weak'
 
             ct = count_records(table, ignore=['containers'],
                                valid='out_actual_time_length is not null', **a)

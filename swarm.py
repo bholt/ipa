@@ -118,7 +118,7 @@ def add_keys(args=None, opt=None):
         cons = opt.containers
 
     for c in cons:
-        puts(colored.magenta("[#{c}]] ", bold=True) + "add keys")
+        puts(colored.magenta("[#{c}] ", bold=True) + "add keys")
         ex = swarm_exec(c)
         ex.sh(c='mkdir -p ~/.ssh')
         ex.sh(c='cat > ~/.ssh/id_rsa.pub', _in=open(expand("~/.ssh/id_rsa.pub")))

@@ -95,14 +95,19 @@ class TicketSleuth(val duration: FiniteDuration) extends {
 } with OwlService {
 
   object m {
-    val takeLatency = metrics.create.timer("take_latency")
-    val readLatency = metrics.create.timer("read_latency")
+    val purchaseLatency = metrics.create.timer("op_purchase")
+    val viewLatency = metrics.create.timer("op_view")
+    val browseLatency = metrics.create.timer("op_browse")
+    val createLatency = metrics.create.timer("op_create")
 
     val take_success = metrics.create.counter("take_success")
     val take_failed = metrics.create.counter("take_failure")
 
     val remaining = metrics.create.histogram("remaining")
     val remaining_error = metrics.create.histogram("remaining")
+    val browse_size = metrics.create.histogram("browse_size")
+
+    val op_errors = metrics.create.counter("op_errors")
   }
 
   val eventZipf: () => UUID = {
@@ -190,6 +195,7 @@ class TicketSleuth(val duration: FiniteDuration) extends {
                 tickets(e).remaining().map(ct => (e, name, ct))
               } bundle()
     } yield {
+      m.browse_size << results.size
       results map { case (id, name, ct) =>
         record(ct)
         s"$name: ${ct.get} tickets remaining"
@@ -227,15 +233,20 @@ class TicketSleuth(val duration: FiniteDuration) extends {
       sem.acquire()
       val op = weightedSample(mix)
       val f = op match {
-        case 'purchase => purchaseTicket(eventZipf())
-        case 'view => viewEvent(cdefault)(eventZipf())
-        case 'browse => browseEventsByVenue(cdefault)(Gen.randomVenue().id)
-        case 'create => createEvent(cdefault)(UUID.randomUUID())
+        case 'purchase =>
+          purchaseTicket(eventZipf()).instrument(m.purchaseLatency)
+        case 'view =>
+          viewEvent(cdefault)(eventZipf()).instrument(m.viewLatency)
+        case 'browse =>
+          browseEventsByVenue(cdefault)(Gen.randomVenue().id).instrument(m.browseLatency)
+        case 'create =>
+          createEvent(cdefault)(UUID.randomUUID()).instrument(m.createLatency)
       }
-      f onSuccess { case _ => sem.release() }
-      f onFailure { case e: Throwable =>
+      f onSuccess { case _ =>
+        sem.release()
+      } onFailure { case e: Throwable =>
         Console.err.println(s"Error with $op\n  ${e.getMessage}")
-        sys.exit(1)
+        m.op_errors += 1
       }
     }
 

@@ -45,7 +45,7 @@ object Connector {
     def replication_factor = c.getInt("ipa.replication.factor")
 
     private def consistencyFromString(s: String) = s match {
-      case "strong" => ConsistencyLevel.ALL
+      case "strong" => ConsistencyLevel.QUORUM
       case "weak" => ConsistencyLevel.ONE
       case e => throw new RuntimeException(s"invalid consistency in config: $e")
     }

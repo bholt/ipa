@@ -101,7 +101,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   }
 
   def init(): ReservationServer = {
-    Console.err.println("Creating allocations table")
+    Console.err.println("# Create allocations table")
     if (config.do_reset) blocking {
       session.execute(s"DROP TABLE IF EXISTS ${space.name}.${alloc.table.tableName}")
     }

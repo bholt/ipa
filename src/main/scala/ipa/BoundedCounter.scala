@@ -520,7 +520,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
     op.op match {
       case Truncate =>
-        Console.err.println(s"truncated $table")
+        Console.err.println(s"# Truncated $table")
         localStates.clear()
         TwFuture(th.CounterResult())
 

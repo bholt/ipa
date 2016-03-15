@@ -7,7 +7,7 @@ import com.datastax.driver.core.Row
 import com.datastax.driver.core.utils.UUIDs
 import com.websudos.phantom.builder.query.prepared.?
 import com.websudos.phantom.connectors.KeySpace
-import com.websudos.phantom.dsl.{UUID, _}
+import com.websudos.phantom.dsl._
 import com.websudos.phantom.keys.PartitionKey
 import ipa.{BoundedCounter, IPACounter, IPAPool}
 import org.apache.commons.math3.distribution.{NormalDistribution, UniformIntegerDistribution, ZipfDistribution}
@@ -58,7 +58,7 @@ case class Venue(
 )
 
 class VenueTable extends CassandraTable[VenueTable, Venue] {
-  object id extends UUIDColumn(this) with PrimaryKey[UUID]
+  object id extends UUIDColumn(this) with PartitionKey[UUID]
   object name extends StringColumn(this)
   object location extends StringColumn(this)
   object capacity extends IntColumn(this)
@@ -70,20 +70,20 @@ case class Event(
     id: UUID,
     venue: UUID,
     name: String = s"${Gen.WORDS.sample.capitalize} ${Gen.EVENT_TYPES.sample} 2016",
-    desc: String = Gen.randomText(10),
+    description: String = Gen.randomText(10),
     created: DateTime = DateTime.now()
 ) {
-  override def toString = s"Event($id, venue: $venue, $name: $desc)"
+  override def toString = s"Event($id, venue: $venue, $name: $description)"
 }
 
 class EventTable extends CassandraTable[EventTable, Event] {
-  object id extends UUIDColumn(this) with PrimaryKey[UUID]
+  object id extends UUIDColumn(this) with PrimaryKey[UUID] with ClusteringOrder[UUID] with Descending
   object venue extends UUIDColumn(this) with PartitionKey[UUID]
   object name extends StringColumn(this)
-  object desc extends StringColumn(this)
-  object created extends DateTimeColumn(this) with ClusteringOrder[DateTime]
+  object description extends StringColumn(this)
+  object created extends DateTimeColumn(this) with ClusteringOrder[DateTime] with Ascending
   override val tableName = "events"
-  override def fromRow(r: Row) = Event(id(r), venue(r), name(r), desc(r), created(r))
+  override def fromRow(r: Row) = Event(id(r), venue(r), name(r), description(r), created(r))
 }
 
 class TicketSleuth(val duration: FiniteDuration) extends {
@@ -114,27 +114,27 @@ class TicketSleuth(val duration: FiniteDuration) extends {
 
   object prepared {
     lazy val venueInsert: (Venue) => BoundOp[Unit] = {
-      val ps = session.prepare(s"INSERT INTO ${venues.tableName} (${venues.id.name}, ${venues.name.name}, ${venues.location.name}, ${venues.capacity.name}) VALUES (?, ?, ?, ?)")
+      val ps = session.prepare(s"INSERT INTO ${space.name}.${venues.tableName} (${venues.id.name}, ${venues.name.name}, ${venues.location.name}, ${venues.capacity.name}) VALUES (?, ?, ?, ?)")
       (v: Venue) => ps.bindWith(v.id, v.name, v.location, v.capacity)(_ => ())(CLevel.QUORUM)
     }
 
     lazy val venueCapacity: (UUID) => (CLevel) => BoundOp[Int] = {
-      val ps = session.prepare(s"SELECT ${venues.capacity.name} FROM ${venues.tableName} WHERE ${venues.id.name} = ?")
+      val ps = session.prepare(s"SELECT ${venues.capacity.name} FROM ${space.name}.${venues.tableName} WHERE ${venues.id.name} = ?")
       (id: UUID) => ps.bindWith(id)(r => venues.capacity(r.first.get))
     }
 
     lazy val eventInsert: (Event) => (CLevel) => BoundOp[Unit] = {
-      val ps = session.prepare(s"INSERT INTO ${events.tableName} (${events.id.name}, ${events.venue.name}, ${events.name.name}, ${events.desc.name}, ${events.created.name}) VALUES (?, ?, ?, ?, ?)")
-      (e: Event) => ps.bindWith(e.id, e.venue, e.name, e.desc, e.created)(_ => ())
+      val ps = session.prepare(s"INSERT INTO ${space.name}.${events.tableName} (${events.id.name}, ${events.venue.name}, ${events.name.name}, ${events.description.name}, ${events.created.name}) VALUES (?, ?, ?, ?, ?)")
+      (e: Event) => ps.bindWith(e.id, e.venue, e.name, e.description, e.created)(_ => ())
     }
 
     lazy val eventGet: (UUID) => (CLevel) => BoundOp[Event] = {
-      val ps = session.prepare(s"SELECT * FROM ${events.tableName} WHERE ${events.id.name} = ? LIMIT 1")
+      val ps = session.prepare(s"SELECT * FROM ${space.name}.${events.tableName} WHERE ${events.id.name} = ? LIMIT 1")
       (id: UUID) => ps.bindWith(id)(rs => events.fromRow(rs.first.get))
     }
 
     lazy val eventsByVenue: (UUID, Int) => (CLevel) => BoundOp[Iterator[(UUID, String)]] = {
-      val ps = session.prepare(s"SELECT ${events.id.name}, ${events.name.name} FROM ${events.tableName} WHERE ${events.venue.name} = ? LIMIT ?")
+      val ps = session.prepare(s"SELECT ${events.id.name}, ${events.name.name} FROM ${space.name}.${events.tableName} WHERE ${events.venue.name} = ? LIMIT ?")
       (venue: UUID, limit: Int) => ps.bindWith(venue, limit) { rs =>
         rs.iterator().map { r => (events.id(r), events.name(r)) }
       }
@@ -151,13 +151,15 @@ class TicketSleuth(val duration: FiniteDuration) extends {
 
     // generate venues
     println(s">>> generating ${initial.venues} venues")
-    (0 to initial.venues) map { i =>
-      prepared.venueInsert(Venue(i.id)).execAsTwitter()
-    } bundle() await()
+    (0 to initial.venues)
+        .map { i => prepared.venueInsert(Venue(i.id)).execAsTwitter() }
+        .bundle().await()
 
     // generate events
     println(s">>> generating ${initial.events} events")
-    (0 to initial.events).map(i => createEvent(CLevel.QUORUM)(i.id)).bundle().await()
+    (0 to initial.events)
+        .map { i => createEvent(CLevel.QUORUM)(i.id)}
+        .bundle().await()
   }
 
   val mix = Map(
@@ -172,7 +174,7 @@ class TicketSleuth(val duration: FiniteDuration) extends {
   def createEvent(c: CLevel)(id: UUID): TwFuture[Unit] = {
     val e = Event(id, Gen.randomVenue().id)
     for {
-      n <- prepared.venueCapacity(e.id)(c).execAsTwitter()
+      n <- prepared.venueCapacity(e.venue)(c).execAsTwitter()
       _ <- tickets.init(e.id, n) join prepared.eventInsert(e)(c).execAsTwitter()
     } yield ()
   }
@@ -196,7 +198,7 @@ class TicketSleuth(val duration: FiniteDuration) extends {
       (e, ct) <- prepared.eventGet(id)(c).execAsTwitter() join tickets(id).remaining()
     } yield {
       record(ct)
-      s"Event: ${e.name}, tickets remaining: ${ct.get}\n---\n${e.desc}"
+      s"Event: ${e.name}, tickets remaining: ${ct.get}\n---\n${e.description}"
     }
   }
 

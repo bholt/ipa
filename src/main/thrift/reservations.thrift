@@ -67,7 +67,7 @@ struct BoundedCounterOp {
   2: optional uuid key
   3: optional i64 n
   4: bool forwarded = false
-  5: optional i64 startTime
+  5: optional i64 estTravelTime
 }
 
 struct CounterResult {
@@ -76,6 +76,7 @@ struct CounterResult {
   3: optional i32 min
   4: optional i32 max
   5: optional string consistency
+  6: optional i64 processingTime
 }
 
 service ReservationService {

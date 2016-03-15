@@ -8,7 +8,7 @@ import java.util.function.Function
 
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
 import com.twitter.concurrent.AsyncQueue
-import com.twitter.util.{Time, Future => TwFuture, Promise => TwPromise}
+import com.twitter.util.{Time, Future => TwFuture, Duration => TwDuration}
 import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.dsl._
 import ipa.thrift.ReservationException
@@ -148,6 +148,8 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     lazy val consume_others = metrics.create.counter("consume_other")
     val forwards = metrics.create.counter("forwards")
     val forwarded_again = metrics.create.counter("forwarded_again")
+
+    lazy val travel_time = metrics.create.histogram("travel_time")
 
     val transfers = metrics.create.counter("transfer")
     val transfer_reactive = metrics.create.counter("transfer_reactive")
@@ -303,11 +305,11 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       Int.MaxValue
     }
 
-    def localRush[T](startTime: Option[Long], cdefault: CLevel)(exec: CLevel => TwFuture[T]): TwFuture[Inconsistent[T]] = {
+    def localRush[T](estTravelTime: Option[Long], cdefault: CLevel)(exec: CLevel => TwFuture[T]): TwFuture[Inconsistent[T]] = {
       lbound match {
         case Some(Latency(total)) =>
-          val elapsed = Time.now - Time.fromNanoseconds(startTime.get)
-          val remain = total - (elapsed * 2)
+          val ett = TwDuration.fromNanoseconds(estTravelTime.get)
+          val remain = total - (ett * 2)
           rush(remain) { exec }
         case None =>
           exec(cdefault).map(Inconsistent(_))
@@ -549,7 +551,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
           for {
             _ <- s.update_if_expired()
             _ <- s.sync_if_needed(n)
-            r <- s.localRush(op.startTime, cbound.write) { c: CLevel =>
+            r <- s.localRush(op.estTravelTime, cbound.write) { c: CLevel =>
               s.decr(n, clevel = c, forwarded = op.forwarded)
             }
           } yield {
@@ -582,7 +584,8 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         }
 
       case Value =>
-        s.localRush(op.startTime, cbound.read) {
+        val arrival = System.nanoTime
+        s.localRush(op.estTravelTime, cbound.read) {
           case Strong =>
             s submit { s.update(Strong) map { _ => s.value } }
           case Weak =>
@@ -599,19 +602,23 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
           case c =>
             TwFuture.exception(ReservationException(
               s"Unsupported consistency level: $c"))
-        } map {
-          case v: Rushed[_] =>
-            th.CounterResult(
-              value = Some(v.get),
-              consistency = Some(v.consistency.name)
-            )
-          case v: Inconsistent[_] =>
-            if (ebound.isDefined) {
-              val i = s.interval
-              th.CounterResult(min = Some(i.min), max = Some(i.max))
-            } else {
-              th.CounterResult(value = Some(s.value))
-            }
+        } map { r =>
+          val elapsed = System.nanoTime - arrival
+          r match {
+            case v: Rushed[_] =>
+              th.CounterResult(
+                value = Some(v.get),
+                consistency = Some(v.consistency.name),
+                processingTime = Some(elapsed)
+              )
+            case v: Inconsistent[_] =>
+              if (ebound.isDefined) {
+                val i = s.interval
+                th.CounterResult(min = Some(i.min), max = Some(i.max))
+              } else {
+                th.CounterResult(value = Some(s.value))
+              }
+          }
         }
 
       case EnumUnknownCounterOpType(e) =>
@@ -624,8 +631,6 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     import ipa.thrift.CounterOpType._
     import th.{BoundedCounterOp => Op}
 
-    private def startTime: Option[Long] = lbound map { _ => Time.now.inNanoseconds }
-
     def init(min: Int = 0): TwFuture[Unit] =
       client.boundedCounter(table, Op(Init, Some(key.toString), Some(min))).unit
 
@@ -634,7 +639,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
 
     def decr(by: Int = 1, forwarded: Boolean = false): TwFuture[IPADecrType[Boolean]] = {
       client.boundedCounter(table,
-        Op(Decr, Some(key.toString), Some(by), forwarded, startTime))
+        Op(Decr, Some(key.toString), Some(by), forwarded, estTravelTime))
           .map(decrResult)
           .rescue {
             case th.ForwardTo(who) =>
@@ -643,10 +648,22 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
           }
     }
 
-    def value(): TwFuture[IPAValueType[Int]] =
+    private def estTravelTime: Option[Long] = lbound map { _ =>
+      m.travel_time.getSnapshot.getMean.toLong
+    }
+
+    def value(): TwFuture[IPAValueType[Int]] = {
+      val startTime = System.nanoTime
       client.boundedCounter(table,
-        Op(Value, Some(key.toString), startTime = startTime)
-      ).map(valueResult)
+        Op(Value, Some(key.toString), estTravelTime = estTravelTime)
+      ).map { r =>
+        r.processingTime foreach { t =>
+            val elapsed = System.nanoTime - startTime
+          m.travel_time << (elapsed - t) / 2
+        }
+        r
+      }.map(valueResult)
+    }
   }
 
   def apply(key: UUID) = new Handle(key)

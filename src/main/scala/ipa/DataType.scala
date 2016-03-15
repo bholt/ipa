@@ -104,7 +104,7 @@ trait RushImpl { this: DataType =>
         case (Throw(e), remaining) =>
           val msg = s"Error inside first attempt: ${e.getMessage}"
           Console.err.println(msg)
-          TwFuture.exception(ReservationException(msg))
+          TwFuture.exception(e)
       }
     }
   }

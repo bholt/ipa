@@ -315,37 +315,23 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     }
 
     def decr(n: Int = 1, retrying: Boolean = false,
-        forwarded: Boolean = false,
-        startTime: Option[Long] = None): TwFuture[Inconsistent[Boolean]] =
+        clevel: CLevel = cbound.write,
+        forwarded: Boolean = false): TwFuture[Boolean] =
     {
       if (!retrying) m.decrs += 1
 
       if (localRights() >= n) {
         val v = consumed(me) + n
         consumed(me) = v
-        localRush(startTime, cbound.write){ c: CLevel =>
-          prepared.consume(key, me, v)(c).execAsTwitter().map(_ => true)
-        }.instrument(m.consume_latency)
-          .onSuccess { _ =>
-            if (forwarded) {
-              // try to find who we were forwarded from
-              val mr = localRights(me)
-              val ts = for (i <- replicas; r = localRights(i); if 2*r < mr) yield (i, r)
-              if (ts.nonEmpty) {
-                val who = ts.minBy(_._2)._1
-                pendingTransfers(who) = mr / 2
-                submit {
-                  m.transfer_reactive += 1
-                  transfer()
-                }
-              }
-            }
-          }
+        prepared.consume(key, me, v)(clevel)
+          .execAsTwitter().map(_ => true)
+          .instrument(m.consume_latency)
+
       } else if (sufficient(n)) {
         // find replicas with rights available
         val reps = for {i <- replicas if localRights(i) >= n} yield i
         if (reps.isEmpty) {
-          TwFuture(Inconsistent(false))
+          TwFuture(false)
         } else {
           if (forwarded) m.forwarded_again += 1
           m.forwards += 1
@@ -355,9 +341,9 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       } else if (lbound.isEmpty && cbound.write == Strong && !retrying) {
         // if this is supposed to be Strong consistency,
         // then we have to try bypassing the cache to ensure we find any available
-        update() flatMap { _ => decr(n, retrying = true) }
+        update(clevel) flatMap { _ => decr(n, retrying = true, clevel = clevel) }
       } else {
-        TwFuture(Inconsistent(false))
+        TwFuture(false)
       }
     }
 
@@ -387,38 +373,22 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       }
     }
 
-    def balance(promise: TwPromise[Unit] = null): TwPromise[Unit] = {
-      val pr = if (promise != null) promise else TwPromise[Unit]()
-      val flatRights = replicas map { localRights(_) }
-      val total = flatRights.sum
-      assert(total == value, s"balance: total($total) != value($value)")
-      val n = flatRights.size
-
-      val balanced =
-        replicas.zipWithIndex map { case (h, i) =>
-          val (each, remain) = (total / n, total % n)
-          (h,h) -> (each + (if (i < remain) 1 else 0))
-        } toMap
-
-      consumed.clear()
-      rights.clear()
-      consumed ++= replicas.map(_ -> 0).toMap
-      rights ++= balanced
-      version += 1
-
-      prepared.balance(this)(cbound.write).execAsTwitter() onSuccess { succeeded =>
-        if (succeeded) {
-          m.balances += 1
-          pr.setDone()
-        } else {
-          // retry
-          m.balance_retries += 1
-          update() flatMap { _ => balance(pr) }
+    def balance(): TwFuture[Unit] = {
+      // try to find who we were forwarded from
+      val mr = localRights(me)
+      val ts = for (i <- replicas; r = localRights(i); if 2*r < mr) yield (i, r)
+      if (ts.nonEmpty) {
+        val who = ts.minBy(_._2)._1
+        pendingTransfers(who) = mr / 2
+        submit {
+          m.transfer_reactive += 1
+          transfer()
         }
+      } else {
+        TwFuture.Unit
       }
-
-      pr
     }
+
   }
 
   object State {
@@ -579,8 +549,14 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
           for {
             _ <- s.update_if_expired()
             _ <- s.sync_if_needed(n)
-            r <- s.decr(n, forwarded = op.forwarded, startTime = op.startTime)
+            r <- s.localRush(op.startTime, cbound.write) { c: CLevel =>
+              s.decr(n, clevel = c, forwarded = op.forwarded)
+            }
           } yield {
+
+            if (op.forwarded) {
+              s.balance()
+            }
 
             if (s.should_sync_soon) {
               s submit {
@@ -648,6 +624,8 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     import ipa.thrift.CounterOpType._
     import th.{BoundedCounterOp => Op}
 
+    private def startTime: Option[Long] = lbound map { _ => Time.now.inNanoseconds }
+
     def init(min: Int = 0): TwFuture[Unit] =
       client.boundedCounter(table, Op(Init, Some(key.toString), Some(min))).unit
 
@@ -655,7 +633,8 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       client.boundedCounter(table, Op(Incr, Some(key.toString), Some(by))).unit
 
     def decr(by: Int = 1, forwarded: Boolean = false): TwFuture[IPADecrType[Boolean]] = {
-      client.boundedCounter(table, Op(Decr, Some(key.toString), Some(by), forwarded))
+      client.boundedCounter(table,
+        Op(Decr, Some(key.toString), Some(by), forwarded, startTime))
           .map(decrResult)
           .rescue {
             case th.ForwardTo(who) =>
@@ -665,7 +644,9 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     }
 
     def value(): TwFuture[IPAValueType[Int]] =
-      client.boundedCounter(table, Op(Value, Some(key.toString))).map(valueResult)
+      client.boundedCounter(table,
+        Op(Value, Some(key.toString), startTime = startTime)
+      ).map(valueResult)
   }
 
   def apply(key: UUID) = new Handle(key)

@@ -103,6 +103,11 @@ class TicketSleuth(val duration: FiniteDuration) extends {
     val take_success = metrics.create.counter("take_success")
     val take_failed = metrics.create.counter("take_failure")
 
+    val readStrong = metrics.create.counter("read_strong")
+    val readWeak   = metrics.create.counter("read_weak")
+    val takeStrong = metrics.create.counter("take_strong")
+    val takeWeak   = metrics.create.counter("take_weak")
+
     val remaining = metrics.create.histogram("remaining")
     val remaining_error = metrics.create.histogram("remaining")
     val browse_size = metrics.create.histogram("browse_size")
@@ -177,6 +182,11 @@ class TicketSleuth(val duration: FiniteDuration) extends {
 
   def record(remaining: Inconsistent[Int]): Unit = {
     m.remaining << remaining.get
+    remaining.consistency match {
+      case Strong => m.readStrong += 1
+      case Weak => m.readWeak += 1
+      case c => sys.error(s"Unknown consistency level: $c")
+    }
   }
 
   def createEvent(c: CLevel)(id: UUID): TwFuture[Unit] = {
@@ -216,11 +226,16 @@ class TicketSleuth(val duration: FiniteDuration) extends {
 
   def purchaseTicket(id: UUID): TwFuture[Seq[UUID]] = {
     for {
-      success <- tickets(id).take(1)
+      ids <- tickets(id).take(1)
     } yield {
-      if (success.get.isEmpty) m.take_failed += 1
+      ids.consistency match {
+        case Strong => m.takeStrong += 1
+        case Weak => m.takeWeak += 1
+        case c => sys.error(s"Unknown consistency level: $c")
+      }
+      if (ids.get.isEmpty) m.take_failed += 1
       else m.take_success += 1
-      success.get
+      ids.get
     }
   }
 

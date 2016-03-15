@@ -192,15 +192,15 @@ class TicketSleuth(val duration: FiniteDuration) extends {
   def browseEventsByVenue(c: CLevel)(venue: UUID): TwFuture[Seq[String]] = {
     for {
       events <- prepared.eventsByVenue(venue, 10)(c).execAsTwitter()
-      results <- events map { case (e,name) =>
-                tickets(e).remaining().map(ct => (e, name, ct))
-              } bundle()
+//      results <- events map { case (e,name) =>
+//                tickets(e).remaining().map(ct => (e, name, ct))
+//              } bundle()
     } yield {
-      m.browse_size << results.size
-      results map { case (id, name, ct) =>
-        record(ct)
-        s"$name: ${ct.get} tickets remaining"
-      }
+      m.browse_size << events.size
+      events map { case (id, name) =>
+        // record(ct)
+        name
+      } toSeq
     }
   }
 

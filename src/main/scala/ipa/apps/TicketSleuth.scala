@@ -184,7 +184,8 @@ class TicketSleuth(val duration: FiniteDuration) extends {
     Gen.venueMap(id) = e.venue
     for {
       n <- prepared.venueCapacity(e.venue)(c).execAsTwitter()
-      _ <- tickets.init(e.id, n) join prepared.eventInsert(e)(c).execAsTwitter()
+      _ <- tickets.init(e.id, n)
+      _ <- prepared.eventInsert(e)(c).execAsTwitter()
     } yield ()
   }
 

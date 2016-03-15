@@ -1,7 +1,7 @@
 package ipa.apps
 
 import java.util.UUID
-import java.util.concurrent.Semaphore
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, Semaphore}
 
 import com.datastax.driver.core.Row
 import com.datastax.driver.core.utils.UUIDs
@@ -19,6 +19,7 @@ import owl.Util._
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
 import com.twitter.util.{Future => TwFuture}
 import owl.Connector.config.tickets.initial
+import java.util.UUID
 
 import scala.collection.JavaConversions._
 import scala.concurrent.duration._
@@ -48,6 +49,9 @@ object Gen {
     val dist = new UniformIntegerDistribution(0, config.tickets.initial.venues)
     () => dist.sample()
   }
+
+  // FIXME: this is a hack
+  val venueMap = new ConcurrentHashMap[UUID, UUID]()
 }
 
 case class Venue(
@@ -101,15 +105,19 @@ class TicketSleuth(val duration: FiniteDuration) extends {
     val remaining_error = metrics.create.histogram("remaining")
   }
 
-  val zipfDist = new ZipfDistribution(initial.events, config.zipf)
+  val eventZipf: () => UUID = {
+    val dist = new ZipfDistribution(initial.events, config.zipf)
+    () => dist.sample().id
+  }
 
-  def zipfID() = id(zipfDist.sample())
   def urandID() = id(Random.nextInt(initial.events))
 
+  val mix = config.tickets.mix
+
+  val cdefault = config.consistency
+
   val venues = new VenueTable
-
   val events = new EventTable
-
   val tickets = IPAPool.fromNameAndBound("tickets", config.bound)
 
   object prepared {
@@ -128,9 +136,9 @@ class TicketSleuth(val duration: FiniteDuration) extends {
       (e: Event) => ps.bindWith(e.id, e.venue, e.name, e.description, e.created)(_ => ())
     }
 
-    lazy val eventGet: (UUID) => (CLevel) => BoundOp[Event] = {
-      val ps = session.prepare(s"SELECT * FROM ${space.name}.${events.tableName} WHERE ${events.id.name} = ? LIMIT 1")
-      (id: UUID) => ps.bindWith(id)(rs => events.fromRow(rs.first.get))
+    lazy val eventGet: (UUID, UUID) => (CLevel) => BoundOp[Event] = {
+      val ps = session.prepare(s"SELECT * FROM ${space.name}.${events.tableName} WHERE ${events.id.name} = ? AND ${events.venue.name} = ? LIMIT 1")
+      (id: UUID, venue: UUID) => ps.bindWith(id, venue)(rs => events.fromRow(rs.first.get))
     }
 
     lazy val eventsByVenue: (UUID, Int) => (CLevel) => BoundOp[Iterator[(UUID, String)]] = {
@@ -162,17 +170,13 @@ class TicketSleuth(val duration: FiniteDuration) extends {
         .bundle().await()
   }
 
-  val mix = Map(
-    'take -> 0.4,
-    'read -> 0.6
-  )
-
   def record(remaining: Inconsistent[Int]): Unit = {
     m.remaining << remaining.get
   }
 
   def createEvent(c: CLevel)(id: UUID): TwFuture[Unit] = {
     val e = Event(id, Gen.randomVenue().id)
+    Gen.venueMap(id) = e.venue
     for {
       n <- prepared.venueCapacity(e.venue)(c).execAsTwitter()
       _ <- tickets.init(e.id, n) join prepared.eventInsert(e)(c).execAsTwitter()
@@ -195,7 +199,8 @@ class TicketSleuth(val duration: FiniteDuration) extends {
 
   def viewEvent(c: CLevel)(id: UUID): TwFuture[String] = {
     for {
-      (e, ct) <- prepared.eventGet(id)(c).execAsTwitter() join tickets(id).remaining()
+      (e, ct) <- prepared.eventGet(id, Gen.venueMap(id))(c).execAsTwitter() join
+          tickets(id).remaining()
     } yield {
       record(ct)
       s"Event: ${e.name}, tickets remaining: ${ct.get}\n---\n${e.description}"
@@ -220,23 +225,16 @@ class TicketSleuth(val duration: FiniteDuration) extends {
 
     while (deadline.hasTimeLeft) {
       sem.acquire()
-      val i = zipfDist.sample()
-      val handle = tickets(i.id)
       val op = weightedSample(mix)
       val f = op match {
-        case 'take =>
-          for (taken <- handle.take(1).instrument(m.takeLatency)) {
-            if (taken.get.isEmpty) m.take_failed += 1
-            else m.take_success += 1
-          }
-        case 'read =>
-          for (r <- handle.remaining().instrument(m.readLatency)) {
-            m.remaining << r.get
-          }
+        case 'purchase => purchaseTicket(eventZipf())
+        case 'view => viewEvent(cdefault)(eventZipf())
+        case 'browse => browseEventsByVenue(cdefault)(Gen.randomVenue().id)
+        case 'create => createEvent(cdefault)(UUID.randomUUID())
       }
       f onSuccess { case _ => sem.release() }
       f onFailure { case e: Throwable =>
-        Console.err.println(s"Error with $i (key: ${handle.key}, op: $op)\n  ${e.getMessage}")
+        Console.err.println(s"Error with $op\n  ${e.getMessage}")
         sys.exit(1)
       }
     }

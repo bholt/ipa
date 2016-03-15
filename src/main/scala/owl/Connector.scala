@@ -90,6 +90,7 @@ object Connector {
         val events = c.getInt("ipa.tickets.initial.events")
         val remaining = c.getInt("ipa.tickets.initial.remaining")
       }
+      val mix = getMixMap("ipa.tickets.mix")
     }
 
     lazy val bound = Bound.fromString(c.getString("ipa.bound"))

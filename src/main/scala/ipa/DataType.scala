@@ -2,11 +2,12 @@ package ipa
 
 import owl.Util._
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
+import com.twitter.util.{Return, Throw, Timer, Await => TwAwait, Duration => TwDuration, Future => TwFuture, Try => TwTry}
 import com.websudos.phantom.dsl._
 import owl.Connector.config
 import owl._
 import com.twitter.{util => tw}
-import ipa.thrift.Table
+import ipa.thrift.{ReservationException, Table}
 
 import scala.concurrent._
 import scala.concurrent.duration.FiniteDuration
@@ -73,6 +74,40 @@ trait RushImpl { this: DataType =>
   import Consistency._
 
   lazy val strongThresholded = metrics.create.counter("rush_strong_thresholded")
+
+  def rush[T](bound: TwDuration)(op: CLevel => TwFuture[T]): TwFuture[Rushed[T]] = {
+    val thresholdNanos = bound.inNanoseconds * 1.5
+    val prediction = metrics.tracker.predict(Strong)
+    if (prediction > thresholdNanos) {
+      strongThresholded += 1
+      op(Weak) map { Rushed(_, Weak) }
+    } else {
+      val deadline = bound.fromNow
+      val ops = Seq(Strong, Weak) map { c => op(c) map { r => Rushed(r, c) } }
+      TwFuture.select(ops) flatMap {
+        case (Return(r1), remaining) =>
+          if (r1.consistency == Strong || deadline.sinceNow < config.assumed_latency) {
+            if (deadline.sinceNow < TwDuration.Zero) metrics.missedDeadlines.mark()
+            TwFuture(r1)
+          } else {
+            TwFuture.select(remaining).raiseWithin(deadline.sinceNow) map {
+              case (Return(r2), _) =>
+                r1 max r2
+              case (Throw(e), _) =>
+                Console.err.println(s"Error in rush: second try errored out? $r1 ${e.getMessage}")
+                r1
+            } handle { case e =>
+              // fallback
+              r1
+            }
+          }
+        case (Throw(e), remaining) =>
+          val msg = s"Error inside first attempt: ${e.getMessage}"
+          Console.err.println(msg)
+          TwFuture.exception(ReservationException(msg))
+      }
+    }
+  }
 
   def rush[T](latencyBound: FiniteDuration)(op: CLevel => Future[T]): Future[Rushed[T]] = {
     val thresholdNanos = latencyBound.toNanos * 1.5

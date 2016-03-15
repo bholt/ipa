@@ -5,6 +5,7 @@ import java.net.InetAddress
 import com.datastax.driver.core.{Cluster, ConsistencyLevel => CLevel}
 import com.twitter.finagle.Thrift
 import com.twitter.finagle.loadbalancer.Balancers
+import com.twitter.finagle.util.{DefaultTimer, HashedWheelTimer}
 import com.twitter.util._
 import com.twitter.{util => tw}
 import com.websudos.phantom.CassandraTable

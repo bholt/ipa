@@ -8,11 +8,13 @@ import java.util.function.Function
 
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
 import com.twitter.concurrent.AsyncQueue
-import com.twitter.util.{Future => TwFuture, Promise => TwPromise}
+import com.twitter.util.{Time, Future => TwFuture, Promise => TwPromise}
 import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.dsl._
+import ipa.thrift.ReservationException
 import ipa.{thrift => th}
 import org.apache.commons.lang.NotImplementedException
+import org.joda.time.DateTime
 import owl._
 import owl.Connector.config
 import owl.Consistency._
@@ -21,6 +23,7 @@ import owl.Util._
 import scala.collection.JavaConversions._
 import scala.collection.immutable.IndexedSeq
 import scala.collection.mutable
+import scala.concurrent.duration.{Deadline, Duration}
 import scala.util.{Failure, Success, Try}
 
 
@@ -38,6 +41,7 @@ object BoundedCounter {
     type IPADecrType[T] <: Inconsistent[T]
 
     def ebound: Option[Tolerance] = None
+    def lbound: Option[Latency] = None
 
     def valueResult(r: th.CounterResult): IPAValueType[Int]
     def decrResult(r: th.CounterResult): IPADecrType[Boolean]
@@ -75,9 +79,25 @@ object BoundedCounter {
     def decrResult(r: th.CounterResult) = Inconsistent(r.success.get)
   }
 
+  trait LatencyBound extends Bounds { self: BoundedCounter =>
+    def bound: Latency
+    override val cbound = Consistency(CLevel.ONE, CLevel.ONE)
+    override def lbound = Some(bound)
+
+    override def meta = Metadata(Some(bound))
+
+    type IPAValueType[T] = Rushed[T]
+    type IPADecrType[T] = Rushed[T]
+
+    def valueResult(r: th.CounterResult) =
+      Rushed(r.value.get.toInt, CLevel.valueOf(r.consistency.get))
+    def decrResult(r: th.CounterResult) =
+      Rushed(r.success.get, CLevel.valueOf(r.consistency.get))
+  }
+
   def fromNameAndBound(name: String, bound: Bound)(implicit imps: CommonImplicits): BoundedCounter with Bounds = bound match {
-    case Latency(l) =>
-      throw new NotImplementedException("Latency bounds not implemented for BoundedCounter")
+    case l @ Latency(_) =>
+      new BoundedCounter(name) with LatencyBound { override val bound = l }
 
     case Consistency(Weak, Weak) =>
       new BoundedCounter(name) with WeakBounds
@@ -119,7 +139,7 @@ object BoundedCounter {
   }
 }
 
-class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) extends DataType(imps) { self: BoundedCounter.Bounds =>
+class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) extends DataType(imps) with RushImpl { self: BoundedCounter.Bounds =>
   import BoundedCounter._
 
   object m {
@@ -217,9 +237,9 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       prepared.init(key, min)(CLevel.ALL).execAsTwitter()
     }
 
-    def update(): TwFuture[Unit] = {
+    def update(c: CLevel = cbound.read): TwFuture[Unit] = {
       val time = System.nanoTime
-      prepared.get(key)(cbound.read).execAsTwitter().instrument(m.get_latency) map {
+      prepared.get(key)(c).execAsTwitter().instrument(m.get_latency) map {
         case Some(st) =>
           lastReadAt = time
           min = st.min
@@ -283,47 +303,61 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       Int.MaxValue
     }
 
-    def decr(n: Int = 1, retrying: Boolean = false, forwarded: Boolean = false): TwFuture[Boolean] = {
+    def localRush[T](startTime: Option[Long], cdefault: CLevel)(exec: CLevel => TwFuture[T]): TwFuture[Inconsistent[T]] = {
+      lbound match {
+        case Some(Latency(total)) =>
+          val elapsed = Time.now - Time.fromNanoseconds(startTime.get)
+          val remain = total - (elapsed * 2)
+          rush(remain) { exec }
+        case None =>
+          exec(cdefault).map(Inconsistent(_))
+      }
+    }
+
+    def decr(n: Int = 1, retrying: Boolean = false,
+        forwarded: Boolean = false,
+        startTime: Option[Long] = None): TwFuture[Inconsistent[Boolean]] =
+    {
       if (!retrying) m.decrs += 1
 
       if (localRights() >= n) {
         val v = consumed(me) + n
         consumed(me) = v
-        prepared.consume(key, me, v)(cbound.write).execAsTwitter()
-            .instrument(m.consume_latency)
-            .map { _ => true }
-            .onSuccess { _ =>
-              if (forwarded) {
-                // try to find who we were forwarded from
-                val mr = localRights(me)
-                val ts = for (i <- replicas; r = localRights(i); if 2*r < mr) yield (i, r)
-                if (ts.nonEmpty) {
-                  val who = ts.minBy(_._2)._1
-                  pendingTransfers(who) = mr / 2
-                  submit {
-                    m.transfer_reactive += 1
-                    transfer()
-                  }
+        localRush(startTime, cbound.write){ c: CLevel =>
+          prepared.consume(key, me, v)(c).execAsTwitter().map(_ => true)
+        }.instrument(m.consume_latency)
+          .onSuccess { _ =>
+            if (forwarded) {
+              // try to find who we were forwarded from
+              val mr = localRights(me)
+              val ts = for (i <- replicas; r = localRights(i); if 2*r < mr) yield (i, r)
+              if (ts.nonEmpty) {
+                val who = ts.minBy(_._2)._1
+                pendingTransfers(who) = mr / 2
+                submit {
+                  m.transfer_reactive += 1
+                  transfer()
                 }
               }
             }
+          }
       } else if (sufficient(n)) {
         // find replicas with rights available
         val reps = for {i <- replicas if localRights(i) >= n} yield i
         if (reps.isEmpty) {
-          TwFuture(false)
+          TwFuture(Inconsistent(false))
         } else {
           if (forwarded) m.forwarded_again += 1
           m.forwards += 1
           val who = addrFromInt(reps.sample)
           TwFuture.exception(th.ForwardTo(who.getHostAddress))
         }
-      } else if (cbound.write == Strong && !retrying) {
+      } else if (lbound.isEmpty && cbound.write == Strong && !retrying) {
         // if this is supposed to be Strong consistency,
         // then we have to try bypassing the cache to ensure we find any available
         update() flatMap { _ => decr(n, retrying = true) }
       } else {
-        TwFuture(false)
+        TwFuture(Inconsistent(false))
       }
     }
 
@@ -545,7 +579,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
           for {
             _ <- s.update_if_expired()
             _ <- s.sync_if_needed(n)
-            success <- s.decr(n, forwarded = op.forwarded)
+            r <- s.decr(n, forwarded = op.forwarded, startTime = op.startTime)
           } yield {
 
             if (s.should_sync_soon) {
@@ -561,33 +595,47 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
                 }
               }
             }
-
-            th.CounterResult(success = Some(success))
+            r match {
+              case r: Rushed[_] =>
+                th.CounterResult(success = Some(r.get),
+                    consistency = Some(r.consistency.name))
+              case r: Inconsistent[_] =>
+                th.CounterResult(success = Some(r.get))
+            }
           }
         }
 
       case Value =>
-
-        def result =
-          if (ebound.isDefined) {
-            val i = s.interval
-            th.CounterResult(min = Some(i.min), max = Some(i.max))
-          } else {
-            th.CounterResult(value = Some(s.value))
-          }
-
-        if (!s.expired && !cbound.isStrong) {
-          // don't "wait in line", just grab a reasonably up-to-date value and go
-          TwFuture { result }
-        } else {
-          s submit {
-            for {
-              _ <- s.update_if_expired()
-            } yield {
-              m.reads += 1
-              result
+        s.localRush(op.startTime, cbound.read) {
+          case Strong =>
+            s submit { s.update(Strong) map { _ => s.value } }
+          case Weak =>
+            if (!s.expired) {
+              TwFuture(s.value)
+            } else {
+              s submit {
+                s.update_if_expired() map { _ =>
+                  m.reads += 1
+                  s.value
+                }
+              }
             }
-          }
+          case c =>
+            TwFuture.exception(ReservationException(
+              s"Unsupported consistency level: $c"))
+        } map {
+          case v: Rushed[_] =>
+            th.CounterResult(
+              value = Some(v.get),
+              consistency = Some(v.consistency.name)
+            )
+          case v: Inconsistent[_] =>
+            if (ebound.isDefined) {
+              val i = s.interval
+              th.CounterResult(min = Some(i.min), max = Some(i.max))
+            } else {
+              th.CounterResult(value = Some(s.value))
+            }
         }
 
       case EnumUnknownCounterOpType(e) =>

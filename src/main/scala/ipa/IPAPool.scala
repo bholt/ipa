@@ -2,7 +2,7 @@ package ipa
 
 import java.util.UUID
 
-import com.websudos.phantom.dsl._
+import com.websudos.phantom.dsl.{UUID, _}
 import owl._
 import owl.Util._
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
@@ -81,29 +81,45 @@ object IPAPool {
       bc(key).value()
   }
 
-  trait ErrorBound extends Bounds { self: IPAPool =>
+  trait ErrorBound extends Bounds { pool: IPAPool =>
     type ReadType[T] = Interval[T]
     type TakeType[T] = Inconsistent[T]
 
     def bound: Tolerance
 
-    private def pool_bound = bound // rename so we can pass it in to BoundedCounter
-
     lazy val bc = new BoundedCounter(name+"_bc")
-        with BoundedCounter.ErrorBound { override val bound = pool_bound }
+        with BoundedCounter.ErrorBound { override val bound = pool.bound }
 
     override def counter = bc
 
     override def take(key: UUID, n: Int) =
-      bc(key).decr(n).map(r => Inconsistent(generate(n, r.get)))
+      bc(key).decr(n).map(_.map(generate(n, _)))
 
     override def remaining(key: UUID) =
       bc(key).value()
   }
 
+  trait LatencyBound extends Bounds { pool: IPAPool =>
+    type ReadType[T] = Rushed[T]
+    type TakeType[T] = Rushed[T]
+
+    def bound: Latency
+
+    lazy val bc = new BoundedCounter(name+"_bc")
+        with BoundedCounter.LatencyBound { override val bound = pool.bound }
+
+    override def counter = bc
+
+    override def take(key: UUID, n: Int): TwFuture[Rushed[Seq[UUID]]] =
+      bc(key).decr(n).map(_.map(generate(n, _)))
+
+    override def remaining(key: UUID): TwFuture[Rushed[Int]] =
+      bc(key).value()
+  }
+
   def fromNameAndBound(name: String, bound: Bound)(implicit imps: CommonImplicits): IPAPool with Bounds = bound match {
-    case Latency(l) =>
-      throw new NotImplementedException("Latency bounds not implemented for BoundedCounter")
+    case l @ Latency(_) =>
+      new IPAPool(name) with LatencyBound { override val bound = l }
 
     case Consistency(Weak, Weak) =>
       new IPAPool(name) with WeakBounds

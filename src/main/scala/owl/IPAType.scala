@@ -82,6 +82,7 @@ class Inconsistent[T](value: T) extends IPAType {
   /** get the value anyway (should we call it 'endorse'?)*/
   def get: T = value
   override def toString = s"Inconsistent($get)"
+  def map[B](f: T => B): Inconsistent[B] = new Inconsistent(f(value))
 }
 object Inconsistent { def apply[T](value: T) = new Inconsistent(value) }
 
@@ -106,6 +107,7 @@ class Rushed[T](value: T, cons: CLevel)
   override def consistency = cons
   def compare(o: Rushed[T]) = { this.consistency compareTo o.consistency }
   override def toString = s"Rushed($value, $consistency)"
+  override def map[B](f: T => B) = new Rushed(f(value), cons)
 }
 
 object Rushed {

@@ -10,6 +10,7 @@ import com.codahale.metrics
 import com.codahale.metrics.Timer
 import com.datastax.driver.core._
 import com.google.common.util.concurrent.{FutureCallback, Futures}
+import com.twitter.finagle.util.HashedWheelTimer
 import com.twitter.util.{Return, Throw}
 import com.twitter.{util => tw}
 import com.twitter.util.{Future => TwFuture, Promise => TwPromise}
@@ -81,6 +82,8 @@ object Util {
   implicit class TablePlus(t: Table) {
     def fullname = s"${t.space}.${t.name}"
   }
+
+  implicit val twitterTimer = HashedWheelTimer.Default
 
   implicit def durationTwitterToScala(d: tw.Duration): Duration = d match {
     case tw.Duration.Top => Duration.Inf

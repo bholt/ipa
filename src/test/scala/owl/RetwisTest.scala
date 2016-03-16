@@ -41,21 +41,20 @@ class RetwisTest extends {
   }
 
   it should "run each work once" in {
-    import Workload.Tasks._
     println("### NewUser")
-    NewUser()
+    Tasks.NewUser()
 
     println("### Follow")
-    Follow()
+    Tasks.Follow()
 
     println("### Unfollow")
-    Unfollow()
+    Tasks.Unfollow()
 
     println("### Tweet")
-    Tweet()
+    Tasks.Tweet()
 
     println("### Timeline")
-    Timeline()
+    Tasks.Timeline()
 
   }
 

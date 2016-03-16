@@ -263,9 +263,9 @@ def run_tickets(log):
 
             ipa_concurrent_requests   = [128, 512, 2*K, 4*K],
 
-            ipa_bound = ['consistency:strong', 'consistency:weakwrite', 'tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01'],
+            ipa_bound = ['consistency:strong', 'consistency:weakwrite', 'tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'latency:20ms'],
 
-            ipa_lease_period = ['0ms','200ms'],
+            ipa_lease_period = ['200ms'],
             ipa_reservations_lease = ['10s'],
 
             # honeycomb_mode = ['normal', 'slowpoke_flat', 'google', 'amazon', 'flat5']

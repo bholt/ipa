@@ -18,17 +18,17 @@ class RetwisTest extends {
     println(">>> checking if social graph was initialized")
     // spot checks
     val u1 = User.id(1)
-    service.getUserById(u1).futureValue shouldBe defined
-    val u1nfollowers = service.followersOf(u1).futureValue.length
+    getUserById(u1).futureValue shouldBe defined
+    val u1nfollowers = followersOf(u1).futureValue.length
     println(s"-- user[1] num followers = $u1nfollowers")
     u1nfollowers should be > config.avgFollowers/2
   }
 
   it should "initialize tweets" in {
 
-    val fs = service.followersOf(User.id(1))
+    val fs = followersOf(User.id(1))
         .flatMap { fs =>
-          fs.take(5).map(f => service.timeline(user = f, limit = 1)).bundle
+          fs.take(5).map(f => timeline(user = f, limit = 1)).bundle
         }
         .map { _.flatten }
 

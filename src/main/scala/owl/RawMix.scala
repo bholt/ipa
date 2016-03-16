@@ -6,12 +6,15 @@ import com.datastax.driver.core.ConsistencyLevel
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
 import org.apache.commons.math3.distribution.ZipfDistribution
+
 import scala.concurrent._
 import scala.concurrent.duration._
 import Util._
 import java.util.concurrent.Semaphore
 
-import scala.util.{Success, Try, Random}
+import ipa.IPASet
+
+import scala.util.{Random, Success, Try}
 
 class RawMix(val duration: FiniteDuration) extends OwlService {
   override implicit val space = RawMix.space
@@ -23,24 +26,7 @@ class RawMix(val duration: FiniteDuration) extends OwlService {
   def zipfID() = id(zipfDist.sample())
   def urandID() = id(Random.nextInt(nsets))
 
-  import Consistency._
-
-  val set = config.bound match {
-
-    case Consistency(Weak, _) =>
-      new IPAUuidSet("raw")
-          with ConsistencyBound { override val consistencyLevel = Weak }
-
-    case Consistency(Strong, _) =>
-      new IPAUuidSet("raw")
-          with ConsistencyBound { override val consistencyLevel = Strong }
-
-    case Latency(lat) =>
-      new IPAUuidSet("raw") with LatencyBound { override val latencyBound = lat }
-
-    case e =>
-      sys.error(s"impossible case: $e")
-  }
+  val set = IPASet.fromNameAndBound[UUID]("raw", config.bound)
 
   val timerAdd      = metrics.create.timer("add_latency")
   val timerContains = metrics.create.timer("contains_latency")

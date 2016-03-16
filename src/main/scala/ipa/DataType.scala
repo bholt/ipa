@@ -74,6 +74,7 @@ trait RushImpl { this: DataType =>
   import Consistency._
 
   lazy val strongThresholded = metrics.create.counter("rush_strong_thresholded")
+  lazy val rush_both = metrics.create.counter("rush_both")
 
   def rush[T](bound: TwDuration)(op: CLevel => TwFuture[T]): TwFuture[Rushed[T]] = {
     val thresholdNanos = bound.inNanoseconds * 1.5
@@ -82,6 +83,7 @@ trait RushImpl { this: DataType =>
       strongThresholded += 1
       op(Weak) map { Rushed(_, Weak) }
     } else {
+      rush_both += 1
       val deadline = bound.fromNow
       val ops = Seq(Strong, Weak) map { c => op(c) map { r => Rushed(r, c) } }
       TwFuture.select(ops) flatMap {

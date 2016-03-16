@@ -111,7 +111,7 @@ object IPASet {
     override def size(key: K): Future[SizeType[Long]] = ???
   }
 
-  def fromNameAndBound[V](name: String, bound: Bound)(implicit imps: CommonImplicits): IPASet[V] with Ops[V] = bound match {
+  def fromNameAndBound[V:Primitive](name: String, bound: Bound)(implicit imps: CommonImplicits): IPASet[V] with Ops[V] = bound match {
     case Latency(l) =>
       new IPASet[V](name) with LatencyBound[V] { override val bound = l }
 
@@ -133,7 +133,7 @@ object IPASet {
   }
 }
 
-abstract class IPASet[V:Primitive](val name: String)(implicit imps: CommonImplicits) extends DataType(imps) {
+abstract class IPASet[V:Primitive](val name: String)(implicit val imps: CommonImplicits) extends DataType(imps) {
   self: IPASet.Ops[V] =>
 
   type K = UUID

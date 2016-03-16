@@ -12,8 +12,8 @@ import ipa.IPASet
 import org.apache.commons.math3.distribution.ZipfDistribution
 import org.joda.time.DateTime
 import owl.Util._
-import scala.collection.JavaConversions._
 
+import scala.collection.JavaConversions._
 import scala.concurrent.Future
 import scala.language.postfixOps
 import scala.util.Random
@@ -73,6 +73,21 @@ trait Retwis extends OwlService {
       s"${name.getOrElse(user)}: $body [$created]"
     }
   }
+
+//  /** override Tweet equality check to handle the fact when we 'getTweet',
+//    * we load the user's full name */
+//  implicit val tweetEquality = new Equality[Tweet] {
+//    override def areEqual(a: Tweet, x: Any): Boolean = x match {
+//      case b: Tweet =>
+//        a.id == b.id &&
+//            a.body == b.body &&
+//            a.user == b.user &&
+//            a.created == b.created &&
+//            (a.name.isEmpty || b.name.isEmpty || a.name == b.name)
+//      case _ =>
+//        false
+//    }
+//  }
 
   /** For displaying tweets (includes user's name, etc). */
   case class DisplayTweet(tweet: Tweet, user: User) {
@@ -291,9 +306,9 @@ trait Retwis extends OwlService {
   }
 
 
-  def timeline(user: UUID, limit: Int)(implicit c: ConsistencyLevel) = {
+  def timeline(user: UUID, limit: Int) = {
     timelines.select
-        .consistencyLevel_=(c)
+        .consistencyLevel_=(consistency)
         .where(_.user eqs user)
         .orderBy(_.tweet desc)
         .limit(limit)

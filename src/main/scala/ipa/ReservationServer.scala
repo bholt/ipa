@@ -1,7 +1,9 @@
 package ipa
 
 import java.net.InetAddress
-
+import java.util.concurrent.ConcurrentHashMap
+import java.util.UUID
+import java.util.function.Function
 import com.datastax.driver.core.{Cluster, ConsistencyLevel => CLevel}
 import com.twitter.finagle.Thrift
 import com.twitter.finagle.loadbalancer.Balancers
@@ -10,7 +12,7 @@ import com.twitter.util._
 import com.twitter.{util => tw}
 import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.connectors.KeySpace
-import com.websudos.phantom.dsl.{UUID, _}
+import com.websudos.phantom.dsl._
 import ipa.IPACounter.WeakOps
 import ipa.thrift._
 import ipa.{thrift => th}
@@ -225,23 +227,25 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     }
   }
 
-  val tables = new concurrent.TrieMap[Table, Entry]
+  val tables = new ConcurrentHashMap[Table, Entry]()
 
   def table(t: Table): Try[Entry] = {
     Try {
-      tables.getOrElseUpdate(t, {
-        Console.err.println(s"creating: $t")
-        implicit val space = KeySpace(t.space)
-        implicit val imps = CommonImplicits()
-        IPACounter.fromName(t.name) map {
-          case tbl: IPACounter with IPACounter.ErrorTolerance =>
-            Entry(tbl, space, tbl.tolerance)
-          case tbl =>
-            Entry(tbl, space, Tolerance(0))
-        } recoverWith {
-          case e: Throwable =>
-            sys.error(s"Unable to create table ($t): ${e.getMessage}")
-        } get
+      tables.computeIfAbsent(t, new Function[Table,Entry] {
+        override def apply(t: Table): Entry = {
+          Console.err.println(s"creating: $t")
+          implicit val space = KeySpace(t.space)
+          implicit val imps = CommonImplicits()
+          IPACounter.fromName(t.name) map {
+            case tbl: IPACounter with IPACounter.ErrorTolerance =>
+              Entry(tbl, space, tbl.tolerance)
+            case tbl =>
+              Entry(tbl, space, Tolerance(0))
+          } recoverWith {
+            case e: Throwable =>
+              sys.error(s"Unable to create table ($t): ${e.getMessage}")
+          } get
+        }
       })
     } recoverWith { case e =>
       Failure(ReservationException(s"counter without error tolerance: $t"))

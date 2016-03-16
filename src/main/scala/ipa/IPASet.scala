@@ -18,11 +18,12 @@ object IPASet {
 
   trait Ops[V] { self: IPASet[V] =>
     type IPAType[T] <: Inconsistent[T]
+    type SizeType[T] <: Inconsistent[T]
 
     def add(key: K, value: V): Future[Unit]
     def remove(key: K, value: V): Future[Unit]
     def contains(key: K, value: V): Future[IPAType[Boolean]]
-    def size(key: K): Future[IPAType[Long]]
+    def size(key: K): Future[SizeType[Long]]
   }
 
   trait WriteOps[V] extends Ops[V] { self: IPASet[V] =>
@@ -41,6 +42,7 @@ object IPASet {
   trait WeakOps[V] extends WriteOps[V] { self: IPASet[V] =>
 
     type IPAType[T] = Inconsistent[T]
+    type SizeType[T] = Inconsistent[T]
     override val writeLevel = Strong
     val readLevel = Weak
 
@@ -48,7 +50,7 @@ object IPASet {
       _contains(key, value)(readLevel).map(Inconsistent(_))
     }
 
-    override def size(key: K): Future[IPAType[Long]] = {
+    override def size(key: K): Future[SizeType[Long]] = {
       _size(key)(readLevel).map(Inconsistent(_))
     }
   }
@@ -56,6 +58,7 @@ object IPASet {
   trait StrongOps[V] extends WriteOps[V] { self: IPASet[V] =>
 
     type IPAType[T] = Consistent[T]
+    type SizeType[T] = Consistent[T]
     override val writeLevel = Strong
     val readLevel = Strong
 
@@ -63,7 +66,7 @@ object IPASet {
       _contains(key, value)(readLevel).map(Consistent(_))
     }
 
-    override def size(key: K): Future[IPAType[Long]] = {
+    override def size(key: K): Future[SizeType[Long]] = {
       _size(key)(readLevel).map(Consistent(_))
     }
   }
@@ -74,6 +77,7 @@ object IPASet {
     def bound: FiniteDuration
 
     type IPAType[T] = Rushed[T]
+    type SizeType[T] = Rushed[T]
     override val writeLevel = Strong
 
     override def contains(key: K, value: V) =
@@ -83,24 +87,49 @@ object IPASet {
       rush(bound)(_size(key))
   }
 
-  trait ErrorTolerance[V] extends Ops[V] { base: IPASet[V] =>
+  trait ErrorBound[V] extends Ops[V] { base: IPASet[V] =>
 
-    def tolerance: Tolerance
+    def bound: Tolerance
 
-    override def meta = Metadata(Some(tolerance))
+    lazy val counts = new IPACounter(name+"_counts")
+        with IPACounter.ErrorTolerance { override val tolerance = base.bound }
+
+    override def meta = Metadata(Some(bound))
 
     override def create(): Future[Unit] = {
       createTwitter() flatMap { _ =>
-        reservations.client.createCounter(table, tolerance.error)
+        reservations.client.createCounter(table, bound.error)
       } asScala
     }
 
-    type IPAType[T] = Interval[T]
+    type IPAType[T] = Inconsistent[T]
+    type SizeType[T] = Interval[T]
 
     override def add(key: K, value: V): Future[Unit] = ???
     override def remove(key: K, value: V): Future[Unit] = ???
     override def contains(key: K, value: V): Future[IPAType[Boolean]] = ???
-    override def size(key: K): Future[IPAType[Long]] = ???
+    override def size(key: K): Future[SizeType[Long]] = ???
+  }
+
+  def fromNameAndBound[V](name: String, bound: Bound)(implicit imps: CommonImplicits): IPASet[V] with Ops[V] = bound match {
+    case Latency(l) =>
+      new IPASet[V](name) with LatencyBound[V] { override val bound = l }
+
+    case Consistency(Weak, Weak) =>
+      new IPASet[V](name) with WeakOps[V]
+
+    case Consistency(Weak, Strong) =>
+      new IPASet[V](name) with WeakOps[V]
+
+    case Consistency(Strong, _) =>
+      new IPASet[V](name) with StrongOps[V]
+
+    case t @ Tolerance(_) =>
+      new IPASet[V](name) with ErrorBound[V] { override val bound = t }
+
+    case e =>
+      Console.err.println(s"Error creating BoundedCounter from bound: $e")
+      sys.error(s"impossible case: $e")
   }
 }
 

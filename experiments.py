@@ -269,16 +269,15 @@ def run_tickets(log):
             ipa_reservations_lease = ['10s'],
 
             # honeycomb_mode = ['normal', 'slowpoke_flat', 'google', 'amazon', 'flat5']
-            honeycomb_mode = ['flat5', 'slowpoke_flat', 'google', 'amazon']
+            honeycomb_mode = ['fast', 'flat5', 'slowpoke_flat', 'google', 'amazon']
         ):
             a['containers'] = containers
 
-            if a['ipa_bound'] == 'consistency:strong' and a['ipa_lease_period'] != '0ms':
-                pass
-
             if 'strong' in a['ipa_bound']:
                 a['ipa_consistency'] = 'strong'
-            elif 'weak' in a['ipa_bound'] or 'tolerance' in a['ipa_bound']:
+                a['ipa_lease_period'] = '0ms'
+
+            elif re.search('weak|tol|lat', a['ipa_bound']):
                 a['ipa_consistency'] = 'weak'
 
             ct = count_records(table, ignore=['containers'],
@@ -355,13 +354,13 @@ def run_rawmix(log, datatype):
 
             ipa_concurrent_requests   = [128, 512, 2*K, 4*K],
 
-            # ipa_bound = ['tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'tolerance:0', 'consistency:strong', 'consistency:weak', 'consistency:weakwrite', 'latency:50ms', 'latency:10ms'],
-            ipa_bound = ['tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'tolerance:0'],
+            ipa_bound = ['tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'tolerance:0', 'consistency:strong', 'consistency:weak', 'consistency:weakwrite', 'latency:50ms', 'latency:10ms'],
+            # ipa_bound = ['tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'tolerance:0'],
             ipa_lease_period = ['0ms', '200ms'],
             ipa_reservations_lease = ['10s'],
             # ipa_bound = ['consistency:strong', 'consistency:weak', 'latency:50ms', 'latency:10ms'],
-            honeycomb_mode = ['normal', 'slowpoke_flat', 'google', 'amazon', 'flat5'],
-            mix = ['no_size', 'read_heavy']
+            honeycomb_mode = ['fast', 'flat5', 'slowpoke_flat', 'google', 'amazon'],
+            mix = ['default', 'read_heavy']
 
         ):
             a['containers'] = containers

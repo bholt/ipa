@@ -334,7 +334,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
                 else res.refresh(e.table, key).map(_ => false)
 
               _ <-
-                if (res.available >= n) {
+                if (immediate) {
                   res.available -= n
                   if (preallocated && immediate) m.immediates += 1
                   exec(CLevel.ONE)

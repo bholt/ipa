@@ -39,8 +39,11 @@ class RawMixCounter(val duration: FiniteDuration) extends {
   val countReadWeak   = metrics.create.counter("read_weak")
 
   val histIntervalWidth = metrics.create.histogram("interval_width")
+  val histIntervalPercent = metrics.create.histogram("interval_percent")
   val countCorrect = metrics.create.counter("correct")
   val countIncorrect = metrics.create.counter("incorrect")
+  val countContains = metrics.create.counter("contains")
+  val countNotContains = metrics.create.counter("contains_not")
   val histError = metrics.create.histogram("error")
   val countErrorNegative = metrics.create.counter("error_negative")
 
@@ -51,9 +54,15 @@ class RawMixCounter(val duration: FiniteDuration) extends {
       case v: Interval[Long] =>
         val width = v.max - v.min
         histIntervalWidth << width
-        if (v.contains(trueVal)) countCorrect += 1 else countIncorrect += 1
-        histError << Math.abs(v.median - trueVal)
+        histIntervalPercent << (width / v.median * 10000).toLong
+
+        if (v.min <= trueVal && v.max >= (trueVal+inflight)) countCorrect += 1
+        else countIncorrect += 1
+
+        if (v.contains(trueVal)) countContains += 1 else countNotContains += 1
+        histError << Math.abs(v.median - trueVal).toLong
         if (v.median < trueVal) countErrorNegative += 1
+
       case v =>
         if (v.get >= trueVal && v.get <= (trueVal+inflight)) countCorrect += 1
         else countIncorrect += 1

@@ -124,8 +124,8 @@ class Stale[T](
 
 
 case class Interval[T](min: T, max: T)(implicit ev: Numeric[T]) extends Inconsistent[T](min) {
-  override def get = median
-  def median: T = { min } // FIXME
+  override def get = ev.fromInt(median.toInt)
+  def median: Double = { (ev.toDouble(min) + ev.toDouble(max)) / 2 }
   def contains(o: T): Boolean = { o >= min && o <= max }
   override def toString = s"Interval($min..$max)"
 }

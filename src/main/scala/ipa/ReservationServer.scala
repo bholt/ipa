@@ -214,7 +214,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     def used = allocated - available
     def delta = total - used
 
-    def interval = th.IntervalLong(lastRead.value, lastRead.value + delta)
+    def interval = th.IntervalLong(lastRead.value - delta, lastRead.value + delta)
 
     override def toString = s"Reservation(read: $lastRead, total: $total, alloc: $allocated, avail: $available)"
   }

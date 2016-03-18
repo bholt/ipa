@@ -3,7 +3,7 @@ package owl
 import java.util.UUID
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicLong}
 import java.util.concurrent.locks.{Lock, ReentrantLock, ReentrantReadWriteLock}
-import java.util.concurrent.{ConcurrentHashMap, Semaphore}
+import java.util.concurrent.{ConcurrentHashMap, Semaphore, TimeUnit}
 import java.util.function.Function
 
 import com.websudos.phantom.connectors.KeySpace
@@ -88,8 +88,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
     val deadline = duration.fromNow
     val sem = new Semaphore(config.concurrent_reqs)
 
-    while (deadline.hasTimeLeft) {
-      sem.acquire()
+    while (sem.tryAcquire(deadline.timeLeft.inMillis, TimeUnit.MILLISECONDS)) {
       val handle = counter(zipfID())
       val op = weightedSample(mix)
       val t = truth(handle.key)
@@ -145,8 +144,10 @@ object RawMixCounter extends {
     println(s">>> warmup (${warmup.duration})")
     warmup.run(truncate = true)
 
+    Console.err.println(">>> resetting metrics")
     reservations.clients.values.map(_.metricsReset()).bundle().await()
 
+    Console.err.println(">>> creating new RawMixCounter")
     val workload = new RawMixCounter(config.duration)
     println(s">>> workload (${workload.duration})")
     workload.run()

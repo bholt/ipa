@@ -352,20 +352,26 @@ def run_rawmix(log, datatype):
             ipa_duration              = [60],
             ipa_zipf                  = ['0.6'],
 
-            ipa_concurrent_requests   = [128, 512, 2*K, 4*K],
+            ipa_concurrent_requests   = [128, 512, 2*K],
 
             # ipa_bound = ['tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'tolerance:0', 'consistency:strong', 'consistency:weakwrite', 'latency:50ms', 'latency:20ms', 'latency:10ms'],
-            ipa_bound = ['tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'tolerance:0'],
+            # ipa_bound = ['tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'tolerance:0'],
+
             ipa_lease_period = ['0ms'], #'200ms'],
             ipa_reservations_lease = ['10s'],
             # ipa_bound = ['consistency:strong', 'consistency:weak', 'latency:50ms', 'latency:10ms'],
             honeycomb_mode = ['fast', 'flat5', 'slowpoke_flat', 'google', 'amazon'],
-            mix = ['default'] #, 'read_heavy']
+            # mix = ['default'] #, 'read_heavy']
 
+            ipa_bound = ['tolerance:0.05', 'consistency:weakwrite'],
+            mix = ['custom'], ipa_rawmix_counter_mix_incr=[0.1, 0.05, 0.01]
         ):
             a['containers'] = containers
 
-            mixes[datatype][a['mix']].merge_into(a)
+            if a['mix'] == 'custom':
+                a['ipa_rawmix_counter_mix_read'] = 1.0 - a['ipa_rawmix_counter_mix_incr']
+            else:
+                mixes[datatype][a['mix']].merge_into(a)
 
             ct = count_records(table, ignore=['containers'],
                                valid='out_actual_time_length is not null', **a)

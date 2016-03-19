@@ -370,6 +370,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
 //  override def create(tbl: Table, datatype: Datatype, tolerance: Double): Future[Unit] = ???
 
   override def metricsJson(): tw.Future[String] = {
+    Console.err.println(s"metricsJson()")
     // session.getCluster.getConfiguration.getPolicies.getLoadBalancingPolicy
     val latencyStats = Connector.latencyMonitor.getScoresSnapshot.getAllStats
     println(
@@ -400,6 +401,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   }
 
   override def metricsReset(): tw.Future[Unit] = {
+    Console.err.println("# reset metrics")
     metrics.factory.reset()
     tw.Future.Unit
   }

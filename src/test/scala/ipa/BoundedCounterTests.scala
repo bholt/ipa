@@ -88,7 +88,7 @@ class BoundedCounterTests extends {
         }.bundle().await()
         assert(results.forall(_.get))
 
-        val m = reservations.getMetrics()
+        val m = reservations.fetchMetrics()
         val forwards_count = m("counters").lookup("forwards").lookup("count") match {
           case l: List[_] => l.asInstanceOf[List[Int]].sum
           case i: Int => i

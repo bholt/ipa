@@ -74,6 +74,9 @@ object Connector {
 
     object rawmix {
       val nsets = c.getInt("ipa.rawmix.nsets")
+
+      val target = c.getInt("ipa.rawmix.target")
+
       val mix = getMixMap("ipa.rawmix.mix")
       // probability of doing consistency check
       // (only happens after adds, so scale up accordingly)

@@ -109,7 +109,7 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef], cluster: Cluster) 
 
     // dump metrics to stderr (for experiments script to parse)
     if (config.output_json) {
-      write(Console.err, Map("res" -> reservations.getMetrics()))
+      write(Console.err, Map("res" -> reservations.fetchMetrics()))
     }
     println("###############################")
   }

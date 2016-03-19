@@ -466,7 +466,7 @@ class ReservationClient(cluster: Cluster) {
 
   def resetMetrics() = clients.values.map(_.metricsReset()).bundle().unit.await()
 
-  def getMetrics()(implicit reservations: ReservationClient) = {
+  def fetchMetrics() = {
     clients.values
         .map { client => client.metricsJson() }
         .map { f => f map { j => json.readValue(j, classOf[Map[String,Any]]) } }

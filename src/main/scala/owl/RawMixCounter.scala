@@ -15,6 +15,10 @@ import owl.Util._
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Random
+import scala.collection.mutable
+
+import Connector.config.rawmix
+import Console.{err => log}
 
 class RawMixCounter(val duration: FiniteDuration) extends {
   override implicit val space = RawMix.space
@@ -22,8 +26,10 @@ class RawMixCounter(val duration: FiniteDuration) extends {
   import Consistency._
   import RawMixCounter.truth
 
-  val nsets = config.rawmix.nsets
-  val mix = config.rawmix.counter.mix
+  val nsets = rawmix.nsets
+  val mix = rawmix.counter.mix
+
+  val target = rawmix.target
 
   val zipfDist = new ZipfDistribution(nsets, config.zipf)
 
@@ -79,34 +85,83 @@ class RawMixCounter(val duration: FiniteDuration) extends {
     r
   }
 
-  def run(truncate: Boolean = false) {
+  def generate(): Unit = {
 
     counter.create().await()
-    if (truncate) counter.truncate().await()
+    counter.truncate().await()
+
+    log.println(s"# initializing $nsets counters")
+    (0 to nsets)
+        .map { i =>
+          val n = Random.nextInt(target / 4)
+          truth(i.id).v.set(n)
+          counter(i.id).incr(n)
+        }
+        .bundle.await()
+  }
+
+  def run() {
 
     val actualDurationStart = Deadline.now
     val deadline = duration.fromNow
     val sem = new Semaphore(config.concurrent_reqs)
 
-    while (sem.tryAcquire(deadline.timeLeft.inMillis, TimeUnit.MILLISECONDS)) {
-      val handle = counter(zipfID())
-      val op = weightedSample(mix)
-      val t = truth(handle.key)
-      val f = op match {
-        case 'incr =>
-          t.inflight.incrementAndGet()
-          handle.incr().instrument(timerIncr)
-                .map { _ => t.incr(); t.inflight.decrementAndGet() }
-        case 'read =>
-          val t = truth(handle.key)
-          val trueVal = t.get
-          val f = t.inflight.get
-          handle.read().instrument(timerRead)
-              .map(recordResult(trueVal, Math.max(t.inflight.get, f), _)).unit
+    log.println(s"# starting experiments")
+
+    val keys = mutable.ArrayBuffer[Int](0 until nsets :_*)
+    val maxkey = new AtomicInteger(nsets + 1)
+
+    while (deadline.hasTimeLeft &&
+      sem.tryAcquire(deadline.timeLeft.inMillis, TimeUnit.MILLISECONDS)) {
+      val i = Random.nextInt(keys.size)
+      val k = keys(i)
+      val key = k.id
+      val handle = counter(key)
+
+      val tval = truth(key).v.incrementAndGet()
+
+      val f = if (tval > target) {
+        Future(())
+      } else {
+        handle.incr().instrument(timerIncr) flatMap { _ =>
+          if (tval != target) {
+            Future(())
+          } else {
+            handle.read() map {
+              case r: Interval[Long] =>
+                if (r.contains(target)) {
+                  countCorrect += 1
+                  countContains += 1
+                } else {
+                  countIncorrect += 1
+                }
+                log.println(s"# [$k] truth = $tval, got = $r")
+
+              case r: Inconsistent[Long] =>
+                val v = r.get
+                if (v == target) countCorrect += 1
+                else countIncorrect += 1
+
+                histError << Math.abs(target - r.get)
+                if (r.get < target) countErrorNegative += 1
+                // log.println(s"# [$k] truth = $tval, got = $r")
+
+              case e =>
+                log.println(s"!! unhandled case: $e")
+
+            } map { _ =>
+              // now replace this key with a new one
+              keys(i) = maxkey.getAndIncrement()
+              // log.println(s"# starting ${keys(i)}")
+            }
+          }
+        }
       }
+
       f onSuccess { case _ => sem.release() }
       f onFailure { case e: Throwable =>
-        Console.err.println(e.getMessage)
+        Console.err.println(s"!! got an error: ${e.getMessage}")
+        e.printStackTrace()
         sys.exit(1)
       }
     }
@@ -140,15 +195,18 @@ object RawMixCounter extends {
     if (config.do_reset) dropKeyspace()
     createKeyspace()
 
-    val warmup = new RawMixCounter(5 seconds)
-    println(s">>> warmup (${warmup.duration})")
-    warmup.run(truncate = true)
+//    val warmup = new RawMixCounter(5 seconds)
+//    println(s">>> warmup (${warmup.duration})")
+//    warmup.run()
+//
+//    println(">>> resetting metrics")
+//    reservations.clients.values.map(_.metricsReset()).bundle().await()
 
-    Console.err.println(">>> resetting metrics")
-    reservations.clients.values.map(_.metricsReset()).bundle().await()
-
-    Console.err.println(">>> creating new RawMixCounter")
+    println(">>> creating new RawMixCounter")
     val workload = new RawMixCounter(config.duration)
+
+    workload.generate()
+
     println(s">>> workload (${workload.duration})")
     workload.run()
     workload.metrics.dump()

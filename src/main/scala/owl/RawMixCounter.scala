@@ -17,6 +17,7 @@ import scala.concurrent.duration._
 import scala.util.Random
 import scala.collection.mutable
 import Connector.config.rawmix
+import owl.RawMixCounter.Truth
 
 import Console.{err => log}
 
@@ -28,8 +29,6 @@ class RawMixCounter(val duration: FiniteDuration) extends {
 
   val nsets = rawmix.nsets
   val mix = rawmix.counter.mix
-
-  val target = rawmix.target
 
   val zipfDist = new ZipfDistribution(nsets, config.zipf)
 
@@ -86,19 +85,20 @@ class RawMixCounter(val duration: FiniteDuration) extends {
     r
   }
 
+  def init(i: Int): Future[Unit] = {
+    val t = Random.nextInt(rawmix.target)
+    val initial = Random.nextInt(t / 2)
+    Truth.init(i.id, t, initial)
+    counter(i.id).incr(initial)
+  }
+
   def generate(): Unit = {
 
     counter.create().await()
     counter.truncate().await()
 
     log.println(s"# initializing $nsets counters")
-    (0 to nsets)
-        .map { i =>
-          val n = Random.nextInt(target / 4)
-          truth(i.id).v.set(n)
-          counter(i.id).incr(n)
-        }
-        .bundle.await()
+    (0 to nsets).map(init).bundle.await()
   }
 
   def run() {
@@ -118,11 +118,12 @@ class RawMixCounter(val duration: FiniteDuration) extends {
       val k = keys(i)
       val key = k.id
       val handle = counter(key)
+      val t = truth(key)
 
       def check() = {
         handle.read() map {
           case v: Interval[Long] =>
-            if (v.contains(target)) {
+            if (v.contains(t.target)) {
               countCorrect += 1
               countContains += 1
             } else {
@@ -131,35 +132,34 @@ class RawMixCounter(val duration: FiniteDuration) extends {
             val width = v.max - v.min
             histIntervalWidth << width
             histIntervalPercent << (width / v.median * 10000).toLong
-            log.println(s"# [$k] truth = $target, got = $v")
+            log.println(s"# [$k] truth = ${t.target}, got = $v")
 
           case r: Inconsistent[Long] =>
             val v = r.get
-            if (v == target) countCorrect += 1
+            if (v == t.target) countCorrect += 1
             else countIncorrect += 1
 
-            histError << Math.abs(target - r.get)
-            if (r.get < target) countErrorNegative += 1
-            log.println(s"# [$k] truth = $target, got = $r")
+            histError << Math.abs(t.target - r.get)
+            if (r.get < t.target) countErrorNegative += 1
+            log.println(s"# [$k] truth = ${t.target}, got = $r")
 
           case e =>
             log.println(s"!! unhandled case: $e")
 
-        } map { _ =>
+        } flatMap { _ =>
           // now replace this key with a new one
           val j = maxkey.getAndIncrement()
-          keys(i) = j
+          init(j) map { _ => keys(i) = j }
         }
       }
 
-      val t = truth(key)
       val tval = t.start()
-      val f = if (tval > target) {
-        t.complete(target)
+      val f = if (tval > t.target) {
+        t.complete()
         Future(())
       } else {
         handle.incr().instrument(timerIncr) flatMap { _ =>
-          if (t.complete(target)) {
+          if (t.complete()) {
             check()
           } else {
             Future(())
@@ -180,15 +180,6 @@ class RawMixCounter(val duration: FiniteDuration) extends {
     println(s"# Done in ${actualTime.toSeconds}.${actualTime.toMillis%1000}s")
     println(s"# checking eventually correct")
 
-    {
-      for (i <- 0 until maxkey.get) yield counter(i.id).read() map {
-        case r: Interval[Long] =>
-          if (r.contains(target)) countEventuallyCorrect += 1
-        case r: Inconsistent[Long] =>
-          if (r.get == target) countEventuallyCorrect += 1
-      }
-    }.bundle.await()
-
   }
 
 }
@@ -197,25 +188,30 @@ object RawMixCounter extends {
   override implicit val space = KeySpace("rawmix")
 } with Connector {
 
-  case class Truth(v: AtomicLong = new AtomicLong,
-      inflight: AtomicLong = new AtomicLong) {
+  class Truth(
+      val target: Long,
+      v: AtomicLong = new AtomicLong,
+      inflight: AtomicLong = new AtomicLong)
+  {
     def start() = {
       inflight.incrementAndGet()
       v.incrementAndGet()
     }
-    def complete(target: Int) = {
+    def complete() = {
       inflight.decrementAndGet() == 0 && v.get >= target
     }
     def get = v.get()
   }
 
+  object Truth {
+    val values = new ConcurrentHashMap[UUID, Truth]()
 
-  val truthValues = new ConcurrentHashMap[UUID, Truth]()
-  def truth(key: UUID): Truth = {
-    truthValues.computeIfAbsent(key, new Function[UUID,Truth] {
-      override def apply(key: UUID) = Truth()
-    })
+    def init(key: UUID, target: Long, initial: Long = 0L) = {
+      Truth.values.put(key, new Truth(target, new AtomicLong(initial)))
+    }
   }
+
+  def truth(key: UUID): Truth = Truth.values.get(key)
 
   def main(args: Array[String]): Unit = {
     if (config.do_reset) dropKeyspace()

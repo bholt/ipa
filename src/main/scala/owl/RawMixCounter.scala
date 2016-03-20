@@ -101,7 +101,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
     counter.create().await()
     counter.truncate().await()
 
-    log.println(s"# initializing $nsets counters")
+    // log.println(s"# initializing $nsets counters")
     (0 to nsets).map(i => init(i, i.id)).bundle.await()
   }
 
@@ -111,7 +111,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
     val deadline = duration.fromNow
     val sem = new Semaphore(config.concurrent_reqs)
 
-    log.println(s"# starting experiments")
+    // log.println(s"# starting experiments")
 
     val keys = mutable.ArrayBuffer[Int](0 to nsets :_*)
     val maxkey = new AtomicInteger(nsets + 1)
@@ -135,7 +135,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
             val width = v.max - v.min
             histIntervalWidth << width
             histIntervalPercent << (width / v.median * 10000).toLong
-            log.println(s"# [$k] truth = ${t.target}, got = $v")
+            // log.println(s"# [$k] truth = ${t.target}, got = $v")
 
           case r: Inconsistent[Long] =>
             val v = r.get
@@ -146,7 +146,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
             histError << d
             histIntervalPercent << (d.toDouble / v * 10000).toLong
             if (r.get < t.target) countErrorNegative += 1
-            log.println(s"# [$k] truth = ${t.target}, got = $r")
+            // log.println(s"# [$k] truth = ${t.target}, got = $r")
 
           case e =>
             log.println(s"!! unhandled case: $e")

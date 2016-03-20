@@ -3,7 +3,7 @@
 #
 # (based on https://github.com/docker-library/cassandra/blob/master/2.2/Dockerfile)
 #######################################################
-FROM cassandra:2.2.4
+FROM cassandra:3.3
 MAINTAINER Brandon Holt <holt.bg@gmail.com>
 
 # Manually download and install latest scala and sbt.
@@ -15,7 +15,7 @@ RUN apt-get remove -y scala-library scala; \
     wget http://dl.bintray.com/sbt/debian/sbt-0.13.9.deb && \
     dpkg -i sbt-0.13.9.deb
 
-# Fix java certs & pre-install latest sbt version
+# Fix java certs & pre-install latest sbt versionk
 RUN update-ca-certificates -f && sbt version
 
 RUN apt-get install -y ssh rsync git openjdk-8-jdk apt-transport-https
@@ -32,9 +32,19 @@ RUN mkdir -p /src; \
     sbt compile test:compile
 
 # override some configurations
-ADD conf/cassandra.yaml /etc/cassandra/cassandra.yaml
+# ADD conf/cassandra.yaml /etc/cassandra/cassandra.yaml
+RUN sed -ri "s/(listen_address:)/# \1/" /etc/cassandra/cassandra.yaml &&\
+    sed -ri "s/# (listen_interface:).*$/\1 eth0/" /etc/cassandra/cassandra.yaml &&\
+    sed -ri "s/(rpc_address:)/# \1/" /etc/cassandra/cassandra.yaml &&\
+    sed -ri "s/# (rpc_interface:).*$/\1 eth0/" /etc/cassandra/cassandra.yaml &&\
+    sed -ri "s/(enable_user_defined_functions:) false/\1 true/" /etc/cassandra/cassandra.yaml &&\
+    sed -ri "s/(read_request_timeout_in_ms:).*$/\1 10000/" /etc/cassandra/cassandra.yaml &&\
+    sed -ri "s/(range_request_timeout_in_ms:).*$/\1 20000/" /etc/cassandra/cassandra.yaml &&\
+    sed -ri "s/(write_request_timeout_in_ms:).*$/\1 10000/" /etc/cassandra/cassandra.yaml &&\
+    sed -ri "s/(counter_write_request_timeout_in_ms:).*$/\1 20000/" /etc/cassandra/cassandra.yaml
 
-RUN sed -ri "s/(hostname --ip-address)/\1 | awk '{print \$1}'/" /docker-entrypoint.sh
+# Override with my own version of docker-entrypoint that doesn't overwrite addresses (uses interface eth0 instead)
+ADD docker-entrypoint.sh /docker-entrypoint.sh
 
 # 7000: intra-node communication
 # 7001: TLS intra-node communication

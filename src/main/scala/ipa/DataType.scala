@@ -50,7 +50,7 @@ abstract class DataType(imps: CommonImplicits) extends TableGenerator {
 object DataType {
   def lookupMetadata(name: String)(implicit imps: CommonImplicits): Try[String] = {
     import imps._
-    val query = s"SELECT comment FROM system.schema_columnfamilies WHERE keyspace_name = '${space.name}' AND columnfamily_name = '$name'"
+    val query = s"SELECT comment FROM system_schema.tables WHERE keyspace_name = '${space.name}' AND table_name = '$name'"
     Try {
       val row = blocking { session.execute(query).one() }
       val text = row.get("comment", classOf[String])

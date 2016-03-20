@@ -15,7 +15,7 @@ services:
 
   cass:
     image: bholt/owl
-    command: cassandra -f
+    command: cassandra -R -f
     environment:
       - "JVM_OPTS=-Dcassandra.consistent.rangemovement=false"
       - "CASSANDRA_SEEDS=owl_cass_1"

@@ -160,7 +160,7 @@ def reservations(args=None, opt=None):
 
     for c in cons:
         swarm_exec(c).sh(c='cat /dev/null > /opt/docker/service.log; pkill -f ipa.ReservationServer', _ok_code=[0,1,143])
-        swarm_exec(c).sh(c='pkill -f ipa.replication.factor', _ok_code=[0,1,143])
+        swarm_exec(c).sh(c='pkill -f ipa.replica', _ok_code=[0,1,143])
 
         if opt['experiments']:
             # when running as experiment, run with whatever's built-in to the image

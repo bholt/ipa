@@ -211,7 +211,6 @@ def run_retwis():
             ipa_version               = [version],
             ipa_output_json           = ['true'],
 
-            ipa_replication_factor    = [3],
             ipa_reset                 = ['false'],
             ipa_retwis_generate       = ['true'],
 
@@ -255,7 +254,6 @@ def run_tickets(log):
             ipa_version               = [version],
             ipa_output_json           = ['true'],
 
-            ipa_replication_factor    = [3],
             ipa_reset                 = ['false'],
 
             ipa_duration              = [60],
@@ -346,7 +344,6 @@ def run_rawmix(log, datatype):
             ipa_version               = [version],
             ipa_output_json           = ['true'],
 
-            ipa_replication_factor    = [3],
             ipa_reset                 = ['false'],
 
             ipa_duration              = [60],

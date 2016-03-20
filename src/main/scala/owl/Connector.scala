@@ -5,7 +5,7 @@ import java.util.concurrent.TimeUnit
 
 import com.codahale.metrics.json.MetricsModule
 import com.datastax.driver.core._
-import com.datastax.driver.core.policies.{DCAwareRoundRobinPolicy, LatencyAwarePolicy}
+import com.datastax.driver.core.policies.{DCAwareRoundRobinPolicy, LatencyAwarePolicy, RoundRobinPolicy}
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import com.twitter.finagle.Thrift
@@ -42,7 +42,7 @@ object Connector {
     def keyspace = c.getString("ipa.cassandra.keyspace")
 
     def do_reset = c.getBoolean("ipa.reset")
-    def replication_factor = c.getInt("ipa.replication.factor")
+    def replication = c.getString("ipa.replica.strategy")
 
     private def consistencyFromString(s: String) = s match {
       case "strong" => ConsistencyLevel.QUORUM
@@ -126,7 +126,15 @@ object Connector {
       .build()
 
   val latencyMonitor =
-    LatencyAwarePolicy.builder(DCAwareRoundRobinPolicy.builder().build()).build()
+    LatencyAwarePolicy.builder {
+        sys.env.get("CASSANDRA_DC")
+            .map { dc => DCAwareRoundRobinPolicy.builder().withLocalDc(dc).build() }
+            .getOrElse {
+              new RoundRobinPolicy
+            }
+      }
+      .withRetryPeriod(60, TimeUnit.SECONDS)
+      .build()
 
   val cluster = Cluster.builder()
       .addContactPoints(config.hosts)
@@ -168,10 +176,10 @@ trait Connector extends SessionProvider {
 
   def createKeyspace(s: Session = null)(implicit space: KeySpace, defaultSession: Session): Unit = {
     val session = if (s != null) s else defaultSession
-    val r = config.replication_factor
-    println(s"# Creating keyspace: ${space.name} {replication_factor: $r}")
+    val r = config.replication
+    println(s"# create keyspace ${space.name} with $r")
     blocking {
-      session.execute(s"CREATE KEYSPACE IF NOT EXISTS ${space.name} WITH replication = {'class': 'SimpleStrategy', 'replication_factor': $r};")
+      session.execute(s"CREATE KEYSPACE IF NOT EXISTS ${space.name} WITH REPLICATION = $r;")
     }
   }
 

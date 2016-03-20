@@ -13,18 +13,51 @@ services:
       - "constraint:node==ibex"
 #    cpu_shares: 6
 
-  cass:
+  cass1:
+    container_name: owl_cass_1
     image: bholt/owl
     command: cassandra -R -f
     environment:
       - "JVM_OPTS=-Dcassandra.consistent.rangemovement=false"
       - "CASSANDRA_SEEDS=owl_cass_1"
       - "CASSANDRA_HOST=owl_cass_1"
-#      - "constraint:node==ibex"
+      - "CASSANDRA_DC=dc1"
+      - "CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch"
     privileged: true
     networks:
       - dev
-#    cpu_shares: 2
+
+  cass2:
+    container_name: owl_cass_2
+    image: bholt/owl
+    command: cassandra -R -f
+    environment:
+      - "JVM_OPTS=-Dcassandra.consistent.rangemovement=false"
+      - "CASSANDRA_SEEDS=owl_cass_1"
+      - "CASSANDRA_HOST=owl_cass_1"
+      - "CASSANDRA_DC=dc2"
+      - "CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch"
+    privileged: true
+    depends_on:
+      - cass1
+    networks:
+      - dev
+
+  cass3:
+    container_name: owl_cass_3
+    image: bholt/owl
+    command: cassandra -R -f
+    environment:
+      - "JVM_OPTS=-Dcassandra.consistent.rangemovement=false"
+      - "CASSANDRA_SEEDS=owl_cass_1"
+      - "CASSANDRA_HOST=owl_cass_1"
+      - "CASSANDRA_DC=dc3"
+      - "CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch"
+    privileged: true
+    depends_on:
+      - cass1
+    networks:
+      - dev
 
 networks:
   dev:

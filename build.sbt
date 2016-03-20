@@ -75,7 +75,7 @@ resolvers ++= Seq(
 
 libraryDependencies ++= {
   val phantomV = "1.21.5"
-  val finagleV = "6.33.0"
+  val finagleV = "6.34.0"
   Seq(
     "com.websudos"        %% "phantom-dsl"                % phantomV,
     "com.websudos"        %% "phantom-connectors"         % phantomV,
@@ -86,8 +86,7 @@ libraryDependencies ++= {
     "com.codahale.metrics"       % "metrics-json"         % "3.0.2",
     "com.twitter" %% "finagle-core" % finagleV,
     "com.twitter" %% "finagle-thrift" % finagleV,
-    "com.twitter" %% "finagle-thriftmux" % finagleV,
-    "com.twitter" %% "scrooge-core" % "4.5.0"
+    "com.twitter" %% "finagle-thriftmux" % finagleV
   )
 }
 

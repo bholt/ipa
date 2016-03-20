@@ -4,8 +4,9 @@ import java.net.InetAddress
 import java.util.concurrent.ConcurrentHashMap
 import java.util.UUID
 import java.util.function.Function
+
 import com.datastax.driver.core.{Cluster, ConsistencyLevel => CLevel}
-import com.twitter.finagle.Thrift
+import com.twitter.finagle.{Deadline, Thrift, ThriftMux}
 import com.twitter.finagle.loadbalancer.Balancers
 import com.twitter.finagle.util.{DefaultTimer, HashedWheelTimer}
 import com.twitter.util._
@@ -443,7 +444,8 @@ object ReservationServer extends {
       }
     }
 
-    val server = Thrift.server
+    val server =
+      ThriftMux.server
         .withMonitor(monitor)
         .serveIface(host, rs)
 
@@ -463,11 +465,11 @@ class ReservationClient(cluster: Cluster) {
 
   def newClient(hosts: String): ReservationService = {
     val service =
-      Thrift.client
+      ThriftMux.client
           .withLoadBalancer(Balancers.p2cPeakEwma())
           .newServiceIface[th.ReservationService.ServiceIface](hosts, "ipa")
 
-    Thrift.newMethodIface(service)
+    ThriftMux.newMethodIface(service)
   }
 
   println(s"hosts: ${addrs.values.mkString(",")}")
@@ -500,8 +502,8 @@ object ReservationClient extends {
     val port = config.reservations.port
     val hosts = cass_hosts.map(h => s"$h:$port").mkString(",")
 
-    val service = Thrift.client
-        .withSessionPool.maxSize(4)
+    val service = ThriftMux.client
+//        .withSessionPool.maxSize(4)
         .withLoadBalancer(Balancers.aperture())
         .newServiceIface[th.ReservationService.ServiceIface](hosts, "ipa")
 

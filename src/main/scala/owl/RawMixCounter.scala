@@ -9,7 +9,7 @@ import java.util.function.Function
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
 import ipa.{BoundedCounter, IPACounter}
-import org.apache.commons.math3.distribution.ZipfDistribution
+import org.apache.commons.math3.distribution.{UniformIntegerDistribution, ZipfDistribution}
 import owl.Util._
 
 import scala.concurrent.Future
@@ -30,10 +30,13 @@ class RawMixCounter(val duration: FiniteDuration) extends {
   val nsets = rawmix.nsets
   val mix = rawmix.counter.mix
 
-  val zipfDist = new ZipfDistribution(nsets, config.zipf)
-
-  def zipfID() = id(zipfDist.sample())
-  def urandID() = id(Random.nextInt(nsets))
+  val dist = if (config.zipf == 0) {
+    println("# Uniform distribution")
+    new UniformIntegerDistribution(0, nsets-1)
+  } else {
+    println(s"# Zipf distribution: ${config.zipf}")
+    new ZipfDistribution(nsets, config.zipf)
+  }
 
   val counter = IPACounter.fromNameAndBound("raw", config.bound)
 
@@ -85,11 +88,12 @@ class RawMixCounter(val duration: FiniteDuration) extends {
     r
   }
 
-  def init(i: Int): Future[Unit] = {
-    val t = Random.nextInt(rawmix.target)
-    val initial = Random.nextInt(t / 2)
-    Truth.init(i.id, t, initial)
-    counter(i.id).incr(initial)
+  def init(i: Int, key: UUID): Future[Unit] = {
+    val t = Random.nextInt(rawmix.target) + rawmix.target / 4
+    val scaled = (t * nsets * dist.probability(i)).toInt + 4
+    val initial = Random.nextInt(scaled / 4)
+    Truth.init(key, scaled, initial)
+    counter(key).incr(initial)
   }
 
   def generate(): Unit = {
@@ -98,7 +102,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
     counter.truncate().await()
 
     log.println(s"# initializing $nsets counters")
-    (0 to nsets).map(init).bundle.await()
+    (0 to nsets).map(i => init(i, i.id)).bundle.await()
   }
 
   def run() {
@@ -109,19 +113,18 @@ class RawMixCounter(val duration: FiniteDuration) extends {
 
     log.println(s"# starting experiments")
 
-    val keys = mutable.ArrayBuffer[Int](0 until nsets :_*)
+    val keys = mutable.ArrayBuffer[Int](0 to nsets :_*)
     val maxkey = new AtomicInteger(nsets + 1)
 
     while (deadline.hasTimeLeft &&
       sem.tryAcquire(deadline.timeLeft.inMillis, TimeUnit.MILLISECONDS)) {
-      val i = Random.nextInt(keys.size)
+      val i = dist.sample()
       val k = keys(i)
       val key = k.id
       val handle = counter(key)
-      val t = truth(key)
 
-      def check() = {
-        handle.read() map {
+      def check(t: Truth) = {
+        handle.read().instrument(timerRead) map {
           case v: Interval[Long] =>
             if (v.contains(t.target)) {
               countCorrect += 1
@@ -139,7 +142,9 @@ class RawMixCounter(val duration: FiniteDuration) extends {
             if (v == t.target) countCorrect += 1
             else countIncorrect += 1
 
-            histError << Math.abs(t.target - r.get)
+            val d = Math.abs(t.target - r.get)
+            histError << d
+            histIntervalPercent << (d.toDouble / v * 10000).toLong
             if (r.get < t.target) countErrorNegative += 1
             log.println(s"# [$k] truth = ${t.target}, got = $r")
 
@@ -149,23 +154,35 @@ class RawMixCounter(val duration: FiniteDuration) extends {
         } flatMap { _ =>
           // now replace this key with a new one
           val j = maxkey.getAndIncrement()
-          init(j) map { _ => keys(i) = j }
+          init(i, j.id) map { _ => keys(i) = j }
         }
       }
 
-      val tval = t.start()
-      val f = if (tval > t.target) {
-        t.complete()
-        Future(())
-      } else {
-        handle.incr().instrument(timerIncr) flatMap { _ =>
-          if (t.complete()) {
-            check()
-          } else {
+      val f = weightedSample(mix) match {
+
+        case 'incr =>
+          val t = truth(key)
+          val tval = t.start()
+          if (tval > t.target) {
+            t.complete()
             Future(())
+          } else {
+            handle.incr().instrument(timerIncr) flatMap { _ =>
+              if (t.complete()) {
+                check(t)
+              } else {
+                Future(())
+              }
+            }
           }
-        }
+
+        case 'read =>
+          handle.read().instrument(timerRead).unit
+
+        case op =>
+          sys.error(s"Unhandled op: $op")
       }
+
 
       f onSuccess { case _ => sem.release() }
       f onFailure { case e: Throwable =>

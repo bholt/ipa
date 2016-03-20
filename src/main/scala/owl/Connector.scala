@@ -133,7 +133,7 @@ object Connector {
               new RoundRobinPolicy
             }
       }
-      .withRetryPeriod(60, TimeUnit.SECONDS)
+      .withRetryPeriod(5, TimeUnit.SECONDS)
       .build()
 
   val cluster = Cluster.builder()

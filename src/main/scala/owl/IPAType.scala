@@ -92,6 +92,7 @@ object Inconsistent { def apply[T](value: T) = new Inconsistent(value) }
 
 case class Consistent[T](value: T) extends Inconsistent[T](value) {
   override def consistency = Consistency.Strong
+  override def toString = s"Consistent($value)"
 }
 
 

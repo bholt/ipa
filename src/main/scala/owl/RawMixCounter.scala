@@ -8,16 +8,16 @@ import java.util.function.Function
 
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
-import ipa.IPACounter
+import ipa.{BoundedCounter, IPACounter}
 import org.apache.commons.math3.distribution.ZipfDistribution
 import owl.Util._
 
-import scala.concurrent.Future
+import com.twitter.util.Future
 import scala.concurrent.duration._
 import scala.util.Random
 import scala.collection.mutable
-
 import Connector.config.rawmix
+
 import Console.{err => log}
 
 class RawMixCounter(val duration: FiniteDuration) extends {
@@ -36,7 +36,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
   def zipfID() = id(zipfDist.sample())
   def urandID() = id(Random.nextInt(nsets))
 
-  val counter = IPACounter.fromNameAndBound("raw", config.bound)
+  val counter = BoundedCounter.fromNameAndBound("raw", config.bound)
 
   val timerIncr = metrics.create.timer("incr_latency")
   val timerRead = metrics.create.timer("read_latency")
@@ -95,9 +95,9 @@ class RawMixCounter(val duration: FiniteDuration) extends {
         .map { i =>
           val n = Random.nextInt(target / 4)
           truth(i.id).v.set(n)
-          counter(i.id).incr(n)
+          counter(i.id).init(0).flatMap(_ => counter(i.id).incr(n))
         }
-        .bundle.await()
+        .bundle().await()
   }
 
   def run() {
@@ -121,14 +121,14 @@ class RawMixCounter(val duration: FiniteDuration) extends {
       val tval = truth(key).v.incrementAndGet()
 
       val f = if (tval > target) {
-        Future(())
+        Future.Unit
       } else {
         handle.incr().instrument(timerIncr) flatMap { _ =>
           if (tval != target) {
-            Future(())
+            Future.Unit
           } else {
-            handle.read() map {
-              case r: Interval[Long] =>
+            handle.value() map {
+              case r: Interval[Int] =>
                 if (r.contains(target)) {
                   countCorrect += 1
                   countContains += 1
@@ -137,21 +137,22 @@ class RawMixCounter(val duration: FiniteDuration) extends {
                 }
                 log.println(s"# [$k] truth = $tval, got = $r")
 
-              case r: Inconsistent[Long] =>
+              case r: Inconsistent[Int] =>
                 val v = r.get
                 if (v == target) countCorrect += 1
                 else countIncorrect += 1
 
                 histError << Math.abs(target - r.get)
                 if (r.get < target) countErrorNegative += 1
-                // log.println(s"# [$k] truth = $tval, got = $r")
+                log.println(s"# [$k] truth = $tval, got = $r")
 
               case e =>
                 log.println(s"!! unhandled case: $e")
 
-            } map { _ =>
+            } flatMap { _ =>
               // now replace this key with a new one
-              keys(i) = maxkey.getAndIncrement()
+              val j = maxkey.getAndIncrement()
+              counter(j.id).init(0) map { _ => keys(i) = j }
               // log.println(s"# starting ${keys(i)}")
             }
           }

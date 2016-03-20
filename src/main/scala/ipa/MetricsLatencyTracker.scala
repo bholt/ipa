@@ -26,7 +26,6 @@ class MetricsLatencyTracker(metrics: IPAMetrics) extends LatencyTracker {
 
   override def update(host: Host, stmt: Statement, ex: Exception, lat: Long): Unit = {
     metric(stmt.getConsistencyLevel).update(lat)
-    metrics.replicasUsed(host.getAddress) += 1
   }
 
   def predict(cons: CLevel): Double = {

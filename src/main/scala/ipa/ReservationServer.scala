@@ -29,8 +29,16 @@ import scala.concurrent.blocking
 import scala.util.{Failure, Success, Try}
 
 case class Alloc(key: UUID, allocs: Map[Int, Long] = Map(), leases: Map[Int,DateTime] = Map()) {
-  def total = allocs.values.sum
-  def allocated = allocs.getOrElse(this_host_hash, 0L)
+  private def interpret(a: Long, currentMax: Long) = if (a == Alloc.Max) currentMax else a
+  def total(currentMax: Long) =
+    allocs.values.map(interpret(_, currentMax)).sum
+  def allocated(currentMax: Long) = {
+    interpret(allocs.getOrElse(this_host_hash, 0L), currentMax)
+  }
+}
+
+object Alloc {
+  val Max = -1L
 }
 
 class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationService[tw.Future] {
@@ -122,10 +130,12 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
       space: KeySpace,
       tolerance: Tolerance
   ) {
-    val reservations = new mutable.HashMap[UUID, Reservation]
+    val reservations = new ConcurrentHashMap[UUID, Reservation]
 
     def reservation(key: UUID): Future[Reservation] = {
-      val r = reservations.getOrElseUpdate(key, new Reservation)
+      val r = reservations.computeIfAbsent(key, new Function[UUID, Reservation] {
+        override def apply(key: UUID): Reservation = new Reservation(tolerance)
+      })
       if (r.lastRead.time == 0L) {
         m.initialized += 1
         r.fetchAndUpdate(table, key, Weak)
@@ -136,7 +146,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
 
   }
 
-  class Reservation {
+  class Reservation(tol: Tolerance) {
     var lastRead: Timestamped[Long] = Timestamped(0L, 0L)
     var total: Long = 0L      // tokens allocated globally (currently assumed to be the max possible given the error tolerance)
     var allocated: Long = 0L  // tokens allocated to this replica locally
@@ -150,14 +160,15 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
       case None => false
     }
 
-    def max(tol: Tolerance) = tol.delta(lastRead.value)
+    def max = tol.delta(lastRead.value)
+    def maxLocal = max / session.nreplicas
 
     def update(read: Timestamped[Long], allocOpt: Option[Alloc] = None): Unit = {
       lastRead = read
       allocOpt match {
         case Some(alloc) =>
-          total = alloc.total
-          allocated = alloc.allocated
+          total = alloc.total(maxLocal)
+          allocated = alloc.allocated(maxLocal)
           available = allocated
           lease = alloc.leases.get(this_host_hash)
         case None =>
@@ -218,14 +229,6 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     def interval = th.IntervalLong(lastRead.value - delta, lastRead.value + delta)
 
     override def toString = s"Reservation(read: $lastRead, total: $total, alloc: $allocated, avail: $available)"
-  }
-
-  object Reservation {
-    def apply(entry: Entry, lastRead: Timestamped[Long], allocOpt: Option[Alloc]): Reservation = {
-      val r = new Reservation()
-      r.update(lastRead, allocOpt)
-      r
-    }
   }
 
   val tables = new ConcurrentHashMap[Table, Entry]()
@@ -312,12 +315,21 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
         e.reservation(key) flatMap { res =>
           // being conservative and not allowing one replica to hoard
           // TODO: try allowing them to exceed this, since it's likely that we'll have cases where the nearest replica is being hit more
-          val max = res.max(e.tolerance) / session.nreplicas
+          val max = res.maxLocal
 
           if (n > max) {
             m.outOfBounds += 1
-            exec(CLevel.ALL) map { _ =>
-              blocking(Thread.sleep(config.lease.periodMillis))
+            for {
+              _ <- exec(CLevel.ALL) join res.allocate(key, Alloc.Max)
+              start = System.nanoTime
+              _ <- res.fetchAndUpdate(e.table, key, CLevel.ONE)
+            } yield {
+              val remain = System.nanoTime - start
+              if (remain > config.lease.periodNanos) {
+                blocking {
+                  Thread.sleep(Duration.fromNanoseconds(remain).inMillis)
+                }
+              }
             }
           } else {
             for {
@@ -327,7 +339,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
                 } else {
                   // we need to allocate more, or lease is about to expire
                   if (res.leaseExpiresSoon) m.reallocs += 1
-                  res.allocate(key, max).map(_ => false)
+                  res.allocate(key, Alloc.Max).map(_ => false)
                 }
 
               immediate <-

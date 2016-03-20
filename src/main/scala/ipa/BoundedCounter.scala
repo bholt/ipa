@@ -6,9 +6,10 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.Function
 
+import com.datastax.driver.core.exceptions.WriteTimeoutException
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
 import com.twitter.concurrent.AsyncQueue
-import com.twitter.util.{Time, Future => TwFuture, Duration => TwDuration}
+import com.twitter.util.{Time, Duration => TwDuration, Future => TwFuture}
 import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.dsl._
 import ipa.thrift.ReservationException
@@ -148,6 +149,8 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
     lazy val consume_others = metrics.create.counter("consume_other")
     val forwards = metrics.create.counter("forwards")
     val forwarded_again = metrics.create.counter("forwarded_again")
+    lazy val init_retries = metrics.create.counter("init_retry")
+    lazy val sync_retries = metrics.create.counter("sync_retry")
 
     lazy val travel_time = metrics.create.histogram("travel_time")
 
@@ -236,7 +239,16 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       this.min = min
       this.rights.clear()
       this.consumed.clear()
-      prepared.init(key, min)(CLevel.ALL).execAsTwitter()
+      prepared.init(key, min)(CLevel.ALL).execAsTwitter().rescue {
+        case e: WriteTimeoutException =>
+          Console.err.println(s"!! WriteTimeoutException in BoundedCounter.init")
+          e.printStackTrace()
+          init(min)
+        case e: Throwable =>
+          Console.err.println(s"!! exception in BoundedCounter.init: ${e.getMessage}")
+          e.printStackTrace()
+          TwFuture.exception(e)
+      }
     }
 
     def update(c: CLevel = cbound.read): TwFuture[Unit] = {
@@ -285,6 +297,12 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
       consumed(me) = 0
       prepared.sync(key, me, rights((me,me)), consumed(me))(CLevel.ALL)
           .execAsTwitter().instrument(m.sync_latency)
+          .rescue {
+            case e: WriteTimeoutException =>
+              m.sync_retries += 1
+              Console.err.println(s"!! WriteTimeoutException in BoundedCounter.sync")
+              sync()
+          }
     }
 
     def should_sync_soon: Boolean =

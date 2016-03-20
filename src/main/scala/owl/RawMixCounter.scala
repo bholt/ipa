@@ -12,7 +12,7 @@ import ipa.{BoundedCounter, IPACounter}
 import org.apache.commons.math3.distribution.ZipfDistribution
 import owl.Util._
 
-import com.twitter.util.Future
+import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Random
 import scala.collection.mutable
@@ -36,7 +36,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
   def zipfID() = id(zipfDist.sample())
   def urandID() = id(Random.nextInt(nsets))
 
-  val counter = BoundedCounter.fromNameAndBound("raw", config.bound)
+  val counter = IPACounter.fromNameAndBound("raw", config.bound)
 
   val timerIncr = metrics.create.timer("incr_latency")
   val timerRead = metrics.create.timer("read_latency")
@@ -96,9 +96,9 @@ class RawMixCounter(val duration: FiniteDuration) extends {
         .map { i =>
           val n = Random.nextInt(target / 4)
           truth(i.id).v.set(n)
-          counter(i.id).init(0).flatMap(_ => counter(i.id).incr(n))
+          counter(i.id).incr(n)
         }
-        .bundle().await()
+        .bundle.await()
   }
 
   def run() {
@@ -119,18 +119,21 @@ class RawMixCounter(val duration: FiniteDuration) extends {
       val key = k.id
       val handle = counter(key)
 
-      def check(): Future[Unit] = {
-        handle.value() map {
-          case r: Interval[Int] =>
-            if (r.contains(target)) {
+      def check() = {
+        handle.read() map {
+          case v: Interval[Long] =>
+            if (v.contains(target)) {
               countCorrect += 1
               countContains += 1
             } else {
               countIncorrect += 1
             }
-            log.println(s"# [$k] truth = $target, got = $r")
+            val width = v.max - v.min
+            histIntervalWidth << width
+            histIntervalPercent << (width / v.median * 10000).toLong
+            log.println(s"# [$k] truth = $target, got = $v")
 
-          case r: Inconsistent[Int] =>
+          case r: Inconsistent[Long] =>
             val v = r.get
             if (v == target) countCorrect += 1
             else countIncorrect += 1
@@ -142,11 +145,10 @@ class RawMixCounter(val duration: FiniteDuration) extends {
           case e =>
             log.println(s"!! unhandled case: $e")
 
-        } flatMap { _ =>
+        } map { _ =>
           // now replace this key with a new one
           val j = maxkey.getAndIncrement()
-          counter(j.id).init(0) map { _ => keys(i) = j }
-          // log.println(s"# starting ${keys(i)}")
+          keys(i) = j
         }
       }
 
@@ -154,13 +156,13 @@ class RawMixCounter(val duration: FiniteDuration) extends {
       val tval = t.start()
       val f = if (tval > target) {
         t.complete(target)
-        Future.Unit
+        Future(())
       } else {
         handle.incr().instrument(timerIncr) flatMap { _ =>
           if (t.complete(target)) {
             check()
           } else {
-            Future.Unit
+            Future(())
           }
         }
       }
@@ -179,13 +181,13 @@ class RawMixCounter(val duration: FiniteDuration) extends {
     println(s"# checking eventually correct")
 
     {
-      for (i <- 0 until maxkey.get) yield counter(i.id).value() map {
-        case r: Interval[Int] =>
+      for (i <- 0 until maxkey.get) yield counter(i.id).read() map {
+        case r: Interval[Long] =>
           if (r.contains(target)) countEventuallyCorrect += 1
-        case r: Inconsistent[Int] =>
+        case r: Inconsistent[Long] =>
           if (r.get == target) countEventuallyCorrect += 1
       }
-    } bundle() await()
+    }.bundle.await()
 
   }
 

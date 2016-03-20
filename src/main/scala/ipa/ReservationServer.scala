@@ -435,7 +435,17 @@ object ReservationServer extends {
       rs.init()
     }
 
-    val server = Thrift.serveIface(host, rs)
+    val monitor: Monitor = new Monitor {
+      def handle(e: Throwable): Boolean = {
+        Console.err.println(s"!! monitor got error: ${e.getMessage}")
+        e.printStackTrace()
+        false
+      }
+    }
+
+    val server = Thrift.server
+        .withMonitor(monitor)
+        .serveIface(host, rs)
 
     println("[ready]")
     server.await()

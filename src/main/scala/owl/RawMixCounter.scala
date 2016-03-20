@@ -119,43 +119,48 @@ class RawMixCounter(val duration: FiniteDuration) extends {
       val key = k.id
       val handle = counter(key)
 
-      val tval = truth(key).v.incrementAndGet()
+      def check(): Future[Unit] = {
+        handle.value() map {
+          case r: Interval[Int] =>
+            if (r.contains(target)) {
+              countCorrect += 1
+              countContains += 1
+            } else {
+              countIncorrect += 1
+            }
+            log.println(s"# [$k] truth = $target, got = $r")
 
+          case r: Inconsistent[Int] =>
+            val v = r.get
+            if (v == target) countCorrect += 1
+            else countIncorrect += 1
+
+            histError << Math.abs(target - r.get)
+            if (r.get < target) countErrorNegative += 1
+            log.println(s"# [$k] truth = $target, got = $r")
+
+          case e =>
+            log.println(s"!! unhandled case: $e")
+
+        } flatMap { _ =>
+          // now replace this key with a new one
+          val j = maxkey.getAndIncrement()
+          counter(j.id).init(0) map { _ => keys(i) = j }
+          // log.println(s"# starting ${keys(i)}")
+        }
+      }
+
+      val t = truth(key)
+      val tval = t.start()
       val f = if (tval > target) {
+        t.complete(target)
         Future.Unit
       } else {
         handle.incr().instrument(timerIncr) flatMap { _ =>
-          if (tval != target) {
-            Future.Unit
+          if (t.complete(target)) {
+            check()
           } else {
-            handle.value() map {
-              case r: Interval[Int] =>
-                if (r.contains(target)) {
-                  countCorrect += 1
-                  countContains += 1
-                } else {
-                  countIncorrect += 1
-                }
-                log.println(s"# [$k] truth = $tval, got = $r")
-
-              case r: Inconsistent[Int] =>
-                val v = r.get
-                if (v == target) countCorrect += 1
-                else countIncorrect += 1
-
-                histError << Math.abs(target - r.get)
-                if (r.get < target) countErrorNegative += 1
-                log.println(s"# [$k] truth = $tval, got = $r")
-
-              case e =>
-                log.println(s"!! unhandled case: $e")
-
-            } flatMap { _ =>
-              // now replace this key with a new one
-              val j = maxkey.getAndIncrement()
-              counter(j.id).init(0) map { _ => keys(i) = j }
-              // log.println(s"# starting ${keys(i)}")
-            }
+            Future.Unit
           }
         }
       }
@@ -192,7 +197,13 @@ object RawMixCounter extends {
 
   case class Truth(v: AtomicLong = new AtomicLong,
       inflight: AtomicLong = new AtomicLong) {
-    def incr() = v.incrementAndGet()
+    def start() = {
+      inflight.incrementAndGet()
+      v.incrementAndGet()
+    }
+    def complete(target: Int) = {
+      inflight.decrementAndGet() == 0 && v.get >= target
+    }
     def get = v.get()
   }
 

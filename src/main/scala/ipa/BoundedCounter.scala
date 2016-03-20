@@ -58,7 +58,7 @@ object BoundedCounter {
   }
 
   trait WeakBounds extends Bounds { self: BoundedCounter =>
-    override val cbound = Consistency(CLevel.ONE, CLevel.ONE)
+    override val cbound = Consistency(CLevel.LOCAL_ONE, CLevel.LOCAL_ONE)
     override def meta = Metadata(Some(cbound))
     type IPAValueType[T] = Inconsistent[T]
     type IPADecrType[T] = Inconsistent[T]
@@ -68,7 +68,7 @@ object BoundedCounter {
 
   trait ErrorBound extends Bounds { self: BoundedCounter =>
     def bound: Tolerance
-    override val cbound = Consistency(CLevel.ONE, CLevel.ONE)
+    override val cbound = Consistency(CLevel.LOCAL_ONE, CLevel.LOCAL_ONE)
     override def ebound = Some(bound)
 
     override def meta = Metadata(Some(bound))
@@ -82,7 +82,7 @@ object BoundedCounter {
 
   trait LatencyBound extends Bounds { self: BoundedCounter =>
     def bound: Latency
-    override val cbound = Consistency(CLevel.ONE, CLevel.ONE)
+    override val cbound = Consistency(CLevel.LOCAL_ONE, CLevel.LOCAL_ONE)
     override def lbound = Some(bound)
 
     override def meta = Metadata(Some(bound))
@@ -606,7 +606,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         s.localRush(op.estTravelTime, cbound.read) {
           case Strong =>
             s submit { s.update(Strong) map { _ => s.value } }
-          case Weak =>
+          case CLevel.ONE | CLevel.LOCAL_ONE =>
             if (!s.expired) {
               TwFuture(s.value)
             } else {

@@ -34,13 +34,14 @@ sealed trait Bound
 final case class Latency(d: FiniteDuration) extends Bound {
   override def toString = s"latency:${d.toMillis}ms"
 }
-final case class Consistency(read: CLevel, write: CLevel = Consistency.Strong) extends Bound {
+final case class Consistency(read: CLevel, write: CLevel) extends Bound {
   import Consistency._
   override def toString = "consistency:" + {
+    import CLevel._
     (read, write) match {
-      case (Weak, Weak) => "weakwrite"
-      case (Weak, Strong) => "weak"
-      case (Strong, _) => "strong"
+      case (ONE, ONE) | (LOCAL_ONE, LOCAL_ONE) => "weakwrite"
+      case (ONE, QUORUM) | (LOCAL_ONE, QUORUM) => "weak"
+      case (QUORUM, _) => "strong"
       case _ => super.toString
     }
   }
@@ -60,16 +61,18 @@ object Bound {
         case "latency" => Latency(Duration(split(1)).asInstanceOf[FiniteDuration])
         case "consistency" =>
           split(1) match {
-            case "weak"   => Consistency(Weak)
+            case "weak"   => Consistency(Weak, Strong)
             case "weakwrite" => Consistency(Weak, Weak)
-            case "strong" => Consistency(Strong)
+            case "weakest" => Consistency(Weak, Weak)
+            case "strong" => Consistency(Strong, Strong)
           }
         case "tolerance" => Tolerance(split(1).toDouble)
         case _ => throw new RuntimeException(s"invalid bound: ${split(0)}:${split(1)}")
       }
     } recover {
       case e: Throwable =>
-        Console.err.println(s"error parsing bound: ${e.getMessage}")
+        Console.err.println(s"error parsing bound '$str': ${e.getMessage}")
+        e.printStackTrace()
         sys.exit(1)
     } get
   }

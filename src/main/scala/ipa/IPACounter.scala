@@ -1,10 +1,18 @@
 package ipa
 
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.function.Function
+
 import com.datastax.driver.core.{Row, ConsistencyLevel => CLevel}
+import com.twitter.util.{Future => TwFuture}
 import com.twitter.{util => tw}
 import com.websudos.phantom.dsl.{UUID, _}
 import com.websudos.phantom.keys.PartitionKey
+import ipa.thrift.CounterOpType.{EnumUnknownCounterOpType, Init, _}
+import ipa.{thrift => th}
 import ipa.thrift.ReservationException
+import owl.Consistency.{apply => _, _}
 import owl.Conversions._
 import owl.Util._
 import owl._
@@ -69,9 +77,15 @@ object IPACounter {
     override def meta = Metadata(Some(tolerance))
 
     override def create(): Future[Unit] = {
-      createTwitter() flatMap { _ =>
-        reservations.client.createCounter(table, tolerance.error)
-      } asScala
+      createTwitter().asScala
+    }
+
+    override def truncate(): Future[Unit] = {
+      tbl.truncate.future() flatMap { _ =>
+        reservations.clients.values
+            .map(_.counter(table, th.BoundedCounterOp(th.CounterOpType.Truncate)))
+            .bundle().asScala.unit
+      }
     }
 
     type IPAType[T] = Interval[T]
@@ -84,6 +98,35 @@ object IPACounter {
       reservations.client.readInterval(table, key.toString)
           .map(v => v: Interval[Long])
           .asScala
+    }
+
+    // Only used on the ReservationServer instance
+    object server {
+
+      lazy val pool = new ReservationPool(name, tolerance)
+
+      def handle(op: th.BoundedCounterOp): TwFuture[th.CounterResult] = {
+        import th.CounterOpType._
+
+        lazy val s = pool.get(op.key.get.toUUID)
+
+        op.op match {
+
+          case Incr =>
+
+
+          case Value =>
+
+
+          case Truncate =>
+            Console.err.println(s"# Truncated $table")
+            pool.clear()
+            TwFuture(th.CounterResult())
+
+          case Init | Decr | EnumUnknownCounterOpType(e) =>
+            throw th.ReservationException(s"Unknown or unsupported op type: $e")
+        }
+      }
     }
   }
 

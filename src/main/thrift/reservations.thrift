@@ -103,6 +103,9 @@ service ReservationService {
   CounterResult bounded_counter(1: Table t, 2: BoundedCounterOp op)
     throws (1: ReservationException e, 2: ForwardTo fwd)
 
+  CounterResult counter(1: Table t, 2: BoundedCounterOp op)
+    throws (1: ReservationException e)
+
   void metricsReset()
   string metricsJson()
 }

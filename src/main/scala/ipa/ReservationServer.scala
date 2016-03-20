@@ -28,18 +28,7 @@ import scala.collection.{concurrent, mutable}
 import scala.concurrent.blocking
 import scala.util.{Failure, Success, Try}
 
-case class Alloc(key: UUID, allocs: Map[Int, Long] = Map(), leases: Map[Int,DateTime] = Map()) {
-  private def interpret(a: Long, currentMax: Long) = if (a == Alloc.Max) currentMax else a
-  def total(currentMax: Long) =
-    allocs.values.map(interpret(_, currentMax)).sum
-  def allocated(currentMax: Long) = {
-    interpret(allocs.getOrElse(this_host_hash, 0L), currentMax)
-  }
-}
 
-object Alloc {
-  val Max = -1L
-}
 
 class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationService[tw.Future] {
   import imps._
@@ -378,6 +367,23 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
       } get
     )
     bc.handle(op)
+  }
+
+  val counters = new ConcurrentHashMap[Table, IPACounter with IPACounter.ErrorTolerance]
+
+  override def counter(t: Table, op: BoundedCounterOp): Future[CounterResult] = {
+    implicit val space = KeySpace(t.space)
+    implicit val imps = CommonImplicits()
+    val c = counters.computeIfAbsent(t, new Function[Table, IPACounter with IPACounter.ErrorTolerance] {
+      override def apply(t: Table): IPACounter = {
+        IPACounter.fromName(t.name).recoverWith {
+          case e: Throwable =>
+            Console.err.println(s"Error getting BoundedCounter by name: $t")
+            Failure(e)
+        }.get.asInstanceOf[IPACounter with IPACounter.ErrorTolerance]
+      }
+    })
+    c.server.handle(op)
   }
 
 //  override def create(tbl: Table, datatype: Datatype, tolerance: Double): Future[Unit] = ???

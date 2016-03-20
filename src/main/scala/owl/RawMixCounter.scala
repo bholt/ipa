@@ -48,6 +48,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
   val histIntervalPercent = metrics.create.histogram("interval_percent")
   val countCorrect = metrics.create.counter("correct")
   val countIncorrect = metrics.create.counter("incorrect")
+  val countEventuallyCorrect = metrics.create.counter("eventually_correct")
   val countContains = metrics.create.counter("contains")
   val countNotContains = metrics.create.counter("contains_not")
   val histError = metrics.create.histogram("error")
@@ -170,6 +171,17 @@ class RawMixCounter(val duration: FiniteDuration) extends {
     val actualTime = actualDurationStart.elapsed
     output += ("actual_time" -> actualTime)
     println(s"# Done in ${actualTime.toSeconds}.${actualTime.toMillis%1000}s")
+    println(s"# checking eventually correct")
+
+    {
+      for (i <- 0 until maxkey.get) yield counter(i.id).value() map {
+        case r: Interval[Int] =>
+          if (r.contains(target)) countEventuallyCorrect += 1
+        case r: Inconsistent[Int] =>
+          if (r.get == target) countEventuallyCorrect += 1
+      }
+    } bundle() await()
+
   }
 
 }

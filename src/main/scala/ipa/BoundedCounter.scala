@@ -605,7 +605,7 @@ class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) exten
         val arrival = System.nanoTime
         s.localRush(op.estTravelTime, cbound.read) {
           case Strong =>
-            s submit { s.update(Strong) map { _ => s.value } }
+            s submit { s.update(Strong) map { _ => m.reads += 1; s.value } }
           case CLevel.ONE | CLevel.LOCAL_ONE =>
             if (!s.expired) {
               TwFuture(s.value)

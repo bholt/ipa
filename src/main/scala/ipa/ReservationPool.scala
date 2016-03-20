@@ -6,13 +6,13 @@ import java.util.function.Function
 
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
 import com.twitter.util
-import com.twitter.util.{Future => TwFuture}
+import com.twitter.util.{Duration => TwDuration, Future => TwFuture}
 import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.column.{MapColumn, PrimitiveColumn}
 import com.websudos.phantom.dsl._
 import org.joda.time.DateTime
 import owl.Connector.config
-import owl.{Timestamped, Tolerance}
+import owl.{FutureSerializer, Interval, Timestamped, Tolerance}
 import owl.Util._
 import ipa.{thrift => th}
 
@@ -35,7 +35,11 @@ object ReservationPool {
 
 }
 
-class ReservationPool(baseName: String, tolerance: Tolerance)(implicit imps: CommonImplicits) {
+class ReservationPool(
+    baseName: String,
+    tolerance: Tolerance,
+    readOp: CLevel => UUID => TwFuture[Long]
+)(implicit imps: CommonImplicits) {
   import imps._
 
   object m {
@@ -124,7 +128,7 @@ class ReservationPool(baseName: String, tolerance: Tolerance)(implicit imps: Com
 
   def get(key: UUID): Reservation = {
     reservationMap.computeIfAbsent(key, new Function[UUID, Reservation] {
-      override def apply(key: UUID): Reservation = new Reservation(tolerance)
+      override def apply(key: UUID): Reservation = new Reservation(key, tolerance)
     })
   }
 
@@ -132,7 +136,7 @@ class ReservationPool(baseName: String, tolerance: Tolerance)(implicit imps: Com
     reservationMap.clear()
   }
 
-  class Reservation(tol: Tolerance) {
+  class Reservation(key: UUID, tol: Tolerance) extends FutureSerializer {
     var lastRead: Timestamped[Long] = Timestamped(0L, 0L)
     var total: Long = 0L      // tokens allocated globally (currently assumed to be the max possible given the error tolerance)
     var allocated: Long = 0L  // tokens allocated to this replica locally
@@ -163,20 +167,18 @@ class ReservationPool(baseName: String, tolerance: Tolerance)(implicit imps: Com
       }
     }
 
-    def refresh(table: IPACounter, key: UUID) = {
+    def refresh(key: UUID) = {
       m.refreshes += 1
-      fetchAndUpdate(table, key, CLevel.ALL)
+      fetchAndUpdate(CLevel.ALL)
     }
 
-    def fetchAndUpdate(table: IPACounter, key: UUID, cons: CLevel): TwFuture[Reservation] = {
+    def fetchAndUpdate(clevel: CLevel): TwFuture[Reservation] = {
       val rt = System.nanoTime
-      val f_read =
-        table.readTwitter(cons)(key)
-            .instrument(m.latencyWeakRead).instrument()
+      val f_read = readOp(clevel)(key).instrument()
       val f_alloc =
         alloc.get(key).instrument(m.latencyAllocRead)
 
-      TwFuture.join(f_read, f_alloc) map {
+      (f_read join f_alloc) map {
         case (v, allocs) =>
           val vt = Timestamped(v, rt)
           this.update(vt, Some(allocs))
@@ -209,10 +211,58 @@ class ReservationPool(baseName: String, tolerance: Tolerance)(implicit imps: Com
       }
     }
 
+    /**
+      * @param n    tokens required
+      * @param exec what to execute once we have the correct number of tokens
+      * @return
+      */
+    def execute(n: Long, exec: CLevel => UUID => TwFuture[Unit]): TwFuture[Unit] = {
+      if (n > maxLocal) {
+        m.outOfBounds += 1
+        for {
+          _ <- exec(CLevel.ALL)(key) join allocate(key, Alloc.Max)
+          start = System.nanoTime
+          _ <- fetchAndUpdate(CLevel.LOCAL_ONE)
+        } yield {
+          val remain = System.nanoTime - start
+          if (remain > config.lease.periodNanos) {
+            blocking {
+              Thread.sleep(TwDuration.fromNanoseconds(remain).inMillis)
+            }
+          }
+        }
+      } else {
+        for {
+          preallocated <-
+            if (n <= allocated && !leaseExpiresSoon) {
+              TwFuture(true)
+            } else {
+              // we need to allocate more, or lease is about to expire
+              if (leaseExpiresSoon) m.reallocs += 1
+              allocate(key, Alloc.Max).map(_ => false)
+            }
+
+          immediate <-
+            if (n <= available) TwFuture(true)
+            else refresh(key).map(_ => false)
+
+          _ <-
+            if (immediate) {
+              available -= n
+              if (preallocated && immediate) m.immediates += 1
+              exec(CLevel.ONE)(key)
+            } else {
+              m.races += 1
+              exec(CLevel.ALL)(key)
+            }
+        } yield ()
+      }
+    }
+
     def used = allocated - available
     def delta = total - used
 
-    def interval = th.IntervalLong(lastRead.value - delta, lastRead.value + delta)
+    def interval = Interval(lastRead.value - delta, lastRead.value + delta)
 
     override def toString = s"Reservation(read: $lastRead, total: $total, alloc: $allocated, avail: $available)"
   }

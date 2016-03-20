@@ -294,7 +294,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
       case Success(e) =>
 
         // execute the increment on durable store
-        val exec = { cons: CLevel =>
+        val exec: (CLevel) => Future[Unit] = { cons: CLevel =>
           val timer = if (cons == Strong) m.latencyStrongWrite
                       else m.latencyWeakWrite
           e.table.incrTwitter(cons)(key, n).instrument(timer).instrument()
@@ -372,15 +372,16 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
   val counters = new ConcurrentHashMap[Table, IPACounter with IPACounter.ErrorTolerance]
 
   override def counter(t: Table, op: BoundedCounterOp): Future[CounterResult] = {
+    import IPACounter._
     implicit val space = KeySpace(t.space)
     implicit val imps = CommonImplicits()
-    val c = counters.computeIfAbsent(t, new Function[Table, IPACounter with IPACounter.ErrorTolerance] {
-      override def apply(t: Table): IPACounter = {
+    val c = counters.computeIfAbsent(t, new Function[Table, IPACounter with ErrorTolerance] {
+      override def apply(t: Table): IPACounter with ErrorTolerance = {
         IPACounter.fromName(t.name).recoverWith {
           case e: Throwable =>
             Console.err.println(s"Error getting BoundedCounter by name: $t")
             Failure(e)
-        }.get.asInstanceOf[IPACounter with IPACounter.ErrorTolerance]
+        }.get.asInstanceOf[IPACounter with ErrorTolerance]
       }
     })
     c.server.handle(op)

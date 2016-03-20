@@ -9,9 +9,8 @@ import com.twitter.util.{Future => TwFuture}
 import com.twitter.{util => tw}
 import com.websudos.phantom.dsl.{UUID, _}
 import com.websudos.phantom.keys.PartitionKey
-import ipa.thrift.CounterOpType.{EnumUnknownCounterOpType, Init, _}
 import ipa.{thrift => th}
-import ipa.thrift.ReservationException
+import ipa.thrift.{ReservationException}
 import owl.Consistency.{apply => _, _}
 import owl.Conversions._
 import owl.Util._
@@ -90,41 +89,70 @@ object IPACounter {
 
     type IPAType[T] = Interval[T]
 
+    import ipa.thrift.{BoundedCounterOp => Op}
+    import ipa.thrift.CounterResult
+    import ipa.thrift.CounterOpType._
+
     override def incr(key: UUID, by: Long): Future[Unit] = {
-      reservations.client.incr(table, key.toString, by).asScala
+      reservations.client
+          .counter(table, Op(Incr, Some(key.toString), Some(by)))
+          .asScala.unit
     }
 
     override def read(key: UUID): Future[Interval[Long]] = {
-      reservations.client.readInterval(table, key.toString)
-          .map(v => v: Interval[Long])
+      reservations.client
+          .counter(table, Op(Value, Some(key.toString)))
+          .map(r => Interval(r.min.get.toLong, r.max.get.toLong))
           .asScala
     }
 
     // Only used on the ReservationServer instance
     object server {
 
-      lazy val pool = new ReservationPool(name, tolerance)
+      def base_incr(n: Long)(c: CLevel)(key: UUID) = base.incrTwitter(c)(key, n)
 
-      def handle(op: th.BoundedCounterOp): TwFuture[th.CounterResult] = {
-        import th.CounterOpType._
+      lazy val pool = new ReservationPool(name, tolerance, base.readTwitter)
 
-        lazy val s = pool.get(op.key.get.toUUID)
+      def handle(op: Op): TwFuture[CounterResult] = {
+
+        lazy val key = op.key.get.toUUID
+        lazy val r = pool.get(key)
 
         op.op match {
 
           case Incr =>
-
+            r submit {
+              val n = op.n.get
+              r.execute(n, base_incr(n))
+                  .map { _ => th.CounterResult() }
+            }
 
           case Value =>
-
+            {
+              if (r.lastRead.expired) {
+                r submit {
+                  for {
+                    _ <- r.fetchAndUpdate(CLevel.LOCAL_ONE)
+                  } yield {
+                    r.interval
+                  }
+                }
+              } else {
+                TwFuture(r.interval)
+              }
+            } map { r =>
+              CounterResult(min = Some(r.min.toInt), max = Some(r.max.toInt))
+            }
 
           case Truncate =>
             Console.err.println(s"# Truncated $table")
             pool.clear()
-            TwFuture(th.CounterResult())
+            TwFuture(CounterResult())
 
-          case Init | Decr | EnumUnknownCounterOpType(e) =>
-            throw th.ReservationException(s"Unknown or unsupported op type: $e")
+          case Init | Decr =>
+            throw ReservationException(s"Unsupported op type: ${op.op}")
+          case EnumUnknownCounterOpType(e) =>
+            throw ReservationException(s"Unknown op type: $e")
         }
       }
     }
@@ -167,7 +195,7 @@ object IPACounter {
   }
 }
 
-class IPACounter(val name: String)(implicit imps: CommonImplicits) extends DataType(imps) {
+class IPACounter(val name: String)(implicit val imps: CommonImplicits) extends DataType(imps) {
   self: IPACounter.Ops =>
 
   case class Count(key: UUID, count: Long)

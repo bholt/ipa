@@ -181,10 +181,11 @@ def run(logfile, *args, **flags):
 
         puts("#{colored.black('>')} exit code: #{colored.red(cmd.exit_code)}")
 
+        def excluded(line):
+            return 'inagle' in line or line.startswith("#")
+
         # filter out extra finagle junk from stderr
-        filtered = ''.join([ line
-                             for line in cmd.stderr.split('\n')
-                             if 'inagle' not in line or line.startswith("#") ])
+        filtered = ''.join([ line for line in cmd.stderr.split('\n') if not excluded(line) ])
 
         # flatten & clean up metrics a bit
         metrics = {
@@ -198,7 +199,11 @@ def run(logfile, *args, **flags):
 
     except ValueError:
         puts_err(colored.red("problem parsing JSON", bold=True))
-        puts_err(cmd.stderr)
+        for line in cmd.stderr.split('\n'):
+            if excluded(line):
+                puts_err(colored.red(line))
+            else:
+                puts_err(colored.green(line))
     except KeyboardInterrupt:
         puts_err("cancelled experiments")
         sys.exit()

@@ -206,15 +206,19 @@ def run(logfile, *args, **flags):
                 puts_err(colored.red(line))
             else:
                 puts_err(colored.green(line))
+        notify_slack(fmt("Error: problem parsing JSON. :sadpanda:"))
     except KeyboardInterrupt:
         puts_err("cancelled experiments")
         sys.exit()
     except sh.TimeoutException:
         puts_err("job exceeded time limit")
+        notify_slack(fmt("Error: job exceeded time limit. :sadpanda:"))
     except sh.ErrorReturnCode_1:
         puts_err("job exited with '1', skipping...")
+        notify_slack(fmt("Error: job exited with '1'. :sadpanda:"))
     else:
         traceback.print_exc()
+        notify_slack(fmt("Error: Something else went wrong. :sadpanda:"))
 
 
 def run_retwis():

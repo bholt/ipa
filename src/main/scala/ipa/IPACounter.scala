@@ -2,6 +2,7 @@ package ipa
 
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.function.Function
 
 import com.datastax.driver.core.{Row, ConsistencyLevel => CLevel}
@@ -10,12 +11,13 @@ import com.twitter.{util => tw}
 import com.websudos.phantom.dsl.{UUID, _}
 import com.websudos.phantom.keys.PartitionKey
 import ipa.{thrift => th}
-import ipa.thrift.{ReservationException}
+import ipa.thrift.ReservationException
 import owl.Consistency.{apply => _, _}
 import owl.Conversions._
 import owl.Util._
 import owl._
 
+import scala.collection.mutable
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
 import scala.language.higherKinds
@@ -76,6 +78,7 @@ object IPACounter {
     override def meta = Metadata(Some(tolerance))
 
     override def create(): Future[Unit] = {
+      server.pool.init()
       createTwitter().asScala
     }
 
@@ -109,26 +112,46 @@ object IPACounter {
     // Only used on the ReservationServer instance
     object server {
 
+      object m {
+        val rpcs = metrics.create.counter("rpcs")
+        val reads = metrics.create.counter("reads")
+        val incrs = metrics.create.counter("incrs")
+        val cached_reads = metrics.create.counter("cached_reads")
+      }
+
       def base_incr(n: Long)(c: CLevel)(key: UUID) = base.incrTwitter(c)(key, n)
 
       lazy val pool = new ReservationPool(name, tolerance, base.readTwitter)
 
-      def handle(op: Op): TwFuture[CounterResult] = {
+      case class Pending(var incrs: AtomicInteger = new AtomicInteger)
+      val pendingIncrMap = new ConcurrentHashMap[UUID, Pending]()
+      def pending(key: UUID) =
+        pendingIncrMap.computeIfAbsent(key, new Function[UUID,Pending]{
+          def apply(key: UUID) = Pending()
+        })
 
+      def handle(op: Op): TwFuture[CounterResult] = {
+        m.rpcs += 1
         lazy val key = op.key.get.toUUID
         lazy val r = pool.get(key)
 
         op.op match {
 
           case Incr =>
+            val p = pending(key)
+            p.incrs.addAndGet(op.n.get.toInt)
+            m.incrs += 1
             r submit {
-              val n = op.n.get
-              r.execute(n, base_incr(n))
-                  .map { _ => th.CounterResult() }
+
+              val n = p.incrs.getAndSet(0)
+              val f = if (n > 0) r.execute(n, base_incr(n))
+                      else TwFuture.Unit
+              f.map { _ => th.CounterResult() }
             }
 
           case Value =>
             {
+              m.reads += 1
               if (r.lastRead.expired) {
                 r submit {
                   for {
@@ -138,6 +161,7 @@ object IPACounter {
                   }
                 }
               } else {
+                m.cached_reads += 1
                 TwFuture(r.interval)
               }
             } map { r =>

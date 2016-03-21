@@ -43,19 +43,12 @@ class ReservationPool(
   import imps._
 
   object m {
-    val rpcs = metrics.create.counter("rpcs")
     val outOfBounds = metrics.create.counter("out_of_bounds")
     val refreshes = metrics.create.counter("refreshes")
     val immediates = metrics.create.counter("immediates")
-    val reads = metrics.create.counter("reads")
-    val incrs = metrics.create.counter("incrs")
-    val errors = metrics.create.counter("errors")
     val allocs = metrics.create.counter("allocs")
     val unallocs = metrics.create.counter("unallocs")
     val reallocs = metrics.create.counter("reallocs")
-    val initialized = metrics.create.counter("initialized")
-
-    val cached_reads = metrics.create.counter("cached_reads")
 
     val races = metrics.create.counter("races")
 

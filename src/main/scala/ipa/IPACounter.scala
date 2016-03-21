@@ -97,16 +97,22 @@ object IPACounter {
     import ipa.thrift.CounterOpType._
 
     override def incr(key: UUID, by: Long): Future[Unit] = {
-      reservations.client
+      val (addr, tracker) = reservations.get
+      val ts = tracker.start()
+      reservations.clients(addr)
           .counter(table, Op(Incr, Some(key.toString), Some(by)))
           .asScala.unit
+          .map(_ => tracker.end(ts))
     }
 
     override def read(key: UUID): Future[Interval[Long]] = {
-      reservations.client
+      val (addr, tracker) = reservations.get
+      val ts = tracker.start()
+      reservations.clients(addr)
           .counter(table, Op(Value, Some(key.toString)))
           .map(r => Interval(r.min.get.toLong, r.max.get.toLong))
           .asScala
+          .map{ r => tracker.end(ts); r }
     }
 
     // Only used on the ReservationServer instance

@@ -13,7 +13,7 @@ import com.google.common.util.concurrent.{FutureCallback, Futures}
 import com.twitter.finagle.util.HashedWheelTimer
 import com.twitter.util.{Return, Throw}
 import com.twitter.{util => tw}
-import com.twitter.util.{Future => TwFuture, Promise => TwPromise}
+import com.twitter.util.{Duration => TwDuration, Future => TwFuture, Promise => TwPromise}
 import com.websudos.phantom.Manager
 import com.websudos.phantom.builder.query.prepared.ExecutablePreparedQuery
 import ipa.thrift.Table
@@ -409,5 +409,80 @@ object Util {
 
     def bold = color(Console.BOLD)
   }
+
+  trait LatencyMeasurer {
+    def start(): Long
+    def end(ts: Long): Unit
+    def get: Double
+  }
+
+  class RunningAverageLatency extends LatencyMeasurer {
+    var avg: Double = 0.0
+    var n: Long = 0
+    override def start() = System.nanoTime
+    override def end(ts: Long) = {
+      observe(System.nanoTime - ts)
+    }
+    def observe(v: Long) = {
+      n += 1
+      avg = avg * (n - 1) / n +  v.toDouble / n
+    }
+    override def get: Double = avg
+  }
+
+  class EWMALatency(decayTime: TwDuration) extends LatencyMeasurer {
+    import System.nanoTime
+    private[this] val epoch = nanoTime()
+    private[this] val Penalty: Double = Long.MaxValue >> 16
+    // The mean lifetime of `cost`, it reaches its half-life after Tau*ln(2).
+    private[this] val Tau: Double = decayTime.inNanoseconds.toDouble
+    require(Tau > 0)
+
+    // these are all guarded by synchronization on `this`
+    private[this] var stamp: Long = epoch   // last timestamp in nanos we observed an rtt
+    private[this] var pending: Int = 0      // instantaneous rate
+    private[this] var cost: Double = 0.0    // ewma of rtt, sensitive to peaks.
+
+    def rate(): Int = synchronized { pending }
+
+    // Calculate the exponential weighted moving average of our
+    // round trip time. It isn't exactly an ewma, but rather a
+    // "peak-ewma", since `cost` is hyper-sensitive to latency peaks.
+    // Note, because the frequency of observations represents an
+    // unevenly spaced time-series[1], we consider the time between
+    // observations when calculating our weight.
+    // [1] http://www.eckner.com/papers/ts_alg.pdf
+    private[this] def observe(rtt: Double): Unit = {
+      val t = nanoTime()
+      val td = math.max(t-stamp, 0)
+      val w = math.exp(-td/Tau)
+      if (rtt > cost) cost = rtt
+      else cost = cost*w + rtt*(1.0-w)
+      stamp = t
+    }
+
+    def get(): Double = synchronized {
+      // update our view of the decay on `cost`
+      observe(0.0)
+
+      // If we don't have any latency history, we penalize the host on
+      // the first probe. Otherwise, we factor in our current rate
+      // assuming we were to schedule an additional request.
+      if (cost == 0.0 && pending != 0) Penalty+pending
+      else cost*(pending+1)
+    }
+
+    def start(): Long = synchronized {
+      pending += 1
+      nanoTime()
+    }
+
+    def end(ts: Long): Unit = synchronized {
+      val rtt = math.max(nanoTime()-ts, 0)
+      pending -= 1
+      observe(rtt)
+    }
+  }
+
 
 }

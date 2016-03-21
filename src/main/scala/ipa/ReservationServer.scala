@@ -1,13 +1,16 @@
 package ipa
 
 import java.net.InetAddress
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.{ConcurrentHashMap, TimeUnit}
 import java.util.UUID
 import java.util.function.Function
 
 import com.datastax.driver.core.{Cluster, ConsistencyLevel => CLevel}
 import com.twitter.finagle.{Deadline, Thrift, ThriftMux}
 import com.twitter.finagle.loadbalancer.Balancers
+import com.twitter.finagle.param.ExceptionStatsHandler
+import com.twitter.finagle.service.StatsFilter
+import com.twitter.finagle.stats.{StatsReceiver, SummarizingStatsReceiver}
 import com.twitter.finagle.util.{DefaultTimer, HashedWheelTimer}
 import com.twitter.util._
 import com.twitter.{util => tw}
@@ -24,9 +27,10 @@ import owl.Util._
 import owl.{Connector, OwlService, Timestamped, Tolerance}
 
 import scala.collection.JavaConversions._
+import scala.collection.immutable.IndexedSeq
 import scala.collection.{concurrent, mutable}
 import scala.concurrent.blocking
-import scala.util.{Failure, Success, Try}
+import scala.util.{Failure, Random, Success, Try}
 
 
 
@@ -169,6 +173,16 @@ class ReservationClient(cluster: Cluster) {
           .newServiceIface[th.ReservationService.ServiceIface](hosts, "ipa")
 
     ThriftMux.newMethodIface(service)
+  }
+
+  val latencies: IndexedSeq[(InetAddress, LatencyMeasurer)] =
+    addrs map { case (addr,_) => addr -> new RunningAverageLatency } toIndexedSeq
+
+  def get: (InetAddress, LatencyMeasurer) = {
+    Random.nextDouble() match {
+      case v if v < 0.05 => latencies.sample
+      case _ => latencies.minBy(_._2.get)
+    }
   }
 
   println(s"hosts: ${addrs.values.mkString(",")}")

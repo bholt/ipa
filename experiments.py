@@ -12,6 +12,8 @@ import json
 from os.path import abspath, dirname, realpath
 from os import environ as env
 import requests
+import traceback
+import sqlalchemy.exc
 
 #########################
 # External dependencies
@@ -211,6 +213,8 @@ def run(logfile, *args, **flags):
         puts_err("job exceeded time limit")
     except sh.ErrorReturnCode_1:
         puts_err("job exited with '1', skipping...")
+    else:
+        traceback.print_exc()
 
 
 def run_retwis():

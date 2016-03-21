@@ -90,7 +90,10 @@ def count_records(table, ignore=None, valid='total_time is not null', **params):
 
     def cmp(k, v):
         if type(v) == float:
-            return "ABS({0}-{1})/{1} < 0.0001".format(k, v)
+            if v == 0:
+                return "{0} = {1}".format(k, v)
+            else:
+                return "ABS({0}-{1})/{1} < 0.0001".format(k, v)
         elif type(v) == str and len(v) == 0:
             return "({0} = '' or {0} is null)".format(k)
         else:
@@ -360,8 +363,10 @@ def run_rawmix(log, datatype):
             honeycomb_mode = ['fast', 'flat5', 'slowpoke_flat', 'google', 'amazon'],
             # mix = ['default'] #, 'read_heavy']
 
+            ipa_rawmix_nsets=[2, 10],
+            ipa_rawmix_target=[1000],
             ipa_zipf = ['0'],
-            ipa_bound = ['consistency:weakwrite'],
+            ipa_bound = [ 'consistency:weakwrite'],
             mix = ['custom'], ipa_rawmix_counter_mix_incr=[1.0], # 0.5, 0.1, 0.01]
         ):
             a['containers'] = containers

@@ -131,7 +131,7 @@ def before_all():
     swarm.compose(["down"])
     swarm.swarm.pull("bholt/owl", **LIVE)
     swarm.compose(["up", "-d"])
-    swarm.compose(["scale", "owl=1", "cass=3"])
+    # swarm.compose(["scale", "owl=1", "cass=3"])
 
     def check(container):
         o = sh.grep(swarm.swarm.logs(container, _piped=True), "listening for CQL clients", _ok_code=[0,1])
@@ -144,7 +144,7 @@ def before_all():
         time.sleep(1)
     print "done"
 
-    # time.sleep(5) # make sure Cassandra has finished initializing
+    time.sleep(5) # really make sure Cassandra has finished initializing
     # blockade.status(**LIVE)
     # swarm.reservations(['-Dipa.replication.factor=3'], {'experiments': True})
 
@@ -170,6 +170,7 @@ def run(logfile, *args, **flags):
     invoke = ["sh",  "-c", "exec bin/owl {}".format(" ".join(args))]
 
     puts(colored.magenta("@ " + now()))
+    cmd = None
     try:
         cmd = swarm.owl_exec(*invoke, _timeout=60*5, _iter=True)
         puts("> #{colored.blue(' '.join(cmd.cmd))}")
@@ -181,7 +182,9 @@ def run(logfile, *args, **flags):
         puts("#{colored.black('>')} exit code: #{colored.red(cmd.exit_code)}")
 
         # filter out extra finagle junk from stderr
-        filtered = ''.join([ line for line in cmd.stderr.split('\n') if 'inagle' not in line ])
+        filtered = ''.join([ line
+                             for line in cmd.stderr.split('\n')
+                             if 'inagle' not in line or line.startswith("#") ])
 
         # flatten & clean up metrics a bit
         metrics = {
@@ -193,6 +196,9 @@ def run(logfile, *args, **flags):
         print pretty_json(flags)
         table.insert(flags)
 
+    except ValueError:
+        puts_err(colored.red("problem parsing JSON", bold=True))
+        puts_err(cmd.stderr)
     except KeyboardInterrupt:
         puts_err("cancelled experiments")
         sys.exit()
@@ -363,11 +369,11 @@ def run_rawmix(log, datatype):
             honeycomb_mode = ['fast', 'flat5', 'slowpoke_flat', 'google', 'amazon'],
             # mix = ['default'] #, 'read_heavy']
 
-            ipa_rawmix_nsets=[2, 10],
+            ipa_rawmix_nsets=[10],
             ipa_rawmix_target=[1000],
             ipa_zipf = ['0'],
-            ipa_bound = [ 'consistency:weakwrite'],
-            mix = ['custom'], ipa_rawmix_counter_mix_incr=[1.0], # 0.5, 0.1, 0.01]
+            ipa_bound = ['consistency:weakwrite', 'tolerance:0.1', 'tolerance:0.01', 'consistency:strong'],
+            mix = ['custom'], ipa_rawmix_counter_mix_incr=[1.0, 0.5, 0.1, 0.01]
         ):
             a['containers'] = containers
 

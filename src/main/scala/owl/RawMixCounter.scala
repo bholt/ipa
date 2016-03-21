@@ -91,7 +91,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
   def init(i: Int, key: UUID): Future[Unit] = {
     val t = Random.nextInt(rawmix.target) + rawmix.target / 4
     val scaled = (t * nsets * dist.probability(i)).toInt + 4
-    val initial = Random.nextInt(scaled / 4)
+    val initial = scaled / 2
     Truth.init(key, scaled, initial)
     counter(key).incr(initial)
   }

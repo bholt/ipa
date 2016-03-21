@@ -36,10 +36,9 @@ def cmd_set(extra=None, opt=None):
 
 
 def cmd_status(extra=None, opt=None):
-    print pretty_yaml({
-        node: yaml.load(swarm_exec(node)("cat", "/honeycomb.yml").stdout)
-        for node in containers('owl_cass')
-    })
+    for node in containers('owl_cass'):
+        puts(colored.magenta("[#{node}]", bold=True))
+        puts(pretty_yaml(yaml.load(swarm_exec(node)("cat", "/honeycomb.yml").stdout)))
 
 
 def cmd_modes(extra=None, opt=None):

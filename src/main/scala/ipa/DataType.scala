@@ -12,7 +12,7 @@ import ipa.thrift.{ReservationException, Table}
 import scala.concurrent._
 import scala.concurrent.duration.FiniteDuration
 import scala.math.Ordering.Implicits._
-import scala.util.Try
+import scala.util.{Failure, Success, Try}
 
 case class CommonImplicits(implicit val session: Session, val space: KeySpace, val metrics: IPAMetrics, val reservations: ReservationClient)
 
@@ -67,6 +67,21 @@ object DataType {
       session.execute(s"DROP TABLE IF EXISTS ${space.name}.$name")
       tbl.create.`with`(comment eqs metaStr).execute().unit
     } get
+  }
+
+  def fromName[T](name: String, fromNameAndBound: (String, Bound) => T)(implicit imps: CommonImplicits): Try[T] = {
+    DataType.lookupMetadata(name) flatMap { metaStr =>
+      val meta = Metadata.fromString(metaStr)
+      meta.bound match {
+        case Some(bound) =>
+          Success(fromNameAndBound(name, bound))
+        case _ =>
+          Failure(ReservationException(s"Unable to find metadata for $name"))
+      }
+    } recoverWith {
+      case e: Throwable =>
+        Failure(ReservationException(s"metadata not found for $name"))
+    }
   }
 }
 

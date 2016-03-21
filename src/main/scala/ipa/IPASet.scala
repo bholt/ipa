@@ -97,9 +97,7 @@ object IPASet {
     override def meta = Metadata(Some(bound))
 
     override def create(): Future[Unit] = {
-      createTwitter() flatMap { _ =>
-        reservations.client.createCounter(table, bound.error)
-      } asScala
+      createTwitter().asScala
     }
 
     type IPAType[T] = Inconsistent[T]

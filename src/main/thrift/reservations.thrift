@@ -80,25 +80,6 @@ struct CounterResult {
 }
 
 service ReservationService {
-  /**
-   * Initialize new UuidSet
-   * TODO: make generic version
-   */
-  void createUuidset(1: Table tbl, 2: double sizeTolerance)
-    throws (1: ReservationException e)
-
-  /** Initialize new Counter table. */
-  void createCounter(1: Table tbl, 2: double tolerance)
-    throws (1: ReservationException e)
-
-  void incr(1: Table tbl, 2: uuid key, 3: i64 by)
-    throws (1: ReservationException e)
-
-  IntervalLong readInterval(1: Table tbl, 2: uuid key)
-    throws (1: ReservationException e)
-
-  Result set_op(1: Table tbl, 2: SetOp op)
-    throws (1: ReservationException e)
 
   CounterResult bounded_counter(1: Table t, 2: BoundedCounterOp op)
     throws (1: ReservationException e, 2: ForwardTo fwd)

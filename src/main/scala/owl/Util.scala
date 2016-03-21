@@ -4,6 +4,7 @@ import java.io.{ByteArrayOutputStream, PrintStream}
 import java.net.InetAddress
 import java.nio.ByteBuffer
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.{ArrayBlockingQueue, ConcurrentLinkedQueue, ThreadPoolExecutor, TimeUnit}
 
 import com.codahale.metrics
@@ -26,19 +27,23 @@ import scala.concurrent.duration._
 import scala.util.{Failure, Random, Success, Try}
 
 trait FutureSerializer {
-
+  val depth: AtomicInteger = new AtomicInteger
   var running: TwFuture[Any] = null
 
   def submit[T](task: => TwFuture[T]): TwFuture[T] = synchronized {
     if (running == null || running.poll.isDefined) {
+      depth.set(1)
       running = task
       running.asInstanceOf[TwFuture[T]]
     } else {
+      depth.incrementAndGet()
       val pr = TwPromise[T]()
       running ensure {
         task onSuccess { r =>
+          depth.decrementAndGet()
           pr.setValue(r)
         } onFailure { e =>
+          depth.decrementAndGet()
           pr.setException(e)
         }
       }

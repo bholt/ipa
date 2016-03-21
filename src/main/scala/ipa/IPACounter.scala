@@ -123,6 +123,11 @@ object IPACounter {
         val reads = metrics.create.counter("reads")
         val incrs = metrics.create.counter("incrs")
         val cached_reads = metrics.create.counter("cached_reads")
+
+        val combined = metrics.create.histogram("combined")
+
+        val processing = metrics.create.timer("processing_latency")
+        val queue_depth = metrics.create.histogram("queue_depth")
       }
 
       def base_incr(n: Long)(c: CLevel)(key: UUID) = base.incrTwitter(c)(key, n)
@@ -144,18 +149,27 @@ object IPACounter {
         op.op match {
 
           case Incr =>
-            val p = pending(key)
-            p.incrs.addAndGet(op.n.get.toInt)
-            m.incrs += 1
-            r submit {
-
-              val n = p.incrs.getAndSet(0)
-              val f = if (n > 0) r.execute(n, base_incr(n))
-                      else TwFuture.Unit
-              f.map { _ => th.CounterResult() }
+            val timer = m.processing.metric.time()
+            val n = op.n.get.toInt
+            r.execute_if_immediate(n, base_incr(n)) flatMap { early =>
+              if (early) TwFuture(th.CounterResult())
+              else {
+                val p = pending(key)
+                p.incrs.addAndGet(op.n.get.toInt)
+                m.incrs += 1
+                m.queue_depth << r.depth.get
+                r submit {
+                  val n = p.incrs.getAndSet(0)
+                  if (n > 0) m.combined << n
+                  val f = if (n > 0) r.execute(n, base_incr(n))
+                  else TwFuture.Unit
+                  f.map { _ => timer.stop(); th.CounterResult() }
+                }
+              }
             }
 
           case Value =>
+            val timer = m.processing.metric.time();
             {
               m.reads += 1
               if (r.lastRead.expired) {
@@ -171,6 +185,7 @@ object IPACounter {
                 TwFuture(r.interval)
               }
             } map { r =>
+              timer.stop()
               CounterResult(min = Some(r.min.toInt), max = Some(r.max.toInt))
             }
 

@@ -138,6 +138,13 @@ class ReservationPool(
     var lease: Option[DateTime] = None
     var updating = false
 
+    def used = allocated - available
+    def delta = total - used
+
+    def interval = Interval(lastRead.value - delta, lastRead.value + delta)
+
+    override def toString = s"Reservation(read: $lastRead, total: $total, alloc: $allocated, avail: $available)"
+
     def leaseExpiresSoon = lease match {
       case Some(l) => l.minus(config.reservations.soon_period).isBeforeNow
       case None => false
@@ -162,7 +169,7 @@ class ReservationPool(
 
     def refresh(key: UUID) = {
       m.refreshes += 1
-      fetchAndUpdate(CLevel.ALL)
+      fetchAndUpdate(CLevel.ALL).instrument(m.latencyStrongRead)
     }
 
     def fetchAndUpdate(clevel: CLevel): TwFuture[Reservation] = {
@@ -193,14 +200,12 @@ class ReservationPool(
       alloc.update(key, n)
     }
 
-    def consume(n: Long, exec: CLevel => TwFuture[Unit]): TwFuture[Unit] = {
-      if (available >= n) { // enough tokens available:
-        available -= n
-        exec(CLevel.ONE)
-      } else { // race where some other op took the token
-        m.races += 1
-        // rather than possibly iterating again, just give up and wait
-        exec(CLevel.ALL)
+    def execute_if_immediate(n: Long, exec: CLevel => UUID => TwFuture[Unit]): TwFuture[Boolean] = {
+      if (n <= available) {
+        m.immediates += 1
+        exec(CLevel.LOCAL_ONE)(key).instrument(m.latencyWeakWrite).map(_ => true)
+      } else {
+        TwFuture(false)
       }
     }
 
@@ -213,9 +218,9 @@ class ReservationPool(
       if (n > maxLocal) {
         m.outOfBounds += 1
         for {
-          _ <- exec(CLevel.ALL)(key) join allocate(key, Alloc.Max)
+          _ <- exec(CLevel.ALL)(key).instrument(m.latencyStrongWrite) join allocate(key, Alloc.Max)
           start = System.nanoTime
-          _ <- fetchAndUpdate(CLevel.LOCAL_ONE)
+          _ <- fetchAndUpdate(CLevel.LOCAL_ONE).instrument(m.latencyWeakRead)
         } yield {
           val remain = System.nanoTime - start
           if (remain > config.lease.periodNanos) {
@@ -243,20 +248,14 @@ class ReservationPool(
             if (immediate) {
               available -= n
               if (preallocated && immediate) m.immediates += 1
-              exec(CLevel.ONE)(key)
+              exec(CLevel.LOCAL_ONE)(key).instrument(m.latencyWeakWrite)
             } else {
               m.races += 1
-              exec(CLevel.ALL)(key)
+              exec(CLevel.ALL)(key).instrument(m.latencyStrongWrite)
             }
         } yield ()
       }
     }
 
-    def used = allocated - available
-    def delta = total - used
-
-    def interval = Interval(lastRead.value - delta, lastRead.value + delta)
-
-    override def toString = s"Reservation(read: $lastRead, total: $total, alloc: $allocated, avail: $available)"
   }
 }

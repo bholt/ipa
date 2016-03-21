@@ -1,7 +1,7 @@
 #######################################################
 # Extension of basic dev image for Scala development.
 #######################################################
-FROM bholt/cassandra
+FROM bholt/cassandra:3.3
 MAINTAINER Brandon Holt <holt.bg@gmail.com>
 
 RUN apt-get install -y zsh vim locales

@@ -22,6 +22,7 @@ union Primitive {
   1: i64 int
   2: double dbl
   3: string str
+  4: uuid id
 }
 
 struct Inconsistent {
@@ -51,13 +52,19 @@ enum SetOpType {
   ADD,
   REMOVE,
   CONTAINS,
-  SIZE
+  SIZE,
+  TRUNCATE
 }
 
 struct SetOp {
   1: SetOpType op
-  2: uuid key
+  2: optional uuid key
   3: optional Primitive value
+}
+
+struct SetResult {
+  1: optional IntervalLong size
+  2: optional bool contains
 }
 
 enum CounterOpType { INIT, INCR, DECR, VALUE, TRUNCATE }
@@ -85,6 +92,9 @@ service ReservationService {
     throws (1: ReservationException e, 2: ForwardTo fwd)
 
   CounterResult counter(1: Table t, 2: BoundedCounterOp op)
+    throws (1: ReservationException e)
+
+  SetResult ipaSet(1: Table t, 2: SetOp op)
     throws (1: ReservationException e)
 
   void metricsReset()

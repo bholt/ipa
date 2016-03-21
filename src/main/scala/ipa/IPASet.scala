@@ -1,18 +1,23 @@
 package ipa
 
+import java.util.UUID
 import com.datastax.driver.core.{Row, ConsistencyLevel => CLevel}
+import com.twitter.util.{Throw, Future => TwFuture, Try => TwTry}
 import com.twitter.{util => tw}
 import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.builder.primitives.Primitive
 import com.websudos.phantom.column.PrimitiveColumn
 import com.websudos.phantom.dsl.{UUID, _}
 import com.websudos.phantom.keys.PartitionKey
+import ipa.thrift.Primitive._
+import ipa.thrift.ReservationException
 import owl.Util._
 import owl.{Interval, _}
 
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
 import scala.language.higherKinds
+import scala.util.{Failure, Success, Try}
 
 object IPASet {
 
@@ -88,25 +93,145 @@ object IPASet {
   }
 
   trait ErrorBound[V] extends Ops[V] { base: IPASet[V] =>
+    import thrift.{SetResult, SetOp, SetOpType}
+    import SetOpType._
+    import Conversions._
 
     def bound: Tolerance
-
-    lazy val counts = new IPACounter(name+"_counts")
-        with IPACounter.ErrorTolerance { override val tolerance = base.bound }
-
     override def meta = Metadata(Some(bound))
 
+    // Only used on the ReservationServer instance
+    object server {
+      object m {
+        val rpcs = metrics.create.counter("rpcs")
+        val size_ops = metrics.create.counter("size_ops")
+        val size_cached = metrics.create.counter("size_cached")
+      }
+
+      def execAdd(v: V)(c: CLevel)(k: UUID) =
+        prepared.add(k, v)(c).execAsTwitter()
+
+      def readSize(c: CLevel)(k: UUID) =
+        prepared.size(k)(c).execAsTwitter()
+
+      lazy val pool = new ReservationPool(name, bound, readSize)
+
+      def getValue(op: SetOp) = {
+        val v = op.value.get match {
+          case Id(id) =>
+            id.toUUID
+          case e =>
+            throw ReservationException(s"Unhandled Primitive type: $e")
+        }
+        TwTry {
+          v.asInstanceOf[V]
+        } rescue {
+          case e: ClassCastException =>
+            Throw(ReservationException(s"Wrong type for value: ${e.getMessage}"))
+        }
+      }
+
+      def handle(op: SetOp): TwFuture[SetResult] = {
+        m.rpcs += 1
+        lazy val key = op.key.get.toUUID
+        lazy val r = pool.get(key)
+
+        op.op match {
+          case Add =>
+            getValue(op) map { v =>
+              r submit {
+                r.execute(1L, execAdd(v))
+                    .map(_ => SetResult())
+              }
+            } get()
+
+          case Remove =>
+            getValue(op) map { v =>
+              // TODO: requires another reservation pool
+              prepared.remove(key, v)(CLevel.LOCAL_ONE).execAsTwitter()
+                    .map(_ => SetResult())
+            } get()
+
+          case Contains =>
+            getValue(op) map { v =>
+              prepared.contains(key, v)(CLevel.LOCAL_ONE).execAsTwitter()
+                    .map(r => SetResult(contains = Some(r)))
+            } get()
+
+          case Size =>
+            m.size_ops += 1
+
+            {
+              if (r.lastRead.expired) {
+                r submit {
+                  for {
+                    _ <- r.fetchAndUpdate(CLevel.LOCAL_ONE)
+                  } yield {
+                    r.interval
+                  }
+                }
+              } else {
+                m.size_cached += 1
+                TwFuture(r.interval)
+              }
+            } map { r =>
+              SetResult(size = Some(r))
+            }
+
+          case Truncate =>
+            Console.err.println(s"# Truncated $table")
+            pool.clear()
+            TwFuture(SetResult())
+
+          case EnumUnknownSetOpType(e) =>
+            throw ReservationException(s"Unknown op type: $e")
+        }
+      }
+    }
+
     override def create(): Future[Unit] = {
+      server.pool.init()
       createTwitter().asScala
+    }
+
+    override def truncate(): Future[Unit] = {
+      tbl.truncate().execute().flatMap { _ =>
+        reservations.clients.values
+            .map(_.ipaSet(table, SetOp(Truncate)))
+            .bundle()
+      }.asScala.unit
     }
 
     type IPAType[T] = Inconsistent[T]
     type SizeType[T] = Interval[T]
 
-    override def add(key: K, value: V): Future[Unit] = ???
-    override def remove(key: K, value: V): Future[Unit] = ???
-    override def contains(key: K, value: V): Future[IPAType[Boolean]] = ???
-    override def size(key: K): Future[SizeType[Long]] = ???
+    def arg(value: Option[V]) = value map {
+      case v: UUID => thrift.Primitive.Id(value.toString)
+      case _ => sys.error(s"Unsupported value type: $value")
+    }
+
+    def reservationOp(op: SetOpType, key: K, value: Option[V] = None) = {
+      val (addr, tracker) = reservations.get
+      val ts = tracker.start()
+      reservations.clients(addr)
+          .ipaSet(table, SetOp(op, key = Some(key.toString), value = arg(value)))
+          .asScala
+          .map { v => tracker.end(ts); v }
+    }
+
+    override def add(key: K, value: V): Future[Unit] =
+      reservationOp(Add, key, Some(value)).unit
+
+    override def remove(key: K, value: V): Future[Unit] =
+      reservationOp(Remove, key, Some(value)).unit
+
+    override def contains(key: K, value: V): Future[IPAType[Boolean]] =
+      reservationOp(Contains, key, Some(value))
+          .map { r => r.contains.get }
+
+    override def size(key: K): Future[Interval[Long]] =
+      reservationOp(Size, key)
+        .map { r => r.size.get }
   }
 
   def fromNameAndBound[V:Primitive](name: String, bound: Bound)(implicit imps: CommonImplicits): IPASet[V] with Ops[V] = bound match {
@@ -128,6 +253,10 @@ object IPASet {
     case e =>
       Console.err.println(s"Error creating BoundedCounter from bound: $e")
       sys.error(s"impossible case: $e")
+  }
+
+  def fromName[V:Primitive](name: String)(implicit imps: CommonImplicits): Try[IPASet[V] with Ops[V]] = {
+    DataType.fromName(name, fromNameAndBound[V])
   }
 }
 

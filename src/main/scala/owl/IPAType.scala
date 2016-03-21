@@ -138,6 +138,12 @@ object Conversions {
   implicit def thriftIntervalLongToNative(v: thrift.IntervalLong): Interval[Long] =
     Interval[Long](v.min, v.max)
 
+  implicit def nativeIntervalToThriftLong(v: Interval[Long]): thrift.IntervalLong =
+    thrift.IntervalLong(v.min, v.max)
+
+  implicit def nativeIntervalIntToThriftLong(v: Interval[Int]): thrift.IntervalLong =
+    thrift.IntervalLong(v.min, v.max)
+
   implicit def thriftTwFutureToNative[A, B](f: tw.Future[A])(implicit ev: A => B): tw.Future[B] = f map { v => v: B }
 
   implicit def thriftFutureToNative[A, B](f: Future[A])(implicit ev: A => B, ec: ExecutionContext): Future[B] = f map { v => v: B }

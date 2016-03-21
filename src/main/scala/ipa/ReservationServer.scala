@@ -1,40 +1,28 @@
 package ipa
 
 import java.net.InetAddress
-import java.util.concurrent.{ConcurrentHashMap, TimeUnit}
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.function.Function
 
 import com.datastax.driver.core.{Cluster, ConsistencyLevel => CLevel}
-import com.twitter.finagle.{Deadline, Thrift, ThriftMux}
+import com.twitter.finagle.ThriftMux
 import com.twitter.finagle.loadbalancer.Balancers
-import com.twitter.finagle.param.ExceptionStatsHandler
-import com.twitter.finagle.service.StatsFilter
-import com.twitter.finagle.stats.{StatsReceiver, SummarizingStatsReceiver}
-import com.twitter.finagle.util.{DefaultTimer, HashedWheelTimer}
 import com.twitter.util._
-import com.twitter.{util => tw}
-import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.connectors.KeySpace
-import com.websudos.phantom.dsl._
-import ipa.IPACounter.WeakOps
 import ipa.thrift._
 import ipa.{thrift => th}
-import org.joda.time.DateTime
 import owl.Connector._
-import owl.Consistency._
 import owl.Util._
-import owl.{Connector, OwlService, Timestamped, Tolerance}
+import owl.{Connector, OwlService}
 
 import scala.collection.JavaConversions._
 import scala.collection.immutable.IndexedSeq
-import scala.collection.{concurrent, mutable}
-import scala.concurrent.blocking
-import scala.util.{Failure, Random, Success, Try}
+import scala.util.{Failure, Random}
 
 
 
-class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationService[tw.Future] {
+class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationService[Future] {
   import imps._
 
   val boundedCounters = new ConcurrentHashMap[Table, BoundedCounter]
@@ -72,9 +60,25 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
     c.server.handle(op)
   }
 
-//  override def create(tbl: Table, datatype: Datatype, tolerance: Double): Future[Unit] = ???
+  type IPASetWithErrorBound = IPASet[UUID] with IPASet.ErrorBound[UUID]
+  val ipasets = new ConcurrentHashMap[Table, IPASetWithErrorBound]
 
-  override def metricsJson(): tw.Future[String] = {
+  override def ipaSet(t: Table, op: SetOp): Future[SetResult] = {
+    implicit val space = KeySpace(t.space)
+    implicit val imps = CommonImplicits()
+    val c = ipasets.computeIfAbsent(t, new Function[Table,IPASetWithErrorBound] {
+      override def apply(t: Table): IPASetWithErrorBound = {
+        IPASet.fromName[UUID](t.name).recoverWith {
+          case e: Throwable =>
+            Console.err.println(s"Error getting BoundedCounter by name: $t")
+            Failure(e)
+        }.get.asInstanceOf[IPASetWithErrorBound]
+      }
+    })
+    c.server.handle(op)
+  }
+
+  override def metricsJson(): Future[String] = {
     Console.err.println(s"metricsJson()")
     // session.getCluster.getConfiguration.getPolicies.getLoadBalancingPolicy
     val latencyStats = Connector.latencyMonitor.getScoresSnapshot.getAllStats
@@ -102,13 +106,13 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
 
     val ss = new StringPrintStream()
     metrics.write(ss, extras, configFilter="-")
-    tw.Future.value(ss.mkString)
+    Future(ss.mkString)
   }
 
-  override def metricsReset(): tw.Future[Unit] = {
+  override def metricsReset(): Future[Unit] = {
     Console.err.println("# reset metrics")
     metrics.factory.reset()
-    tw.Future.Unit
+    Future.Unit
   }
 
 }

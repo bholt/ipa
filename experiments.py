@@ -216,7 +216,7 @@ def run(logfile, *args, **flags):
     except sh.ErrorReturnCode_1:
         puts_err("job exited with '1', skipping...")
         notify_slack(fmt("Error: job exited with '1'. :sadpanda:"))
-    else:
+    except Exception:
         traceback.print_exc()
         notify_slack(fmt("Error: Something else went wrong. :sadpanda:"))
 
@@ -473,6 +473,7 @@ if __name__ == '__main__':
     tag = sh.git.describe().stdout
     version = re.match(r"([a-zA-Z0-9._]+)(-.*)?", tag).group(1)
 
+    n = 0
     if opt.mode == 'owl':
         n = run_retwis()
     elif opt.mode == 'rawmix':

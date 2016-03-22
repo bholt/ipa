@@ -1,13 +1,13 @@
 package owl
 
 import java.util.UUID
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.{Semaphore, TimeUnit}
 
 import com.codahale.metrics.ConsoleReporter
 import com.datastax.driver.core.ConsistencyLevel
 import com.datastax.driver.core.utils.UUIDs
 import com.websudos.phantom.connectors.KeySpace
-import com.websudos.phantom.dsl._
+import com.websudos.phantom.dsl.{DateTime, UUID, _}
 import ipa.IPASet
 import org.apache.commons.math3.distribution.ZipfDistribution
 import org.joda.time.DateTime
@@ -15,6 +15,7 @@ import owl.Util._
 
 import scala.collection.JavaConversions._
 import scala.concurrent.Future
+import scala.concurrent.duration.Deadline
 import scala.language.postfixOps
 import scala.util.Random
 
@@ -40,24 +41,6 @@ trait Retwis extends OwlService {
 
     override val tableName = "users"
     override def fromRow(r: Row) = User(id(r), username(r), name(r), created(r))
-  }
-
-  // Followers
-  case class Follower(user: UUID, follower: UUID)
-  case class Following(user: UUID, followee: UUID)
-
-  class Followers extends CassandraTable[Followers, Follower] {
-    object user extends UUIDColumn(this) with PartitionKey[UUID]
-    object follower extends UUIDColumn(this) with PrimaryKey[UUID]
-    override val tableName = "followers"
-    override def fromRow(r: Row) = Follower(user(r), follower(r))
-  }
-
-  class Followees extends CassandraTable[Followees, Following] {
-    object user extends UUIDColumn(this) with PartitionKey[UUID]
-    object following extends UUIDColumn(this) with PrimaryKey[UUID]
-    override val tableName = "followees"
-    override def fromRow(r: Row) = Following(user(r), following(r))
   }
 
   // Tweets
@@ -130,8 +113,6 @@ trait Retwis extends OwlService {
     override def fromRow(r: Row) = RetweetCount(tweet(r), count(r))
   }
 
-  val retwisOps = metrics.create.meter("retwis_op")
-
   implicit val consistency = config.consistency
 
   object Zipf {
@@ -140,8 +121,10 @@ trait Retwis extends OwlService {
     def user() = User.id(zipfUser.sample())
   }
 
+  var nusers = config.nUsers
+
   object Uniform {
-    def user() = User.id(Random.nextInt())
+    def user() = User.id(Random.nextInt(nusers))
   }
 
   val WORDS = Vector("small batch", "Etsy", "axe", "plaid", "McSweeney's", "VHS", "viral", "cliche", "post-ironic", "health", "goth", "literally", "Austin", "brunch", "authentic", "hella", "street art", "Tumblr", "Blue Bottle", "readymade", "occupy", "irony", "slow-carb", "heirloom", "YOLO", "tofu", "ethical", "tattooed", "vinyl", "artisan", "kale", "selfie")
@@ -242,17 +225,31 @@ trait Retwis extends OwlService {
     followers(user).get().map(_.get.toIterator)
   }
 
+  object prepared {
+
+    lazy val timeline_append: (UUID, UUID, DateTime) => (ConsistencyLevel) => BoundOp[Unit] = {
+      val ps = session.prepare(s"INSERT INTO ${space.name}.${timelines.tableName} (${timelines.user.name}, ${timelines.tweet.name}, ${timelines.created.name}) VALUES (?, ?, ?)")
+      (user: UUID, tweet: UUID, created: DateTime) =>
+        ps.bindWith(user, tweet, created)(_ => ())
+    }
+
+    lazy val timeline_get: (UUID, Int) => (ConsistencyLevel) => BoundOp[Iterator[UUID]] = {
+      val ps = session.prepare(s"SELECT ${timelines.tweet.name} FROM ${space.name}.${timelines.tableName} WHERE ${timelines.user.name} = ? ORDER BY ${timelines.tweet.name} DESC LIMIT ?")
+      (user: UUID, limit: Int) =>
+        ps.bindWith(user, limit) { rs =>
+          rs.iterator() map { r => timelines.tweet(r) }
+        }
+    }
+
+  }
+
   private def add_to_followers_timelines(tweet: UUID, user: UUID, created: DateTime)(implicit consistency: ConsistencyLevel): Future[Unit] = {
     followersOf(user) flatMap { followers =>
-      Future.sequence(followers map { f =>
-        timelines.insert()
-            .consistencyLevel_=(consistency)
-            .value(_.user, f)
-            .value(_.tweet, tweet)
-            .value(_.created, created)
-            .future()
-            .instrument()
-      }).map(_ => ())
+        followers.map { f =>
+          prepared.timeline_append(f, tweet, created)(consistency)
+              .execAsScala()
+              .instrument()
+        }.bundle.unit
     }
   }
 
@@ -288,38 +285,45 @@ trait Retwis extends OwlService {
   def getTweet(id: UUID)(implicit consistency: ConsistencyLevel): Future[Option[Tweet]] = {
     tweets.select.where(_.id eqs id).one() flatMap {
       case Some(tweet) =>
-        for {
-          userOpt <- users.select
-              .consistencyLevel_=(consistency)
-              .where(_.id eqs tweet.user)
-              .one()
-              .instrument()
-          ct <- retweets(id).size()
-        } yield for {
-          u <- userOpt
-        } yield {
-          tweet.copy(retweets = ct.get, name = Some(u.name))
-        }
+        {
+          for {
+            (userOpt, ct) <- users.select
+                .consistencyLevel_=(consistency)
+                .where(_.id eqs tweet.user)
+                .one()
+                .instrument() zip retweets(id).size().instrument(m.retweet_count)
+          } yield for {
+            u <- userOpt
+          } yield {
+            tweet.copy(retweets = ct.get, name = Some(u.name))
+          }
+        }.instrument(m.tweet_load)
       case None =>
         Future { None }
     }
   }
 
 
-  def timeline(user: UUID, limit: Int) = {
-    timelines.select
-        .consistencyLevel_=(consistency)
-        .where(_.user eqs user)
-        .orderBy(_.tweet desc)
-        .limit(limit)
-        .future()
-        .instrument()
-        .flatMap { rs =>
-          rs.iterator().map(r => timelines.fromRow(r).tweet)
-              .map(getTweet)
-              .bundle
-        }
+  def timeline(user: UUID, limit: Int): Future[IndexedSeq[Tweet]] =
+    prepared.timeline_get(user, limit)(consistency).execAsScala()
+        .flatMap { ts => ts.toIndexedSeq.map(getTweet).bundle }
         .map(_.flatten)
+
+
+  val retwisOps = metrics.create.meter("retwis_op")
+
+  object m {
+    val user = metrics.create.timer("user")
+    val follow = metrics.create.timer("follow")
+    val tweet = metrics.create.timer("tweet")
+    val retweet = metrics.create.timer("retweet")
+    val timeline = metrics.create.timer("timeline")
+
+    val retweet_count = metrics.create.timer("retweet_count")
+
+    val timeline_length = metrics.create.histogram("timeline_length")
+
+    val tweet_load = metrics.create.timer("tweet_load")
   }
 
   object Tasks {
@@ -330,37 +334,40 @@ trait Retwis extends OwlService {
     }
 
     case object NewUser extends Task(() =>
-      store(randomUser()) map { _ => () }
+      store(randomUser()).unit.instrument(m.user).map { _ => nusers += 1 }
     )
 
     case object Follow extends Task(() =>
-      follow(Uniform.user(), Zipf.user())
+      follow(Uniform.user(), Zipf.user()).instrument(m.follow)
     )
 
     case object Unfollow extends Task(() => {
       val followee = Uniform.user()
-      followers(followee).get(1) flatMap { fs =>
+      followers(followee).get(1).flatMap { fs =>
         fs.get map { follower =>
           unfollow(follower, followee)
         } bundle
-      } unit
+      }.unit.instrument(m.follow)
     })
 
     case object Tweet extends Task(() => {
-      post(randomTweet()) map { _ => () }
+      post(randomTweet()) map { _ => () } instrument m.tweet
     })
 
     case object Timeline extends Task(() => {
       val user = Uniform.user()
       for {
-        tweets <- timeline(user, limit = 10)
+        tweets <- timeline(user, limit = 10).instrument(m.timeline)
         _ <- tweets
-            .filter(i => Random.nextDouble() > 0.4)
+            .filter(i => Random.nextDouble() > 0.9)
             .map { t =>
-              retweet(t, user)
+              retweet(t, user).instrument(m.retweet)
             }
             .bundle
-      } yield ()
+      } yield {
+        m.timeline_length << tweets.size
+        ()
+      }
     })
 
   }
@@ -400,7 +407,7 @@ trait Retwis extends OwlService {
   }
 
   def workload(): Unit = {
-    println(s"# Running workload for ${config.duration}, with ${config.cap} at a time.")
+    println(s"# Running workload for ${config.duration}")
 
     val mix = Map(
       Tasks.NewUser  -> 0.02,
@@ -416,17 +423,27 @@ trait Retwis extends OwlService {
       capacity = config.cap
     )
 
+    val actualDurationStart = Deadline.now
     val deadline = config.duration.fromNow
-    val all =
-      Stream from 1 map { i =>
-        weightedSample(mix)()
-      } takeWhile { _ =>
-        deadline.hasTimeLeft
-      } bundle
+    val sem = new Semaphore(config.concurrent_reqs)
 
-    await(all)
+    while (deadline.hasTimeLeft &&
+        sem.tryAcquire(deadline.timeLeft.inMillis, TimeUnit.MILLISECONDS)) {
+      val f = weightedSample(mix)()
 
-    println("# Workload complete.")
+      f onSuccess { case _ => sem.release() }
+      f onFailure { case e: Throwable =>
+        Console.err.println(s"!! got an error: ${e.getMessage}")
+        e.printStackTrace()
+        sys.exit(1)
+      }
+    }
+
+    val actualTime = actualDurationStart.elapsed
+    output += ("actual_time" -> actualTime)
+    println(s"# Done in ${actualTime.toSeconds}.${actualTime.toMillis%1000}s")
+    println(s"# checking eventually correct")
+
     metrics.dump()
   }
 

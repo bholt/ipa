@@ -222,6 +222,7 @@ def run(logfile, *args, **flags):
 
 
 def run_retwis():
+    containers = swarm.containers_str()
     nexp = 0
     for trial in range(1, opt.target+1):
         if not opt.dry:
@@ -237,20 +238,36 @@ def run_retwis():
             ipa_retwis_generate       = ['true'],
 
             ipa_duration              = [60],
-            ipa_zipf                  = ['1.0'],
+            ipa_zipf                  = ['0.6'],
 
             ipa_retwis_initial_users  = [100],
             ipa_retwis_initial_tweets = [10],
 
-            ipa_concurrent_requests   = [16, 128, 512, 2*K, 4*K, 8*K, 32*K],
+            ipa_concurrent_requests   = [128, 512, 2*K, 4*K],
 
-            ipa_consistency           = ['strong', 'weak'],
+            ipa_lease_period = ['20ms'],
+            ipa_reservations_lease = ['10s'],
 
-            honeycomb_mode = ['uniform', 'slowpoke', 'slowflat']
+            # ipa_consistency           = ['strong', 'weak'],
+            ipa_bound = ['consistency:strong', 'consistency:weakwrite', 'tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'latency:20ms'],
+
+            honeycomb_mode = ['fast', 'flat5', 'slowpoke_flat', 'google', 'amazon']
+
         ):
-            ct = count_records(table, ignore=[],
-                               valid='meters_retwis_op_count is not null', **a)
-            puts(colored.black("→")+colored.cyan('count:')+colored.yellow(ct))
+
+            a['containers'] = containers
+
+            if 'strong' in a['ipa_bound']:
+                a['ipa_consistency'] = 'strong'
+                a['ipa_lease_period'] = '0ms'
+
+            elif re.search('weak|tol|lat', a['ipa_bound']):
+                a['ipa_consistency'] = 'weak'
+
+            ct = count_records(table, ignore=['containers'],
+                               valid='out_actual_time_length is not null', **a)
+            puts(colored.black("→ ")+colored.cyan('count:')+colored.yellow(ct))
+
             if opt.dry:
                 continue
             if ct < trial:

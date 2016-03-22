@@ -206,7 +206,7 @@ object IPASet {
     type SizeType[T] = Interval[T]
 
     def arg(value: Option[V]) = value map {
-      case v: UUID => thrift.Primitive.Id(value.toString)
+      case v: UUID => thrift.Primitive.Id(value.get.toString)
       case _ => sys.error(s"Unsupported value type: $value")
     }
 

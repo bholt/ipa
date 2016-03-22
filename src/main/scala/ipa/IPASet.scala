@@ -139,9 +139,14 @@ object IPASet {
         op.op match {
           case Add =>
             getValue(op) map { v =>
-              r submit {
-                r.execute(1L, execAdd(v))
-                    .map(_ => SetResult())
+              r.execute_if_immediate(1L, execAdd(v)) flatMap { early =>
+                if (early) TwFuture(SetResult())
+                else {
+                  r submit {
+                    r.execute(1L, execAdd(v))
+                        .map(_ => SetResult())
+                  }
+                }
               }
             } get()
 
@@ -162,17 +167,12 @@ object IPASet {
             m.size_ops += 1
 
             {
-              if (r.lastRead.expired) {
-                r submit {
-                  for {
-                    _ <- r.fetchAndUpdate(CLevel.LOCAL_ONE)
-                  } yield {
-                    r.interval
-                  }
-                }
-              } else {
-                m.size_cached += 1
-                TwFuture(r.interval)
+              for {
+              // check again if expired because we may now be able to go
+                updated <- r.update_if_expired(CLevel.LOCAL_ONE)
+              } yield {
+                if (!updated) m.size_cached += 1
+                r.interval
               }
             } map { r =>
               SetResult(size = Some(r))

@@ -2,6 +2,7 @@ package ipa
 
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import java.util.function.Function
 
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
@@ -104,9 +105,9 @@ class ReservationPool(
 
   }
 
-  def init(): ReservationPool = {
+  def init(truncate: Boolean = false): ReservationPool = {
     Console.err.println("# Create allocations table")
-    if (config.do_reset) blocking {
+    if (config.do_reset && truncate) blocking {
       session.execute(s"DROP TABLE IF EXISTS ${space.name}.${alloc.table.tableName}")
     }
     alloc.table.create.ifNotExists().future().await()
@@ -133,17 +134,17 @@ class ReservationPool(
     var lastRead: Timestamped[Long] = Timestamped(0L, 0L)
     var total: Long = 0L      // tokens allocated globally (currently assumed to be the max possible given the error tolerance)
     var allocated: Long = 0L  // tokens allocated to this replica locally
-    var available: Long = 0L // local tokens remaining
+    var available: AtomicLong = new AtomicLong // local tokens remaining
 
     var lease: Option[DateTime] = None
     var updating = false
 
-    def used = allocated - available
+    def used = allocated - available.get
     def delta = total - used
 
     def interval = Interval(lastRead.value - delta, lastRead.value + delta)
 
-    override def toString = s"Reservation(read: $lastRead, total: $total, alloc: $allocated, avail: $available)"
+    override def toString = s"Reservation(read: $lastRead, total: $total, alloc: $allocated, avail: ${available.get})"
 
     def leaseExpiresSoon = lease match {
       case Some(l) => l.minus(config.reservations.soon_period).isBeforeNow
@@ -159,11 +160,11 @@ class ReservationPool(
         case Some(alloc) =>
           total = alloc.total(maxLocal)
           allocated = alloc.allocated(maxLocal)
-          available = allocated
+          available set allocated
           lease = alloc.leases.get(this_host_hash)
         case None =>
           // just get back our allocated tokens
-          available = allocated
+          available set allocated
       }
     }
 
@@ -172,7 +173,12 @@ class ReservationPool(
       fetchAndUpdate(CLevel.ALL).instrument(m.latencyStrongRead)
     }
 
-    def fetchAndUpdate(clevel: CLevel): TwFuture[Reservation] = {
+    def update_if_expired(clevel: CLevel): TwFuture[Boolean] = {
+      if (lastRead.expired) fetchAndUpdate(clevel).map(_ => true)
+      else TwFuture(false)
+    }
+
+    def fetchAndUpdate(clevel: CLevel): TwFuture[Unit] = {
       val rt = System.nanoTime
       val f_read = readOp(clevel)(key).instrument()
       val f_alloc =
@@ -190,8 +196,6 @@ class ReservationPool(
               updating = false
             }
           }
-
-          this
       }
     }
 
@@ -201,10 +205,11 @@ class ReservationPool(
     }
 
     def execute_if_immediate(n: Long, exec: CLevel => UUID => TwFuture[Unit]): TwFuture[Boolean] = {
-      if (n <= available) {
+      if (available.addAndGet(-n) >= 0) {
         m.immediates += 1
         exec(CLevel.LOCAL_ONE)(key).instrument(m.latencyWeakWrite).map(_ => true)
       } else {
+        available.addAndGet(n)
         TwFuture(false)
       }
     }
@@ -241,15 +246,18 @@ class ReservationPool(
             }
 
           immediate <-
-            if (n <= available) TwFuture(true)
-            else refresh(key).map(_ => false)
+            if (available.addAndGet(-n) >= 0) TwFuture(true)
+            else {
+              available.addAndGet(n)
+              refresh(key).map(_ => false)
+            }
 
           _ <-
-            if (immediate) {
-              available -= n
+            if (immediate || available.addAndGet(-n) >= 0) {
               if (preallocated && immediate) m.immediates += 1
               exec(CLevel.LOCAL_ONE)(key).instrument(m.latencyWeakWrite)
             } else {
+              available.addAndGet(n)
               m.races += 1
               exec(CLevel.ALL)(key).instrument(m.latencyStrongWrite)
             }

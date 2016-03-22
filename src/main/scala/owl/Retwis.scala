@@ -454,7 +454,7 @@ class RetwisExec extends {
 } with Retwis
 
 object Workload extends RetwisExec {
-  override implicit lazy val session = Connector.throttledCluster.connect(space.name)
+  // override implicit lazy val session = Connector.throttledCluster.connect(space.name)
   def apply() = workload()
   def main(args: Array[String]): Unit = {
     apply()

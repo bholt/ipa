@@ -18,11 +18,9 @@ import ipa.CommonImplicits
 
 import scala.concurrent.duration.FiniteDuration
 
+
 class IPAUuidSet(val name: String)(implicit val imps: CommonImplicits) extends TableGenerator {
-  import imps.metrics
-  import imps.session
-  import imps.space
-  import imps.reservations
+  import imps._
 
   type K = UUID
   type V = UUID
@@ -43,16 +41,34 @@ class IPAUuidSet(val name: String)(implicit val imps: CommonImplicits) extends T
   override def truncate(): Future[Unit] =
     entryTable.truncate.future().unit
 
+  object prepared {
+    val (k, v, t) = (entryTable.ekey.name, entryTable.evalue.name, s"${space.name}.$name")
+
+    lazy val add: (UUID, V) => (ConsistencyLevel) => BoundOp[Unit] = {
+      val ps = session.prepare(s"INSERT INTO $t ($k, $v) VALUES (?, ?)")
+      (key: UUID, value: V) => ps.bindWith(key, value)(_ => ())
+    }
+
+    lazy val remove: (UUID, V) => (ConsistencyLevel) => BoundOp[Unit] = {
+      val ps = session.prepare(s"DELETE FROM $t WHERE $k=? AND $v=?")
+      (key: UUID, value: V) => ps.bindWith(key, value)(_ => ())
+    }
+
+    lazy val contains: (UUID, V) => (ConsistencyLevel) => BoundOp[Boolean] = {
+      val ps = session.prepare(s"SELECT $v FROM $t WHERE $k=? AND $v=? LIMIT 1")
+      (key: UUID, value: V) => ps.bindWith(key, value)(rs => rs.one() != null)
+    }
+
+    lazy val size: (UUID) => (ConsistencyLevel) => BoundOp[Long] = {
+      val ps = session.prepare(s"SELECT COUNT(*) FROM $t WHERE $k = ?")
+      (key: UUID) => ps.bindWith(key)(_.first.map(_.get(0, classOf[Long])).getOrElse(0L))
+    }
+  }
+
   class HandleBase(key: K, cons: ConsistencyLevel) {
 
     def contains(value: V): Future[Inconsistent[Boolean]] = {
-      entryTable.select(_.evalue)
-          .consistencyLevel_=(cons)
-          .where(_.ekey eqs key)
-          .and(_.evalue eqs value)
-          .one()
-          .instrument()
-          .map(o => Inconsistent(o.isDefined))
+      prepared.contains(key, value)(cons).execAsScala().map(Inconsistent(_))
     }
 
     def get(limit: Int = 0): Future[Inconsistent[Iterator[V]]] = {
@@ -70,32 +86,15 @@ class IPAUuidSet(val name: String)(implicit val imps: CommonImplicits) extends T
     }
 
     def add(value: V): Future[Unit] = {
-      entryTable.insert()
-          .consistencyLevel_=(cons)
-          .value(_.ekey, key)
-          .value(_.evalue, value)
-          .future()
-          .instrument()
-          .unit
+      prepared.add(key, value)(cons).execAsScala()
     }
 
     def remove(value: V): Future[Unit] = {
-      entryTable.delete()
-          .consistencyLevel_=(cons)
-          .where(_.ekey eqs key)
-          .and(_.evalue eqs value)
-          .future()
-          .instrument()
-          .unit
+      prepared.remove(key, value)(cons).execAsScala()
     }
 
     def size(): Future[Inconsistent[Int]] = {
-      entryTable.select.count()
-          .consistencyLevel_=(cons)
-          .where(_.ekey eqs key)
-          .one()
-          .map(o => Inconsistent(o.getOrElse(0l).toInt))
-          .instrument()
+      prepared.size(key)(cons).execAsScala().map(i => Inconsistent(i.toInt))
     }
 
 

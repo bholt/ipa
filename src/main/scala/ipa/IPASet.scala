@@ -210,6 +210,7 @@ object IPASet {
       case _ => sys.error(s"Unsupported value type: $value")
     }
 
+    // uses plain average latency to pick the server, tends to overload one (which is good for caching)
     def reservationOp(op: SetOpType, key: K, value: Option[V] = None) = {
       val (addr, tracker) = reservations.get
       val ts = tracker.start()
@@ -219,11 +220,17 @@ object IPASet {
           .map { v => tracker.end(ts); v }
     }
 
+    def reservationOpBalance(op: SetOpType, key: K, value: Option[V] = None) = {
+      reservations.client
+          .ipaSet(table, SetOp(op, key = Some(key.toString), value = arg(value)))
+          .asScala
+    }
+
     override def add(key: K, value: V): Future[Unit] =
-      reservationOp(Add, key, Some(value)).unit
+      reservationOpBalance(Add, key, Some(value)).unit
 
     override def remove(key: K, value: V): Future[Unit] =
-      reservationOp(Remove, key, Some(value)).unit
+      reservationOpBalance(Remove, key, Some(value)).unit
 
     override def contains(key: K, value: V): Future[IPAType[Boolean]] =
       reservationOp(Contains, key, Some(value))

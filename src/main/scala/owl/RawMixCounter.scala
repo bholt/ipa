@@ -56,38 +56,6 @@ class RawMixCounter(val duration: FiniteDuration) extends {
   val histError = metrics.create.histogram("error")
   val countErrorNegative = metrics.create.counter("error_negative")
 
-  def recordResult(trueVal: Long, inflight: Long, r: Inconsistent[Long]): Inconsistent[Long] = {
-
-    // some require special additional handling...
-    r match {
-      case v: Interval[Long] =>
-        val width = v.max - v.min
-        histIntervalWidth << width
-        histIntervalPercent << (width / v.median * 10000).toLong
-
-        if (v.min <= trueVal && v.max >= (trueVal+inflight)) countCorrect += 1
-        else countIncorrect += 1
-
-        if (v.contains(trueVal)) countContains += 1 else countNotContains += 1
-        histError << Math.abs(v.median - trueVal).toLong
-        if (v.median < trueVal) countErrorNegative += 1
-
-      case v =>
-        if (v.get >= trueVal && v.get <= (trueVal+inflight)) countCorrect += 1
-        else countIncorrect += 1
-
-        histError << Math.abs(v.get - trueVal)
-        histIntervalWidth << inflight
-        if (v.get < trueVal) countErrorNegative += 1
-    }
-    r.consistency match {
-      case Strong => countReadStrong += 1
-      case Weak   => countReadWeak += 1
-      case _ => // do nothing
-    }
-    r
-  }
-
   def init(i: Int, key: UUID): Future[Unit] = {
     val t = Random.nextInt(rawmix.target) + rawmix.target / 4
     val scaled = (t * nsets * dist.probability(i)).toInt + 4

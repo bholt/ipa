@@ -38,19 +38,32 @@ class RawMix(val duration: FiniteDuration) extends {
   val countSizeStrong     = metrics.create.counter("size_strong")
   val countSizeWeak       = metrics.create.counter("size_weak")
 
+  val histError = metrics.create.histogram("error")
+  val histIntervalWidth = metrics.create.histogram("interval_width")
+  val histIntervalPercent = metrics.create.histogram("interval_percent")
+  val countCorrect = metrics.create.counter("correct")
+  val countIncorrect = metrics.create.counter("incorrect")
+
   val countConsistent = metrics.create.counter("consistent")
   val countInconsistent = metrics.create.counter("inconsistent")
 
   def recordResult[T](op: Symbol, r: Inconsistent[T]): Inconsistent[T] = {
-    val cons = set match {
-      case lbound: LatencyBound => r.asInstanceOf[Rushed[T]].consistency
-      case cbound: ConsistencyBound => cbound.consistencyLevel
+    import Consistency._
+
+    r match {
+      case _: Interval[_] =>
+        val v = r.asInstanceOf[Interval[Long]]
+        val width = v.max - v.min
+        histIntervalWidth << width
+        histIntervalPercent << (width / v.median * 10000).toLong
+      case v =>
     }
-    (op, cons) match {
-      case ('contains, ConsistencyLevel.ALL) => countContainsStrong += 1
-      case ('contains, ConsistencyLevel.ONE) => countContainsWeak += 1
-      case ('size,     ConsistencyLevel.ALL) => countSizeStrong += 1
-      case ('size,     ConsistencyLevel.ONE) => countSizeWeak += 1
+
+    (op, r.consistency) match {
+      case ('contains, Strong) => countContainsStrong += 1
+      case ('contains, Weak) => countContainsWeak += 1
+      case ('size,     Strong) => countSizeStrong += 1
+      case ('size,     Weak) => countSizeWeak += 1
     }
     r
   }
@@ -111,6 +124,11 @@ class RawMix(val duration: FiniteDuration) extends {
       }
       f onComplete { _ =>
         sem.release()
+      }
+      f onFailure { case e: Throwable =>
+        Console.err.println(s"!! got an error: ${e.getMessage}")
+        e.printStackTrace()
+        sys.exit(1)
       }
     }
 

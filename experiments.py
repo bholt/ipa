@@ -249,8 +249,8 @@ def run_retwis():
             ipa_reservations_lease = ['10s'],
 
             # ipa_consistency           = ['strong', 'weak'],
-            ipa_bound = ['consistency:strong', 'consistency:weakwrite'],
-                #'tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'latency:20ms'],
+            # ipa_bound = ['consistency:strong', 'consistency:weakwrite'],
+            ipa_bound = ['tolerance:0.05', 'latency:20ms'],
 
             honeycomb_mode = ['fast', 'flat5', 'slowpoke_flat', 'amazon']
 
@@ -395,26 +395,34 @@ def run_rawmix(log, datatype):
             ipa_reset                 = ['false'],
 
             ipa_duration              = [60],
-            # ipa_zipf                  = ['0.6'],
+            ipa_zipf                  = ['0.6'],
 
-            ipa_concurrent_requests   = [2*K], #[128, 512, 2*K],
+            ipa_concurrent_requests   = [128, 4*K], #[128, 512, 2*K],
 
-            # ipa_bound = ['tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'tolerance:0', 'consistency:strong', 'consistency:weakwrite', 'latency:50ms', 'latency:20ms', 'latency:10ms'],
+            ipa_bound = ['tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'consistency:strong', 'consistency:weakwrite', 'latency:50ms', 'latency:20ms', 'latency:10ms'],
             # ipa_bound = ['tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'tolerance:0'],
 
             ipa_lease_period = ['0ms'], #'200ms'],
             ipa_reservations_lease = ['10s'],
             # ipa_bound = ['consistency:strong', 'consistency:weak', 'latency:50ms', 'latency:10ms'],
-            honeycomb_mode = ['fast', 'flat5', 'slowpoke_flat', 'google', 'amazon'],
-            # mix = ['default'] #, 'read_heavy']
+            honeycomb_mode = ['fast', 'flat5', 'slowpoke_flat', 'amazon'],
+            # honeycomb_mode = ['amazon'],
+            mix = ['default'], #, 'read_heavy']
 
-            ipa_rawmix_nsets=[10],
-            ipa_rawmix_target=[1000],
-            ipa_zipf = ['0'],
-            ipa_bound = ['consistency:weakwrite', 'tolerance:0.1', 'tolerance:0.01', 'consistency:strong'],
-            mix = ['custom'], ipa_rawmix_counter_mix_incr=[1.0, 0.5, 0.1, 0.01]
+            # ipa_rawmix_nsets=[10],
+            # ipa_rawmix_target=[1000],
+            # ipa_zipf = ['0'],
+            # ipa_bound = ['consistency:weakwrite', 'tolerance:0.1', 'tolerance:0.01', 'consistency:strong'],
+            # mix = ['custom'], ipa_rawmix_counter_mix_incr=[1.0, 0.5, 0.1, 0.01]
         ):
             a['containers'] = containers
+
+            if a['honeycomb_mode'] == 'fast':
+                a['ipa_concurrent_requests'] = 4*K
+            elif a['honeycomb_mode'] == 'slowpoke_flat':
+                a['ipa_concurrent_requests'] = 512
+            elif a['honeycomb_mode'] == 'amazon':
+                a['ipa_concurrent_requests'] = 2*K
 
             if a['mix'] == 'custom':
                 a['ipa_rawmix_counter_mix_read'] = 1.0 - a['ipa_rawmix_counter_mix_incr']

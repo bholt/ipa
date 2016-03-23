@@ -73,6 +73,15 @@ class RawMixCounter(val duration: FiniteDuration) extends {
     (0 to nsets).map(i => init(i, i.id)).bundle.await()
   }
 
+  def record(r: Inconsistent[Long]) = {
+    import ConsistencyLevel._
+    r.consistency match {
+      case ONE | LOCAL_ONE => countReadWeak += 1
+      case QUORUM | LOCAL_QUORUM | ALL => countReadStrong += 1
+      case _ =>
+    }
+  }
+
   def run() {
 
     val actualDurationStart = Deadline.now
@@ -145,7 +154,7 @@ class RawMixCounter(val duration: FiniteDuration) extends {
           }
 
         case 'read =>
-          handle.read().instrument(timerRead).unit
+          handle.read().instrument(timerRead).map(record).unit
 
         case op =>
           sys.error(s"Unhandled op: $op")

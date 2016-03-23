@@ -249,11 +249,20 @@ def run_retwis():
             ipa_reservations_lease = ['10s'],
 
             # ipa_consistency           = ['strong', 'weak'],
-            ipa_bound = ['consistency:strong', 'consistency:weakwrite', 'tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'latency:20ms'],
+            ipa_bound = ['consistency:strong', 'consistency:weakwrite'],
+                #'tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'latency:20ms'],
 
-            honeycomb_mode = ['fast', 'flat5', 'slowpoke_flat', 'google', 'amazon']
+            honeycomb_mode = ['fast', 'flat5', 'slowpoke_flat', 'amazon']
 
         ):
+
+            if a['honeycomb_mode'] == 'fast' and a['ipa_concurrent_requests'] != 4096:
+                pass
+            elif a['honeycomb_mode'] == 'slowpoke_flat' and a['ipa_concurrent_requests'] != 512:
+                pass
+            elif a['honeycomb_mode'] == 'amazon' and a['ipa_concurrent_requests'] != 2048:
+                pass
+
 
             a['containers'] = containers
 

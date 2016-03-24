@@ -399,7 +399,8 @@ def run_rawmix(log, datatype):
 
             ipa_concurrent_requests   = [128, 4*K], #[128, 512, 2*K],
 
-            ipa_bound = ['tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'consistency:strong', 'consistency:weakwrite', 'latency:50ms', 'latency:20ms', 'latency:10ms'],
+            # ipa_bound = ['tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'consistency:strong', 'consistency:weakwrite', 'latency:50ms', 'latency:20ms', 'latency:10ms'],
+            ipa_bound = ['consistency:weakwrite'],
             # ipa_bound = ['tolerance:0.1', 'tolerance:0.05', 'tolerance:0.01', 'tolerance:0'],
 
             ipa_lease_period = ['0ms'], #'200ms'],

@@ -1,13 +1,13 @@
+<img align="right" width="140" src="http://homes.cs.washington.edu/~bholt/img/ipa.jpg"/>
 # IPA
-[![Circle CI](https://circleci.com/gh/bholt/ipa.svg?style=svg)](https://circleci.com/gh/bholt/ipa)
 
-<img style="float: right" src="http://homes.cs.washington.edu/~bholt/img/ipa.jpg"/>
+[![CircleCI](https://circleci.com/gh/bholt/ipa.svg?style=svg)](https://circleci.com/gh/bholt/ipa)
 
 This is the prototype implementation of the *Inconsistent Performance-bound Approximate (IPA)* programming model and storage system. This is part of the [*Disciplined Inconsistency*][di] project, which aims to make it safe to trade off consistency for performance in highly available applications built on top of replicated & distributed datastores.
 
 The prototype implementation is built on top of [Cassandra][] in [Scala][], using Outworkers' [Phantom][] library to connect with Cassandra. The project is organized and built with [SBT][] (v0.13).
 
-Read a [blog post][] explaining the high-level motivation for the project, or the latest draft of the paper under submission, available currently as a [tech report][].
+To learn more, read a [blog post][] explaining the high-level motivation for the project, or the latest draft of the paper under submission, available currently as a [tech report][].
 
 [di]: http://sampa.cs.washington.edu/projects/disciplined-inconsistency.html
 [blog post]: http://homes.cs.washington.edu/~bholt/posts/disciplined-inconsistency.html

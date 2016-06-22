@@ -1,25 +1,32 @@
-package owl
+package ipa.apps.retwis
 
 import java.util.UUID
 import java.util.concurrent.{Semaphore, TimeUnit}
 
-import com.codahale.metrics.ConsoleReporter
 import com.datastax.driver.core.ConsistencyLevel
 import com.datastax.driver.core.utils.UUIDs
+import com.websudos.phantom.CassandraTable
+import com.websudos.phantom.column.{CounterColumn, DateTimeColumn, TimeUUIDColumn}
 import com.websudos.phantom.connectors.KeySpace
-import com.websudos.phantom.dsl.{DateTime, UUID, _}
-import ipa.IPASet
+import com.websudos.phantom.dsl._
+import ipa.IPAService
 import org.apache.commons.math3.distribution.ZipfDistribution
 import org.joda.time.DateTime
-import owl.Util._
+
+import scala.concurrent.Future
+import scala.util.Random
+import ipa.Util._
+import ipa.types._
+import ipa.adts._
 
 import scala.collection.JavaConversions._
-import scala.concurrent.Future
 import scala.concurrent.duration.Deadline
-import scala.language.postfixOps
-import scala.util.Random
 
-trait Retwis extends OwlService {
+
+/**
+  * Created by bholt on 6/22/16.
+  */
+trait Retwis extends IPAService {
 
   // User
   case class User(
@@ -453,15 +460,6 @@ class RetwisExec extends {
   override implicit val space = KeySpace("owl_retwis")
 } with Retwis
 
-object Workload extends RetwisExec {
-  // override implicit lazy val session = Connector.throttledCluster.connect(space.name)
-  def apply() = workload()
-  def main(args: Array[String]): Unit = {
-    apply()
-    sys.exit()
-  }
-}
-
 object Init extends RetwisExec {
   def apply() = {
     // println(config.toJSON)
@@ -471,6 +469,15 @@ object Init extends RetwisExec {
   def main(args: Array[String]) {
     apply()
     sys.exit() // because we have extra threads sitting around...
+  }
+}
+
+object Workload extends RetwisExec {
+  // override implicit lazy val session = Connector.throttledCluster.connect(space.name)
+  def apply() = workload()
+  def main(args: Array[String]): Unit = {
+    apply()
+    sys.exit()
   }
 }
 

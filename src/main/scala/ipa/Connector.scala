@@ -1,4 +1,4 @@
-package owl
+package ipa
 
 import java.net.InetAddress
 import java.util.concurrent.TimeUnit
@@ -8,22 +8,16 @@ import com.datastax.driver.core._
 import com.datastax.driver.core.policies.{DCAwareRoundRobinPolicy, LatencyAwarePolicy, RoundRobinPolicy}
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
-import com.twitter.finagle.Thrift
-import com.twitter.finagle.loadbalancer.Balancers
-import com.typesafe.config.{ConfigFactory, ConfigRenderOptions, ConfigValue, ConfigValueType}
+import com.typesafe.config.{ConfigFactory, ConfigRenderOptions}
 import com.websudos.phantom.connectors.{KeySpace, SessionProvider}
 import com.websudos.phantom.dsl.ConsistencyLevel
-import ipa.CommonImplicits
-import ipa.thrift.ReservationService
-import ipa.{MetricsLatencyTracker, ReservationClient, thrift => th}
-import com.twitter.{util => tw}
-import ipa.policies.ConsistencyLatencyTracker
+import ipa.types.Bound
 import org.joda.time.Period
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable
+import scala.concurrent.blocking
 import scala.concurrent.duration._
-import scala.concurrent.{Future, blocking}
 import scala.util.Try
 
 object Connector {
@@ -67,9 +61,8 @@ object Connector {
 
     private def getMixMap(field: String) =
       c.getObject(field).toMap.map {
-        case (key, value) => {
+        case (key, value) =>
           (Symbol(key), value.unwrapped().toString.toDouble)
-        }
       }
 
     object rawmix {

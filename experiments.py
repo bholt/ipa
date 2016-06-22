@@ -377,9 +377,9 @@ def run_rawmix(log, datatype):
         }
     }
 
-    main_class = 'owl.RawMix'
+    main_class = 'ipa.apps.RawMix'
     if datatype == 'counter':
-        main_class = 'owl.RawMixCounter'
+        main_class = 'ipa.apps.RawMixCounter'
 
     for trial in range(1, opt.target+1):
         if not opt.dry:

@@ -1,6 +1,5 @@
-package ipa
+package ipa.adts
 
-import java.util.UUID
 import com.datastax.driver.core.{Row, ConsistencyLevel => CLevel}
 import com.twitter.util.{Throw, Future => TwFuture, Try => TwTry}
 import com.twitter.{util => tw}
@@ -9,15 +8,16 @@ import com.websudos.phantom.builder.primitives.Primitive
 import com.websudos.phantom.column.PrimitiveColumn
 import com.websudos.phantom.dsl.{UUID, _}
 import com.websudos.phantom.keys.PartitionKey
+import ipa.ReservationPool
+import ipa.Util._
 import ipa.thrift.Primitive._
 import ipa.thrift.ReservationException
-import owl.Util._
-import owl.{Interval, _}
+import ipa.types._
 
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
 import scala.language.higherKinds
-import scala.util.{Failure, Success, Try}
+import scala.util.Try
 
 object IPASet {
 
@@ -93,9 +93,9 @@ object IPASet {
   }
 
   trait ErrorBound[V] extends Ops[V] { base: IPASet[V] =>
-    import thrift.{SetResult, SetOp, SetOpType}
-    import SetOpType._
     import Conversions._
+    import ipa.thrift.{SetOp, SetOpType, SetResult}
+    import SetOpType._
 
     def bound: Tolerance
     override def meta = Metadata(Some(bound))
@@ -206,7 +206,7 @@ object IPASet {
     type SizeType[T] = Interval[T]
 
     def arg(value: Option[V]) = value map {
-      case v: UUID => thrift.Primitive.Id(value.get.toString)
+      case v: UUID => ipa.thrift.Primitive.Id(value.get.toString)
       case _ => sys.error(s"Unsupported value type: $value")
     }
 

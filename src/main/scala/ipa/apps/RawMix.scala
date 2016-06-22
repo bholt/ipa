@@ -1,24 +1,24 @@
-package owl
+package ipa.apps
 
 import java.util.UUID
+import java.util.concurrent.Semaphore
 
-import com.datastax.driver.core.ConsistencyLevel
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
+import ipa._
+import ipa.types._
+import ipa.types.Consistency._
+import ipa.Util._
+import ipa.adts.IPASet
 import org.apache.commons.math3.distribution.ZipfDistribution
 
 import scala.concurrent._
 import scala.concurrent.duration._
-import Util._
-import java.util.concurrent.Semaphore
-
-import ipa.IPASet
-
-import scala.util.{Random, Success, Try}
+import scala.util.Random
 
 class RawMix(val duration: FiniteDuration) extends {
   override implicit val space = RawMix.space
-} with OwlService {
+} with IPAService {
   val nsets = config.rawmix.nsets
   val mix = config.rawmix.mix
 
@@ -48,7 +48,6 @@ class RawMix(val duration: FiniteDuration) extends {
   val countInconsistent = metrics.create.counter("inconsistent")
 
   def recordResult[T](op: Symbol, r: Inconsistent[T]): Inconsistent[T] = {
-    import Consistency._
 
     r match {
       case _: Interval[_] =>

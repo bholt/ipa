@@ -1,4 +1,4 @@
-package ipa
+package ipa.adts
 
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -12,10 +12,9 @@ import com.websudos.phantom.dsl.{UUID, _}
 import com.websudos.phantom.keys.PartitionKey
 import ipa.{thrift => th}
 import ipa.thrift.ReservationException
-import owl.Consistency.{apply => _, _}
-import owl.Conversions._
-import owl.Util._
-import owl._
+import ipa.types._
+import ipa.Util._
+import ipa._
 
 import scala.collection.mutable
 import scala.concurrent.Future

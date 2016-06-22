@@ -5,16 +5,16 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.Function
 
-import com.datastax.driver.core.{Cluster, ConsistencyLevel => CLevel}
+import com.datastax.driver.core.Cluster
 import com.twitter.finagle.ThriftMux
 import com.twitter.finagle.loadbalancer.Balancers
 import com.twitter.util._
 import com.websudos.phantom.connectors.KeySpace
+import ipa.Connector._
+import ipa.Util._
+import ipa.adts._
 import ipa.thrift._
 import ipa.{thrift => th}
-import owl.Connector._
-import owl.Util._
-import owl.{Connector, OwlService}
 
 import scala.collection.JavaConversions._
 import scala.collection.immutable.IndexedSeq
@@ -129,7 +129,7 @@ object ReservationCommon {
 
 object ReservationServer extends {
   override implicit val space = KeySpace("reservations")
-} with OwlService {
+} with IPAService {
   import ReservationCommon._
 
   val host = s"$thisHost:${config.reservations.port}"

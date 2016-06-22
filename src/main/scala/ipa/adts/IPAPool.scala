@@ -1,14 +1,11 @@
-package ipa
+package ipa.adts
 
 import java.util.UUID
 
-import com.websudos.phantom.dsl.{UUID, _}
-import owl._
-import owl.Util._
-import com.datastax.driver.core.{ConsistencyLevel => CLevel}
 import com.twitter.util.{Future => TwFuture}
-import org.apache.commons.lang.NotImplementedException
-import owl.Consistency._
+import com.websudos.phantom.dsl.UUID
+import ipa.types.Consistency._
+import ipa.types._
 
 abstract class IPAPool(val name: String)(implicit val imps: CommonImplicits)
     extends DataType(imps)

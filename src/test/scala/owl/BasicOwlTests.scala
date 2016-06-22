@@ -9,7 +9,7 @@ import scala.concurrent.Future
 import scala.concurrent.duration._
 import com.websudos.phantom.dsl._
 import com.websudos.phantom.connectors.KeySpace
-import Util._
+import ipa.apps.retwis.Retwis
 
 import scala.language.postfixOps
 

@@ -1,30 +1,25 @@
-package ipa
+package ipa.adts
 
 import java.net.InetAddress
-import java.nio.ByteBuffer
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.Function
 
 import com.datastax.driver.core.exceptions.WriteTimeoutException
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
-import com.twitter.concurrent.AsyncQueue
-import com.twitter.util.{Time, Duration => TwDuration, Future => TwFuture}
+import com.twitter.util.{Duration => TwDuration, Future => TwFuture}
 import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.dsl._
+import ipa.Connector.config
+import ipa.Util._
 import ipa.thrift.ReservationException
-import ipa.{thrift => th}
-import org.apache.commons.lang.NotImplementedException
-import org.joda.time.DateTime
-import owl._
-import owl.Connector.config
-import owl.Consistency._
-import owl.Util._
+import ipa.types.Consistency._
+import ipa.types._
+import ipa.{thrift => th, _}
 
 import scala.collection.JavaConversions._
 import scala.collection.immutable.IndexedSeq
 import scala.collection.mutable
-import scala.concurrent.duration.{Deadline, Duration}
 import scala.util.{Failure, Success, Try}
 
 

@@ -13,7 +13,7 @@ import scala.concurrent.duration._
 
 class BoundedCounterTests extends {
   override implicit val space = KeySpace("bc_tests")
-} with OwlFreeSpec with OwlService with BeforeAndAfterAll {
+} with OwlFreeSpec with IPAService with BeforeAndAfterAll {
   import Console.err
   def now() = Deadline.now
 

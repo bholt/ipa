@@ -1,30 +1,28 @@
-package owl
+package ipa.apps
 
 import java.util.UUID
-import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicLong}
-import java.util.concurrent.locks.{Lock, ReentrantLock, ReentrantReadWriteLock}
+import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 import java.util.concurrent.{ConcurrentHashMap, Semaphore, TimeUnit}
-import java.util.function.Function
 
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
-import ipa.{BoundedCounter, IPACounter}
+import ipa.Connector.config.rawmix
+import ipa.adts.IPACounter
 import org.apache.commons.math3.distribution.{UniformIntegerDistribution, ZipfDistribution}
-import owl.Util._
+import ipa._
+import ipa.types._
+import ipa.apps.RawMixCounter.Truth
+import ipa.Util._
 
+import scala.Console.{err => log}
+import scala.collection.mutable
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Random
-import scala.collection.mutable
-import Connector.config.rawmix
-import owl.RawMixCounter.Truth
-
-import Console.{err => log}
 
 class RawMixCounter(val duration: FiniteDuration) extends {
   override implicit val space = RawMix.space
-} with OwlService {
-  import Consistency._
+} with IPAService {
   import RawMixCounter.truth
 
   val nsets = rawmix.nsets

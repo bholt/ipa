@@ -1,6 +1,4 @@
-package owl
-
-import java.util.concurrent.TimeoutException
+package ipa.adts
 
 import com.datastax.driver.core.{ConsistencyLevel, Row}
 import com.websudos.phantom.CassandraTable
@@ -8,15 +6,11 @@ import com.websudos.phantom.builder.primitives.Primitive
 import com.websudos.phantom.column.{CounterColumn, PrimitiveColumn, SetColumn}
 import com.websudos.phantom.dsl._
 import com.websudos.phantom.keys.PartitionKey
+import ipa.TableGenerator
+import ipa.Util._
 
 import scala.collection.JavaConversions._
-import scala.concurrent.{Await, Future}
-import Util._
-import ipa.CommonImplicits
-
-import scala.concurrent._
-import scala.concurrent.duration.{Deadline, Duration, FiniteDuration}
-import scala.util.Try
+import scala.concurrent.Future
 
 abstract class OldIPASet[K, V] extends TableGenerator {
   def consistency: ConsistencyLevel

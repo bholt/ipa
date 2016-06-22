@@ -6,16 +6,15 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.function.Function
 
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
-import com.twitter.util
 import com.twitter.util.{Duration => TwDuration, Future => TwFuture}
 import com.websudos.phantom.CassandraTable
-import com.websudos.phantom.column.{MapColumn, PrimitiveColumn}
+import com.websudos.phantom.column.MapColumn
 import com.websudos.phantom.dsl._
 import org.joda.time.DateTime
-import owl.Connector.config
-import owl.{FutureSerializer, Interval, Timestamped, Tolerance}
-import owl.Util._
-import ipa.{thrift => th}
+import ipa.Connector.config
+import ipa.types.{Interval, Timestamped, Tolerance}
+import ipa.Util._
+import ipa.adts.CommonImplicits
 
 import scala.concurrent._
 

@@ -1,22 +1,21 @@
-package owl
+package ipa.adts
 
-import com.codahale.metrics.MetricRegistry
+import java.util.UUID
+
 import com.datastax.driver.core.{ConsistencyLevel, Row}
 import com.websudos.phantom.CassandraTable
 import com.websudos.phantom.column.PrimitiveColumn
 import com.websudos.phantom.dsl._
 import com.websudos.phantom.keys.PartitionKey
+import ipa.Connector.config
+import ipa.TableGenerator
+import ipa.Util._
+import ipa.types._
 
 import scala.concurrent._
+import scala.concurrent.duration.FiniteDuration
 import scala.collection.JavaConversions._
 import scala.math.Ordering.Implicits._
-import java.util.UUID
-
-import Connector.config
-import Util._
-import ipa.CommonImplicits
-
-import scala.concurrent.duration.FiniteDuration
 
 
 class IPAUuidSet(val name: String)(implicit val imps: CommonImplicits) extends TableGenerator {

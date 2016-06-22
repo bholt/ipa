@@ -1,22 +1,22 @@
-package ipa
+package ipa.adts
 
-import owl.Util._
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
-import com.twitter.util.{Return, Throw, Timer, Await => TwAwait, Duration => TwDuration, Future => TwFuture, Try => TwTry}
-import com.websudos.phantom.dsl._
-import owl.Connector.config
-import owl._
+import com.twitter.util.{Return, Throw, Await => TwAwait, Duration => TwDuration, Future => TwFuture, Try => TwTry}
 import com.twitter.{util => tw}
+import com.websudos.phantom.dsl._
+import ipa.{IPAMetrics, ReservationClient, TableGenerator}
 import ipa.thrift.{ReservationException, Table}
+import ipa.types._
+import ipa.types.Consistency._
+import ipa.Util._
+import ipa.Connector._
+import scala.math.Ordering.Implicits._
 
 import scala.concurrent._
 import scala.concurrent.duration.FiniteDuration
-import scala.math.Ordering.Implicits._
 import scala.util.{Failure, Success, Try}
 
 case class CommonImplicits(implicit val session: Session, val space: KeySpace, val metrics: IPAMetrics, val reservations: ReservationClient)
-
-import Connector.json
 
 case class Metadata(bound: Option[Bound] = None) {
   override def toString = bound map { b =>
@@ -86,7 +86,6 @@ object DataType {
 }
 
 trait RushImpl { this: DataType =>
-  import Consistency._
 
   lazy val strongThresholded = metrics.create.counter("rush_strong_thresholded")
   lazy val rush_both = metrics.create.counter("rush_both")

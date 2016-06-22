@@ -1,11 +1,7 @@
 package ipa
 
-import com.codahale.metrics.Histogram
 import com.datastax.driver.core.{ConsistencyLevel => CLevel, _}
-import owl.{IPAMetrics, MetricCell}
-import owl.Util._
-
-import scala.collection.mutable
+import ipa.Util._
 
 /**
   * LatencyTracker using DropWizard metrics.

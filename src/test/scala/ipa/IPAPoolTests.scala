@@ -14,7 +14,7 @@ import scala.concurrent.duration._
 
 class IPAPoolTests extends {
   override implicit val space = KeySpace("pool_tests")
-} with OwlWordSpec with OwlService {
+} with OwlWordSpec with IPAService {
 
   import Console.err
 

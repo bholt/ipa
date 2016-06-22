@@ -8,14 +8,15 @@ import com.twitter.util.{Future => TwFuture}
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
 import com.websudos.phantom.keys.PartitionKey
-import ipa.IPAPool
+import ipa.Connector.config.tickets.initial
+import ipa.Util._
+import ipa._
+import ipa.adts.IPAPool
+import ipa.apps.RawMixCounter._
+import ipa.types.Consistency._
+import ipa.types._
 import org.apache.commons.math3.distribution.{NormalDistribution, UniformIntegerDistribution, ZipfDistribution}
 import org.joda.time.DateTime
-import owl.Connector.config.tickets.initial
-import owl.Consistency._
-import owl.RawMixCounter._
-import owl.Util._
-import owl._
 
 import scala.collection.JavaConversions._
 import scala.concurrent.duration._
@@ -88,7 +89,7 @@ class EventTable extends CassandraTable[EventTable, Event] {
 
 class TicketSleuth(val duration: FiniteDuration) extends {
   override implicit val space = KeySpace("tickets")
-} with OwlService {
+} with IPAService {
 
   object m {
     val purchaseLatency = metrics.create.timer("op_purchase")

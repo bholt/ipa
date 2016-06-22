@@ -1,40 +1,26 @@
-package owl
+package ipa
 
-import java.io.{OutputStream, PrintStream}
-import java.time.Duration
-import java.util.UUID
+import java.io.PrintStream
 import java.util.concurrent.TimeUnit
 
-import com.codahale.metrics._
-import com.codahale.metrics.json.MetricsModule
-import com.datastax.driver.core.utils.UUIDs
-import com.datastax.driver.core.{Cluster, ConsistencyLevel, Row}
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.scala.DefaultScalaModule
-import com.websudos.phantom.CassandraTable
-import com.websudos.phantom.builder.primitives.Primitive
-import com.websudos.phantom.column.DateTimeColumn
-import com.websudos.phantom.dsl.{StringColumn, UUIDColumn, _}
-import com.websudos.phantom.keys.PartitionKey
-import ipa.{CommonImplicits, MetricsLatencyTracker, ReservationClient}
-import org.joda.time.DateTime
-
-import scala.collection.JavaConversions._
-import scala.concurrent.{Future, blocking}
-import Connector.config
 import com.codahale.metrics
-import com.twitter.{util => tw}
-import ipa.policies.ConsistencyLatencyTracker
+import com.codahale.metrics._
+import com.datastax.driver.core.Cluster
+import ipa.Connector.config
+import ipa.Util._
+import ipa.adts.CommonImplicits
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable
-import scala.collection.parallel.immutable
+import scala.concurrent.{Future, blocking}
 
 // for Vector.sample
-import owl.Util._
-import ipa.ReservationService
-
 import scala.language.postfixOps
+
+trait TableGenerator {
+  def create(): Future[Unit]
+  def truncate(): Future[Unit]
+}
 
 class MetricCell[T](var metric: T)
 object MetricCell { def apply[T](metric: T) = new MetricCell[T](metric) }
@@ -97,16 +83,7 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef], cluster: Cluster) 
         .convertRatesTo(TimeUnit.SECONDS)
         .build()
         .report()
-
-    def cleanedLatencies(t: ConsistencyLatencyTracker): mutable.Map[String, Map[String, AnyVal]] = {
-      t.currentLatencies() map { case (host, stats) =>
-          host.getAddress.getHostAddress -> Map(
-            "count" -> stats.nbMeasure,
-            "latency_ms" -> stats.average / 1e6
-          )
-      }
-    }
-
+    
     // dump metrics to stderr (for experiments script to parse)
     if (config.output_json) {
       write(Console.err, Map("res" -> reservations.fetchMetrics()))
@@ -116,7 +93,7 @@ class IPAMetrics(output: scala.collection.Map[String,AnyRef], cluster: Cluster) 
 
 }
 
-trait OwlService extends Connector {
+trait IPAService extends Connector {
 
   implicit val metrics = new IPAMetrics(output, cluster)
 

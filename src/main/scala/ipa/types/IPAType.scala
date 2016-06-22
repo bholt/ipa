@@ -1,18 +1,17 @@
-package owl
+package ipa.types
 
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
-import org.joda.time.DateTime
-import owl.Consistency._
-
-import scala.math.Ordering.Implicits._
-import ipa.thrift
 import com.twitter.{util => tw}
-import owl.Connector.config
+import org.joda.time.DateTime
 
 import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.concurrent.{ExecutionContext, Future}
 import scala.language.implicitConversions
+import scala.math.Ordering.Implicits._
 import scala.util.Try
+
+import ipa.Connector.config
+import ipa.thrift
 
 /** Define ordering over consistency levels */
 trait ConsistencyOrder extends Ordering[CLevel] {
@@ -54,6 +53,7 @@ final case class Tolerance(error: Double) extends Bound {
 }
 
 object Bound {
+  import Consistency._
   def fromString(str: String): Bound = {
     Try {
       val split = str.split(":")

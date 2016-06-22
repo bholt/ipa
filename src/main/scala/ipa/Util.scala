@@ -1,20 +1,19 @@
-package owl
+package ipa
 
 import java.io.{ByteArrayOutputStream, PrintStream}
 import java.net.InetAddress
 import java.nio.ByteBuffer
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.{ArrayBlockingQueue, ConcurrentLinkedQueue, ThreadPoolExecutor, TimeUnit}
+import java.util.concurrent.{ArrayBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
 import com.codahale.metrics
 import com.codahale.metrics.Timer
 import com.datastax.driver.core._
 import com.google.common.util.concurrent.{FutureCallback, Futures}
 import com.twitter.finagle.util.HashedWheelTimer
-import com.twitter.util.{Return, Throw}
+import com.twitter.util.{Return, Throw, Duration => TwDuration, Future => TwFuture, Promise => TwPromise}
 import com.twitter.{util => tw}
-import com.twitter.util.{Duration => TwDuration, Future => TwFuture, Promise => TwPromise}
 import com.websudos.phantom.Manager
 import com.websudos.phantom.builder.query.prepared.ExecutablePreparedQuery
 import ipa.thrift.Table

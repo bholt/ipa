@@ -9,7 +9,7 @@ import scala.concurrent.duration._
 
 class CounterTests extends {
   override implicit val space = KeySpace(Connector.config.keyspace)
-} with OwlWordSpec with OwlService {
+} with OwlWordSpec with IPAService {
 
   val timeout = 2 seconds
   implicit override val patienceConfig: PatienceConfig =

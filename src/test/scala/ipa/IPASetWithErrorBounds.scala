@@ -11,7 +11,7 @@ import owl._
 
 class IPASetWithErrorBounds extends {
   override implicit val space = KeySpace("setwitherror")
-} with WordSpec with OwlService with BeforeAndAfterAll
+} with WordSpec with IPAService with BeforeAndAfterAll
     with Matchers with Inspectors with ScalaFutures {
 
   def now() = Deadline.now

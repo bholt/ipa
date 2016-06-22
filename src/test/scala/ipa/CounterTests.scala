@@ -2,10 +2,13 @@ package ipa
 
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
-import owl._
-import owl.Util._
-import owl.Conversions._
+import ipa.Util._
+import ipa.adts._
+import ipa.types._
+import ipa.types.Conversions._
+
 import scala.concurrent.duration._
+import scala.language.postfixOps
 
 class CounterTests extends {
   override implicit val space = KeySpace(Connector.config.keyspace)

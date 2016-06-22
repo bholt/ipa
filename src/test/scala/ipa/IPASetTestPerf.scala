@@ -1,4 +1,4 @@
-package owl
+package ipa
 
 import java.util.UUID
 
@@ -6,11 +6,13 @@ import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl.ConsistencyLevel
 import org.apache.commons.math3.distribution.ZipfDistribution
 import org.scalatest.Sequential
-import scala.concurrent.duration._
-import owl.Util._
 
-import scala.util.Random
+import ipa.Util._
+import ipa.adts._
+
+import scala.concurrent.duration._
 import scala.language.postfixOps
+import scala.util.Random
 
 trait IPASetTestGeneric extends OwlTest {
 

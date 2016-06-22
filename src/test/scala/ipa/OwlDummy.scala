@@ -1,21 +1,11 @@
-package owl
+package ipa
 
-import java.util.UUID
-
-import com.datastax.driver.core.ConsistencyLevel
-
-import scala.concurrent._
-import scala.concurrent.duration._
+import com.twitter.util.{Future => TwFuture, Promise => TwPromise}
 import com.websudos.phantom.dsl._
+import ipa.adts.IPACounter
+import ipa.Util._
 
 import scala.language.postfixOps
-import scala.math.Ordering.Implicits._
-import Util._
-import Connector.config
-import com.twitter.concurrent.{Broker, LocalScheduler, Offer}
-import ipa.{BoundedCounter, IPACounter}
-import org.scalatest.WordSpec
-import com.twitter.util.{Future => TwFuture, Promise => TwPromise}
 
 //
 //abstract class BaseSettings(implicit val space: KeySpace, val session: Session, val cassandraOpMetric: Timer, val ipa_metrics: IPAMetrics) {
@@ -178,15 +168,14 @@ import com.twitter.util.{Future => TwFuture, Promise => TwPromise}
 /** Dummy tests (don't run as part of default test suite) */
 class OwlDummy extends {
   override implicit val space = KeySpace("owl_dummy")
-} with OwlWordSpec with OwlService {
+} with OwlWordSpec with IPAService {
 
 //  case class State() extends FutureSerializer {
 //    var counter = 0
 //  }
+  import ipa.adts.BoundedCounter.{pack,unpack}
 
   createKeyspace()
-
-  import BoundedCounter._
 
   def check(i: Int, j: Int) = {
     assert(unpack(pack(i, j)) == (i, j))

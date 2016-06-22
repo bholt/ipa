@@ -1,9 +1,8 @@
-package owl
+package ipa
 
-import com.twitter.util.{Future => TwFuture, Await => TwAwait}
-import org.scalactic.Equality
-import org.scalatest.concurrent.ScalaFutures
+import com.twitter.util.{Await => TwAwait, Future => TwFuture}
 import org.scalatest._
+import org.scalatest.concurrent.ScalaFutures
 
 import scala.concurrent.duration.Duration
 
@@ -21,7 +20,7 @@ trait OwlWordSpec extends WordSpec with Matchers with Inspectors with ScalaFutur
 
 trait OwlFreeSpec extends FreeSpec with Matchers with Inspectors with ScalaFutures with OptionValues with TryValues with OwlSpecCommon
 
-trait OwlTest extends OwlSpec with OwlService with BeforeAndAfterAll  {
+trait OwlTest extends OwlSpec with IPAService with BeforeAndAfterAll  {
 
   override def beforeAll(): Unit = {
     super.beforeAll()

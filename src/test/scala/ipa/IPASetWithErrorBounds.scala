@@ -6,8 +6,11 @@ import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.{BeforeAndAfterAll, Inspectors, Matchers, WordSpec}
 
 import scala.concurrent.duration._
-import owl.Util._
-import owl._
+import ipa.Util._
+import ipa.adts._
+import ipa.types._
+
+import scala.language.postfixOps
 
 class IPASetWithErrorBounds extends {
   override implicit val space = KeySpace("setwitherror")

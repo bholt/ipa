@@ -1,11 +1,11 @@
-package owl
+package ipa
 
 import com.websudos.phantom.dsl._
 import ipa.apps.retwis.Retwis
-import owl.Util._
+import ipa.Util._
 
-import scala.concurrent.duration._
 import scala.concurrent.Await
+import scala.concurrent.duration._
 
 class RetwisTest extends {
   override implicit val space = KeySpace("owl_retwis")

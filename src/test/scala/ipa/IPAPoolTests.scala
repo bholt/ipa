@@ -1,22 +1,17 @@
 package ipa
 
-import java.util.UUID
-
 import com.websudos.phantom.connectors.KeySpace
-import com.websudos.phantom.dsl._
-import org.scalatest.concurrent.ScalaFutures
-import org.scalatest._
-import owl.{Inconsistent, OwlService, OwlWordSpec}
-import owl.Util._
+import ipa.Util._
+import ipa.adts._
+import ipa.types._
 
 import scala.concurrent.duration._
+import scala.language.postfixOps
 
 
 class IPAPoolTests extends {
   override implicit val space = KeySpace("pool_tests")
 } with OwlWordSpec with IPAService {
-
-  import Console.err
 
   def now() = Deadline.now
 

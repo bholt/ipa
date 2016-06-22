@@ -1,15 +1,14 @@
 package ipa
 
-import java.util.concurrent.TimeUnit
-
-import com.websudos.phantom.connectors.KeySpace
-import org.scalatest.concurrent.ScalaFutures
-import org.scalatest._
-import owl._
-import owl.Util._
 import com.twitter.util.{Duration => TwDuration, Future => TwFuture}
+import com.websudos.phantom.connectors.KeySpace
+import ipa.Util._
+import ipa.adts._
+import ipa.types._
+import org.scalatest._
 
 import scala.concurrent.duration._
+import scala.language.postfixOps
 
 class BoundedCounterTests extends {
   override implicit val space = KeySpace("bc_tests")
@@ -24,14 +23,13 @@ class BoundedCounterTests extends {
   if (config.do_reset) dropKeyspace()
   createKeyspace()
 
-  import owl.Conversions._
+  import BoundedCounter._
+  import ipa.types.Conversions._
 
   // help inspect returned metrics
   implicit class Lookup(a: Any) {
     def lookup(s: String) = a.asInstanceOf[Map[String,Any]](s)
   }
-
-  import BoundedCounter._
 
   "BoundedCounter with StrongBounds" - {
     err.println("start StrongBounds")

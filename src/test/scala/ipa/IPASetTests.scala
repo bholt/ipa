@@ -1,20 +1,21 @@
-package owl
+package ipa
 
 import com.datastax.driver.core.ConsistencyLevel
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
+import ipa.Util._
+import ipa.types._
+import ipa.types.Conversions._
+import ipa.adts._
 import org.scalatest.concurrent.ScalaFutures
-import org.scalatest.{Inspectors, Matchers, BeforeAndAfterAll, WordSpec}
+import org.scalatest.{BeforeAndAfterAll, Inspectors, Matchers, WordSpec}
 
 import scala.concurrent.duration._
-
-import Util._
-import Conversions._
-import ipa.IPASet
+import scala.language.postfixOps
 
 class IPASetTests extends {
   override implicit val space = KeySpace("ipa_set_tests")
-} with WordSpec with OwlService with BeforeAndAfterAll
+} with WordSpec with IPAService with BeforeAndAfterAll
     with Matchers with Inspectors with ScalaFutures {
 
   def now() = Deadline.now

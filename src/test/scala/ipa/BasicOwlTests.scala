@@ -1,16 +1,17 @@
-package owl
+package ipa
 
 import java.util.UUID
 
 import com.datastax.driver.core.ProtocolVersion
+import com.websudos.phantom.connectors.KeySpace
+import com.websudos.phantom.dsl._
+import ipa.Util._
+import ipa.adts._
+import ipa.apps.retwis.Retwis
 import org.scalatest.OptionValues._
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
-import com.websudos.phantom.dsl._
-import com.websudos.phantom.connectors.KeySpace
-import ipa.apps.retwis.Retwis
-
 import scala.language.postfixOps
 
 

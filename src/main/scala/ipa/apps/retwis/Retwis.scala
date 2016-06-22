@@ -379,10 +379,12 @@ trait Retwis extends IPAService {
 
   }
 
-  def generate(): Unit = {
-
+  def createTables(): Unit = {
     tables.map(_.create.ifNotExists().future()).bundle.await()
     Seq(retweets, followers, followees).map(_.create()).bundle.await()
+  }
+
+  def generate(): Unit = {
 
     if (!config.do_reset) {
       println("# Skipped keyspace reset")
@@ -464,6 +466,7 @@ object Init extends RetwisExec {
   def apply() = {
     // println(config.toJSON)
     service.resetKeyspace()
+    createTables()
     generate()
   }
   def main(args: Array[String]) {

@@ -30,6 +30,10 @@ class BasicOwlTests extends {
     assert(protocolVersion.compareTo(ProtocolVersion.V1) > 0)
   }
 
+  "Tables" should "be created" in {
+    createTables()
+  }
+
   "User table" should "allow inserting and deleting" in {
     val u = randomUser()
 

@@ -57,7 +57,7 @@ object DataType {
     DataType.lookupMetadata(name) filter { _ == metaStr } map {
       _ => tw.Future.Unit
     } recover { case e =>
-      println(s">>> (re)creating ${space.name}.$name")
+      println(s">>> (re)creating ${space.name}.$name with metadata: '$metaStr'")
       session.execute(s"DROP TABLE IF EXISTS ${space.name}.$name")
       tbl.create.`with`(comment eqs metaStr).execute().unit
     } get

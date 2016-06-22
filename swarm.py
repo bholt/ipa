@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-import sh
-import sys
-from sh import sudo, ssh, docker
-import time
-from util import *
-from os.path import expanduser as expand
 from argparse import ArgumentParser, Namespace
+from os.path import expanduser as expand
+
+import sh
+from sh import ssh, docker
+
+from util import *
 
 MASTER = 'platypus'
 AGENTS = ['sloth', 'rhinoceros']

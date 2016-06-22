@@ -1,19 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-import dataset
-import sys
-import itertools as it
 import os
-import re
 import socket
-import time
-import json
-
-from os.path import abspath, dirname, realpath
-from os import environ as env
-import requests
 import traceback
-import sqlalchemy.exc
+from os import environ as env
+from os.path import abspath, dirname, realpath
+
+import dataset
+import itertools as it
+import requests
 
 #########################
 # External dependencies
@@ -173,6 +168,10 @@ def run(logfile, *args, **flags):
 
     puts(colored.magenta("@ " + now()))
     cmd = None
+
+    def excluded(line):
+        return 'inagle' in line or line.startswith("#")
+
     try:
         cmd = swarm.owl_exec(*invoke, _timeout=60*5, _iter=True)
         puts("> #{colored.blue(' '.join(cmd.cmd))}")
@@ -182,9 +181,6 @@ def run(logfile, *args, **flags):
                 print o, # w/o extra newline
 
         puts("#{colored.black('>')} exit code: #{colored.red(cmd.exit_code)}")
-
-        def excluded(line):
-            return 'inagle' in line or line.startswith("#")
 
         # filter out extra finagle junk from stderr
         filtered = ''.join([ line for line in cmd.stderr.split('\n') if not excluded(line) ])

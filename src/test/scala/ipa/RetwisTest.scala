@@ -14,6 +14,7 @@ class RetwisTest extends {
   it should "initialize social graph" in {
 
     println(">>> before init")
+    createTables()
     generate()
     println(">>> after init")
 

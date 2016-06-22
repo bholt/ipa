@@ -185,7 +185,7 @@ class BasicOwlTests extends {
   }
 
   it should "not be duplicated" in {
-    retweets(tweetEgo.id).size().futureValue shouldBe 2
+    retweets(tweetEgo.id).size().futureValue.get shouldBe 2
     whenReady(retweet(tweetEgo, ford.id)) { _ =>
       retweets(tweetEgo.id).size().futureValue.get shouldBe 2
     }

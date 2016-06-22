@@ -1,6 +1,7 @@
 package ipa.adts
 
 import com.twitter.{util => tw}
+import com.websudos.phantom.builder.query.ExecutableStatement
 import com.websudos.phantom.dsl._
 import ipa.Connector._
 import ipa.thrift.{ReservationException, Table}
@@ -59,7 +60,10 @@ object DataType {
     } recover { case e =>
       println(s">>> (re)creating ${space.name}.$name with metadata: '$metaStr'")
       session.execute(s"DROP TABLE IF EXISTS ${space.name}.$name")
-      tbl.create.`with`(comment eqs metaStr).execute().unit
+      val q = tbl.create.`with`(comment eqs metaStr)
+      val stmt: ExecutableStatement = q.statement()
+      println(s"@> ${stmt.queryString}")
+      stmt.execute().unit
     } get
   }
 

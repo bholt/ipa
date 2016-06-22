@@ -7,14 +7,14 @@ from util import *
 from os.path import expanduser as expand
 from argparse import ArgumentParser, Namespace
 
-MASTER = 'ibex'
-AGENTS = ['platypus', 'sloth', 'rhinoceros']
+MASTER = 'platypus'
+AGENTS = ['sloth', 'rhinoceros']
 
 DOCKER_PORT = 2376
 SWARM_PORT = 4000
 BRIDGE = 'swarm'
 
-CONSUL = '10.100.1.10'
+CONSUL = '10.100.1.17'
 CONSUL_PORT = 8500
 CONSUL_LOG = '/var/log/consul'
 
@@ -44,7 +44,9 @@ def on(host):
 
 def start(args=None, opt=None):
     # start Consul key/value store for service discovery
-    on(MASTER).sudo(fmt("sh -c 'rm -rf /scratch/consul; nohup /homes/sys/bholt/bin/consul agent -server -bootstrap -data-dir /scratch/consul -node=master -bind=#{CONSUL} -client #{CONSUL} >#{CONSUL_LOG} 2>&1 &'"))
+    # on(MASTER).sudo(fmt("sh -c 'rm -rf /scratch/consul; nohup /homes/sys/bholt/bin/consul agent -server -bootstrap -data-dir /scratch/consul -node=master -bind=#{CONSUL} -client #{CONSUL} >#{CONSUL_LOG} 2>&1 &'"))
+    cmd = fmt("--name=consul -d --net=host -p 8400:8400 -p 8500:8500 -p 8600:53/udp progrium/consul -server -bootstrap -node=master -bind=#{CONSUL} -client #{CONSUL}")
+    on(MASTER).docker.run(cmd.split())
 
     time.sleep(4)
     
@@ -80,7 +82,7 @@ def stop(args=None, opt=None):
         
         on(host).sudo.pkill("-f", "[d]ocker.*tcp://", _ok_code=[0,1])
     
-    on(MASTER).sudo.pkill("consul", _ok_code=[0,1])
+    on(MASTER).sh(c="docker stop consul; docker rm consul", _ok_code=[0,1])
 
 
 def status(args=None, opt=None):

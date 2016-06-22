@@ -123,7 +123,7 @@ object BoundedCounter {
       }
     } recoverWith {
       case e: Throwable =>
-        Failure(th.ReservationException(s"metadata not found for $name"))
+        Failure(th.ReservationException(s"metadata not found for ${imps.space.name}.$name"))
     }
   }
 

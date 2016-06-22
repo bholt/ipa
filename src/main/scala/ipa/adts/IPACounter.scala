@@ -234,7 +234,7 @@ object IPACounter {
       }
     } recoverWith {
       case e: Throwable =>
-        Failure(ReservationException(s"metadata not found for $name"))
+        Failure(ReservationException(s"metadata not found for ${imps.space.name}.$name"))
     }
   }
 }

@@ -46,6 +46,7 @@ object DataType {
   def lookupMetadata(name: String)(implicit imps: CommonImplicits): Try[String] = {
     import imps._
     val query = s"SELECT comment FROM system_schema.tables WHERE keyspace_name = '${space.name}' AND table_name = '$name'"
+    println(s"@> query: '$query'")
     Try {
       val row = blocking { session.execute(query).one() }
       val text = row.get("comment", classOf[String])
@@ -60,8 +61,7 @@ object DataType {
     } recover { case e =>
       println(s">>> (re)creating ${space.name}.$name with metadata: '$metaStr'")
       session.execute(s"DROP TABLE IF EXISTS ${space.name}.$name")
-      val q = tbl.create.`with`(comment eqs metaStr)
-      val stmt: ExecutableStatement = q.statement()
+      val stmt = tbl.create.`with`(comment eqs metaStr)
       println(s"@> ${stmt.queryString}")
       stmt.execute().unit
     } get

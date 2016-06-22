@@ -8,6 +8,8 @@ import com.websudos.phantom.dsl._
 import ipa.Util._
 import ipa.adts._
 import ipa.apps.retwis.Retwis
+import ipa.types.Inconsistent
+import org.scalactic.Equality
 import org.scalatest.OptionValues._
 
 import scala.concurrent.Future
@@ -23,6 +25,22 @@ class BasicOwlTests extends {
 
   implicit override val patienceConfig =
     PatienceConfig(timeout = 500.millis, interval = 10.millis)
+
+  /** override Tweet equality check to handle the fact when we 'getTweet',
+    * we load the user's full name */
+  implicit val tweetEquality = new Equality[Tweet] {
+    override def areEqual(a: Tweet, x: Any): Boolean = x match {
+      case b: Tweet =>
+        a.id == b.id &&
+            a.body == b.body &&
+            a.user == b.user &&
+            a.created == b.created &&
+            (a.name.isEmpty || b.name.isEmpty || a.name == b.name)
+      case _ =>
+        false
+    }
+  }
+
 
   "Connector" should "have valid protocol version" in {
     val protocolVersion = implicitly[Session].getCluster.getConfiguration.getProtocolOptions.getProtocolVersion
@@ -147,11 +165,12 @@ class BasicOwlTests extends {
 
   "Retweets" should "be counted" in {
     whenReady(retweet(tweetEgo, ford.id)) { _ =>
-      retweets(tweetEgo.id).size().futureValue shouldBe 1
+      val r: Inconsistent[Long] = retweets(tweetEgo.id).size().futureValue
+      r.get shouldBe 1
     }
 
     whenReady(retweet(tweetEgo, arthur.id)) { _ =>
-      retweets(tweetEgo.id).size().futureValue shouldBe 2
+      retweets(tweetEgo.id).size().futureValue.get shouldBe 2
     }
 
     whenReady(getTweet(tweetEgo.id)) { opt =>
@@ -161,14 +180,14 @@ class BasicOwlTests extends {
   }
 
   it should "contain retweeters" in {
-    retweets(tweetEgo.id).contains(arthur.id).futureValue shouldBe true
-    retweets(tweetEgo.id).contains(ford.id).futureValue shouldBe true
+    retweets(tweetEgo.id).contains(arthur.id).futureValue.get shouldBe true
+    retweets(tweetEgo.id).contains(ford.id).futureValue.get shouldBe true
   }
 
   it should "not be duplicated" in {
     retweets(tweetEgo.id).size().futureValue shouldBe 2
     whenReady(retweet(tweetEgo, ford.id)) { _ =>
-      retweets(tweetEgo.id).size().futureValue shouldBe 2
+      retweets(tweetEgo.id).size().futureValue.get shouldBe 2
     }
   }
 

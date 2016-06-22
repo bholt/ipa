@@ -64,21 +64,6 @@ trait Retwis extends IPAService {
     }
   }
 
-//  /** override Tweet equality check to handle the fact when we 'getTweet',
-//    * we load the user's full name */
-//  implicit val tweetEquality = new Equality[Tweet] {
-//    override def areEqual(a: Tweet, x: Any): Boolean = x match {
-//      case b: Tweet =>
-//        a.id == b.id &&
-//            a.body == b.body &&
-//            a.user == b.user &&
-//            a.created == b.created &&
-//            (a.name.isEmpty || b.name.isEmpty || a.name == b.name)
-//      case _ =>
-//        false
-//    }
-//  }
-
   /** For displaying tweets (includes user's name, etc). */
   case class DisplayTweet(tweet: Tweet, user: User) {
     override def toString = {

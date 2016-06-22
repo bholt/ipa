@@ -1,25 +1,21 @@
 package ipa.apps
 
 import java.util.UUID
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, Semaphore}
+import java.util.concurrent.{ConcurrentHashMap, Semaphore}
 
-import com.datastax.driver.core.Row
-import com.datastax.driver.core.utils.UUIDs
-import com.websudos.phantom.builder.query.prepared.?
+import com.datastax.driver.core.{Row, ConsistencyLevel => CLevel}
+import com.twitter.util.{Future => TwFuture}
 import com.websudos.phantom.connectors.KeySpace
 import com.websudos.phantom.dsl._
 import com.websudos.phantom.keys.PartitionKey
-import ipa.{BoundedCounter, IPACounter, IPAPool}
+import ipa.IPAPool
 import org.apache.commons.math3.distribution.{NormalDistribution, UniformIntegerDistribution, ZipfDistribution}
 import org.joda.time.DateTime
+import owl.Connector.config.tickets.initial
 import owl.Consistency._
 import owl.RawMixCounter._
-import owl.{Interval, _}
 import owl.Util._
-import com.datastax.driver.core.{ConsistencyLevel => CLevel}
-import com.twitter.util.{Future => TwFuture}
-import owl.Connector.config.tickets.initial
-import java.util.UUID
+import owl._
 
 import scala.collection.JavaConversions._
 import scala.concurrent.duration._

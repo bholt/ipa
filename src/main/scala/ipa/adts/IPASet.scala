@@ -76,7 +76,7 @@ object IPASet {
     }
   }
 
-  trait LatencyBound[V] extends WriteOps[V] with RushImpl {
+  trait LatencyBound[V] extends WriteOps[V] with RushCommon {
     base: IPASet[V] =>
 
     def bound: FiniteDuration

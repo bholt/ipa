@@ -135,7 +135,7 @@ object BoundedCounter {
   }
 }
 
-class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) extends DataType(imps) with RushImpl { self: BoundedCounter.Bounds =>
+class BoundedCounter(val name: String)(implicit val imps: CommonImplicits) extends DataType(imps) with RushCommon { self: BoundedCounter.Bounds =>
   import BoundedCounter._
 
   object m {

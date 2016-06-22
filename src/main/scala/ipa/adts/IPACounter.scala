@@ -55,7 +55,7 @@ object IPACounter {
       base.incr(Strong)(key, by)
   }
 
-  trait LatencyBound extends Ops with RushImpl {
+  trait LatencyBound extends Ops with RushCommon {
     base: IPACounter =>
 
     def bound: FiniteDuration

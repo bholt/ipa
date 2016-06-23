@@ -52,7 +52,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
       override def apply(t: Table): IPACounter with ErrorTolerance = {
         IPACounter.fromName(t.name).recoverWith {
           case e: Throwable =>
-            Console.err.println(s"Error getting BoundedCounter by name: $t")
+            Console.err.println(s"Error getting IPACounter by name: $t")
             Failure(e)
         }.get.asInstanceOf[IPACounter with ErrorTolerance]
       }
@@ -70,7 +70,7 @@ class ReservationServer(implicit imps: CommonImplicits) extends th.ReservationSe
       override def apply(t: Table): IPASetWithErrorBound = {
         IPASet.fromName[UUID](t.name).recoverWith {
           case e: Throwable =>
-            Console.err.println(s"Error getting BoundedCounter by name: $t")
+            Console.err.println(s"Error getting IPASet by name: $t")
             Failure(e)
         }.get.asInstanceOf[IPASetWithErrorBound]
       }

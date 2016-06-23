@@ -1,5 +1,6 @@
 package ipa.adts
 
+import com.datastax.driver.core.exceptions.InvalidQueryException
 import com.twitter.{util => tw}
 import com.websudos.phantom.builder.query.ExecutableStatement
 import com.websudos.phantom.dsl._
@@ -51,6 +52,11 @@ object DataType {
       val row = blocking { session.execute(query).one() }
       val text = row.get("comment", classOf[String])
       text
+    } recover { case e: InvalidQueryException =>
+      val query = s"SELECT comment FROM system.schema_columnfamilies WHERE keyspace_name = '${space.name}' AND columnfamily_name = '$name'"
+      println(s"@> retrying query: '$query'")
+      val row = blocking { session.execute(query).one() }
+      row.getString("comment")
     }
   }
 

@@ -75,7 +75,7 @@ resolvers ++= Seq(
 
 libraryDependencies ++= {
   val phantomV = "1.21.5"
-  val finagleV = "6.34.0"
+  val finagleV = "19.10.0"
   Seq(
     "com.websudos"        %% "phantom-dsl"                % phantomV,
     "com.websudos"        %% "phantom-connectors"         % phantomV,

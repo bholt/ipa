@@ -171,12 +171,9 @@ class ReservationClient(cluster: Cluster) {
   } toMap
 
   def newClient(hosts: String): ReservationService = {
-    val service =
       ThriftMux.client
           .withLoadBalancer(Balancers.p2cPeakEwma())
-          .newServiceIface[th.ReservationService.ServiceIface](hosts, "ipa")
-
-    ThriftMux.newMethodIface(service)
+          .build[ReservationService.MethodPerEndpoint](hosts)
   }
 
   val latencies: IndexedSeq[(InetAddress, LatencyMeasurer)] =

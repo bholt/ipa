@@ -1,6 +1,7 @@
 package ipa.adts
 
 import com.datastax.driver.core.{ConsistencyLevel => CLevel}
+import com.twitter.finagle.util.DefaultTimer.Implicit
 import com.twitter.util.{Return, Throw, Duration => TwDuration, Future => TwFuture}
 import com.websudos.phantom.dsl._
 import ipa.Connector._

@@ -3,7 +3,7 @@
 #
 # (based on https://github.com/docker-library/cassandra/blob/master/2.2/Dockerfile)
 #######################################################
-FROM cassandra:3.3
+FROM cassandra:3
 MAINTAINER Brandon Holt <holt.bg@gmail.com>
 
 # Manually download and install latest scala and sbt.
@@ -18,7 +18,7 @@ RUN apt-get remove -y scala-library scala; \
 # Fix java certs & pre-install latest sbt versionk
 RUN update-ca-certificates -f && sbt version
 
-RUN apt-get install -y ssh rsync git openjdk-8-jdk apt-transport-https
+RUN apt-get update && apt-get install -y ssh rsync git openjdk-8-jdk apt-transport-https
 
 # ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64
 RUN update-alternatives --install "/usr/bin/javac" "javac" "/usr/lib/jvm/java-8-openjdk-amd64/bin/javac" 1 && \
@@ -26,10 +26,12 @@ RUN update-alternatives --install "/usr/bin/javac" "javac" "/usr/lib/jvm/java-8-
     update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java && \
     update-alternatives --set javac /usr/lib/jvm/java-8-openjdk-amd64/bin/javac
 
-RUN mkdir -p /src; \
-    git clone https://github.com/bholt/owl.git /src/owl && \
-    cd /src/owl && \
-    sbt compile test:compile
+#RUN mkdir -p /src; \
+#    git clone https://github.com/bholt/owl.git /src/owl && \
+#    cd /src/owl && \
+
+ADD . /src
+RUN cd /src && sbt compile test:compile
 
 # override some configurations
 # ADD conf/cassandra.yaml /etc/cassandra/cassandra.yaml
@@ -44,7 +46,8 @@ RUN sed -ri "s/(listen_address:)/# \1/" /etc/cassandra/cassandra.yaml &&\
     sed -ri "s/(counter_write_request_timeout_in_ms:).*$/\1 20000/" /etc/cassandra/cassandra.yaml
 
 # Override with my own version of docker-entrypoint that doesn't overwrite addresses (uses interface eth0 instead)
-ADD docker-entrypoint.sh /docker-entrypoint.sh
+#ADD docker/cassandra/docker-entrypoint.sh /docker-entrypoint.sh
+RUN cp /src/docker/cassandra/docker-entrypoint.sh /docker-entrypoint.sh
 
 # 7000: intra-node communication
 # 7001: TLS intra-node communication

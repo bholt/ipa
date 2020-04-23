@@ -1,4 +1,4 @@
-<img align="right" width="140" src="http://homes.cs.washington.edu/~bholt/img/ipa.jpg"/>
+<img align="right" width="140" src="http://bholt.org/img/ipa.jpg"/>
 # IPA
 
 [![CircleCI](https://circleci.com/gh/bholt/ipa.svg?style=svg)](https://circleci.com/gh/bholt/ipa)
